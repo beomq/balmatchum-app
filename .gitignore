@@ -1,0 +1,27 @@
+
+# FVM Version Cache
+.fvm/
+
+# Flutter and local tools
+.dart_tool/
+.packages
+.flutter-plugins
+.flutter-plugins-dependencies
+build/
+coverage/
+.idea/
+.vscode/
+*.iml
+.DS_Store
+*.log
+
+# Local credentials and machine configuration
+.env
+.env.*
+*.jks
+*.keystore
+key.properties
+local.properties
+
+# Local QA artifacts
+.qa/

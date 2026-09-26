@@ -1,0 +1,42 @@
+name: App checks
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Read pinned Flutter version
+        id: sdk
+        run: echo "version=$(jq -r .flutter .fvmrc)" >> "$GITHUB_OUTPUT"
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ steps.sdk.outputs.version }}
+          channel: stable
+          cache: true
+      - name: Install FVM
+        run: dart pub global activate fvm 4.0.1
+      - name: Select project SDK
+        run: fvm use "${{ steps.sdk.outputs.version }}" --force --skip-pub-get
+      - name: Resolve locked dependencies
+        run: fvm flutter pub get --enforce-lockfile
+      - name: Check formatting
+        run: fvm dart format --output=none --set-exit-if-changed lib test tool integration_test test_driver
+      - name: Analyze
+        run: fvm flutter analyze
+      - name: Test
+        run: fvm flutter test
+      - name: Build Android debug APK
+        run: fvm flutter build apk --debug
