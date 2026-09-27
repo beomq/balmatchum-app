@@ -35,11 +35,11 @@ alias는 Gradle에 `balmatchum-dev-upload`로 고정되어 별도 변수는 사�
 4. Actions → Deploy Dev to Play internal → Run workflow에서 `develop` 선택.
 5. 사용하지 않은 더 큰 `version_code`를 입력한다. 자동 증가가 아니므로 재실행에도
    Play 등록 상태를 먼저 확인한다. 로컬 검증용 번호 2는 실제 업로드에 예약되지 않았다.
-6. 첫 출시 준비 전에는 `release_status=draft`로 업로드한다. 이 상태는 테스터에게
-   배포되지 않는다. 앱 설정·테스터 구성이 완료되고 내부 출시를 승인한 뒤에만
-   `completed`를 선택한다. draft 앱에서 completed는 Play가 거부할 수 있다.
+6. `release_status=draft`로만 업로드한다. 이 상태는 테스터에게 배포되지 않는다.
+   workflow와 스크립트 모두 completed를 거부한다. 테스터 출시는 별도 승인과
+   별도 구현 범위다.
 7. Actions의 성공뿐 아니라 Play Console의 패키지·버전·트랙·상태를 확인한다.
-   completed라면 참여 링크로 설치해 버전과 실행까지 확인한다.
+   draft는 설치 검증을 수행하지 않으며 이를 결과에 명시한다.
 
 검사 → 서명 AAB 빌드 → 7일 보관 artifact → OIDC 인증 → edit 생성 → AAB 업로드 →
 트랙 변경 → validate → commit 순서다. 토큰은 빌드가 끝난 뒤 발급한다.

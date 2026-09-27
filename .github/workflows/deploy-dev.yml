@@ -8,13 +8,12 @@ on:
         required: true
         type: string
       release_status:
-        description: 'Use draft until the first internal release is ready in Play Console'
+        description: 'Draft upload only; tester rollout is not supported'
         required: true
         default: draft
         type: choice
         options:
           - draft
-          - completed
 
 permissions:
   contents: read
@@ -46,7 +45,7 @@ jobs:
           (( VERSION_CODE > 1 && VERSION_CODE <= 2100000000 ))
           [[ "$ANDROID_PACKAGE_NAME" == 'com.beomq.balmatchum.dev' ]]
           [[ "$PLAY_TRACK" == 'internal' ]]
-          [[ "$RELEASE_STATUS" == 'draft' || "$RELEASE_STATUS" == 'completed' ]]
+          [[ "$RELEASE_STATUS" == 'draft' ]]
       - uses: actions/setup-java@v4
         with:
           distribution: temurin

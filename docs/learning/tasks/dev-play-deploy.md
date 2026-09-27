@@ -40,7 +40,7 @@ Kotlin/YAML/Bash LSP가 설치되어 있지 않아 LSP 검사는 실행하지 �
 대신 실제 Gradle 빌드, actionlint, bash 문법 검사로 확인했다.
 빌드 시 CupertinoIcons 폰트 관련 기존 경고도 출력되었다. 제품 UI 코드는 변경하지 않았다.
 
-## 남은 연결과 권한
+## 인계 당시 남은 연결과 권한
 
 - GitHub 조회로 play-dev의 변수 4개와 develop 제한을 확인했다. Secrets는 없음.
 - 동일한 로컬 Dev 키 파일의 존재와 빌드 서명을 확인했다. 새 환경에 등록할 승인 요청 중.
@@ -72,3 +72,8 @@ completed 출시, 테스터 배포, 운영 및 서버 변경은 범위 밖이다
 핵심 흐름은 deploy-dev.yml의 대상 검사 → 분석·테스트 → 서명 빌드 → OIDC →
 upload_play_dev.sh의 edit 생성·업로드·트랙 변경·검증·확정이다. draft 성공은
 테스터 설치 가능 상태를 뜻하지 않으며 사용자 이해·직접 설치는 미확인이다.
+
+독립 리뷰에서 completed 입력이 허용되어 승인된 draft 범위를 넘는다고 지적했다.
+workflow 선택지와 검증, 업로드 스크립트를 draft 전용으로 제한했다. completed
+입력은 네트워크 요청 전에 종료 코드 1로 차단되며 bash -n과 diff 검사는 통과했다.
+초기 구현 커밋은 `80a3644`이며 아직 push 전이다.

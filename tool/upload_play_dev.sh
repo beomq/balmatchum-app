@@ -7,7 +7,7 @@ set +x
 [[ "${PLAY_TRACK:-}" == 'internal' ]]
 [[ "${VERSION_CODE:-}" =~ ^[1-9][0-9]{0,9}$ ]]
 (( VERSION_CODE > 1 && VERSION_CODE <= 2100000000 ))
-[[ "${RELEASE_STATUS:-}" == 'draft' || "${RELEASE_STATUS:-}" == 'completed' ]]
+[[ "${RELEASE_STATUS:-}" == 'draft' ]]
 
 bundle=build/app/outputs/bundle/devRelease/app-dev-release.aab
 [[ -s "$bundle" ]]
