@@ -20,6 +20,8 @@ coverage/
 .env.*
 *.jks
 *.keystore
+*.p12
+gha-creds-*.json
 key.properties
 local.properties
 

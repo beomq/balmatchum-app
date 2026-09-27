@@ -1,0 +1,113 @@
+name: Deploy Dev to Play internal
+
+on:
+  workflow_dispatch:
+    inputs:
+      version_code:
+        description: 'Unused Play versionCode, greater than every previous upload'
+        required: true
+        type: string
+      release_status:
+        description: 'Use draft until the first internal release is ready in Play Console'
+        required: true
+        default: draft
+        type: choice
+        options:
+          - draft
+          - completed
+
+permissions:
+  contents: read
+
+concurrency:
+  group: play-dev-internal
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    if: github.ref == 'refs/heads/develop'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    environment: play-dev
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      VERSION_CODE: ${{ inputs.version_code }}
+      RELEASE_STATUS: ${{ inputs.release_status }}
+      ANDROID_PACKAGE_NAME: ${{ vars.ANDROID_PACKAGE_NAME }}
+      PLAY_TRACK: ${{ vars.PLAY_TRACK }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate deployment target
+        shell: bash
+        run: |
+          [[ "$VERSION_CODE" =~ ^[1-9][0-9]{0,9}$ ]]
+          (( VERSION_CODE > 1 && VERSION_CODE <= 2100000000 ))
+          [[ "$ANDROID_PACKAGE_NAME" == 'com.beomq.balmatchum.dev' ]]
+          [[ "$PLAY_TRACK" == 'internal' ]]
+          [[ "$RELEASE_STATUS" == 'draft' || "$RELEASE_STATUS" == 'completed' ]]
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Read pinned Flutter version
+        id: sdk
+        run: echo "version=$(jq -r .flutter .fvmrc)" >> "$GITHUB_OUTPUT"
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ steps.sdk.outputs.version }}
+          channel: stable
+          cache: true
+      - name: Install FVM
+        run: dart pub global activate fvm 4.0.1
+      - name: Select project SDK
+        run: fvm use "${{ steps.sdk.outputs.version }}" --force --skip-pub-get
+      - name: Resolve locked dependencies
+        run: fvm flutter pub get --enforce-lockfile
+      - name: Check formatting
+        run: fvm dart format --output=none --set-exit-if-changed lib test tool integration_test test_driver
+      - name: Analyze
+        run: fvm flutter analyze
+      - name: Test
+        run: fvm flutter test
+      - name: Build signed Dev bundle
+        shell: bash
+        env:
+          KEYSTORE_BASE64: ${{ secrets.ANDROID_UPLOAD_KEYSTORE_BASE64 }}
+          BALMATCHUM_DEV_STORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          BALMATCHUM_DEV_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+          BALMATCHUM_DEV_STORE_FILE: ${{ runner.temp }}/balmatchum-dev-upload.p12
+        run: |
+          set +x
+          : "${KEYSTORE_BASE64:?Missing Dev keystore}"
+          : "${BALMATCHUM_DEV_STORE_PASSWORD:?Missing store password}"
+          : "${BALMATCHUM_DEV_KEY_PASSWORD:?Missing key password}"
+          umask 077
+          trap 'rm -f "$BALMATCHUM_DEV_STORE_FILE"' EXIT
+          printf '%s' "$KEYSTORE_BASE64" | base64 --decode > "$BALMATCHUM_DEV_STORE_FILE"
+          fvm flutter build appbundle --flavor dev --release --build-number="$VERSION_CODE"
+          jarsigner -verify build/app/outputs/bundle/devRelease/app-dev-release.aab
+      - name: Keep signed bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: dev-aab-${{ inputs.version_code }}
+          path: build/app/outputs/bundle/devRelease/app-dev-release.aab
+          if-no-files-found: error
+          retention-days: 7
+      - name: Authenticate for Play upload
+        id: auth
+        uses: google-github-actions/auth@v3
+        with:
+          project_id: balmatchum
+          workload_identity_provider: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ vars.GCP_SERVICE_ACCOUNT }}
+          token_format: access_token
+          access_token_scopes: https://www.googleapis.com/auth/androidpublisher
+          create_credentials_file: false
+          export_environment_variables: false
+      - name: Upload and commit internal release
+        shell: bash
+        env:
+          PLAY_ACCESS_TOKEN: ${{ steps.auth.outputs.access_token }}
+        run: bash tool/upload_play_dev.sh
