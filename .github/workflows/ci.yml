@@ -39,4 +39,4 @@ jobs:
       - name: Test
         run: fvm flutter test
       - name: Build Android debug APK
-        run: fvm flutter build apk --debug
+        run: fvm flutter build apk --debug --flavor dev

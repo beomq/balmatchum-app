@@ -9,6 +9,10 @@ android {
     compileSdk = flutter.compileSdkVersion
     ndkVersion = flutter.ndkVersion
 
+    buildFeatures {
+        resValues = true
+    }
+
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
@@ -29,13 +33,55 @@ android {
         versionName = flutter.versionName
     }
 
-    buildTypes {
-        release {
-            // TODO: Add your own signing config for the release build.
-            // Signing with the debug keys for now, so `flutter run --release` works.
-            signingConfig = signingConfigs.getByName("debug")
+    signingConfigs {
+        create("devUpload") {
+            storeType = "PKCS12"
+            storeFile = providers.environmentVariable("BALMATCHUM_DEV_STORE_FILE").orNull?.let { file(it) }
+            storePassword = providers.environmentVariable("BALMATCHUM_DEV_STORE_PASSWORD").orNull
+            keyAlias = "balmatchum-dev-upload"
+            keyPassword = providers.environmentVariable("BALMATCHUM_DEV_KEY_PASSWORD").orNull
         }
     }
+
+    flavorDimensions += "environment"
+    productFlavors {
+        create("dev") {
+            dimension = "environment"
+            applicationIdSuffix = ".dev"
+            resValue("string", "app_name", "발맞춤 Dev")
+            signingConfig = signingConfigs.getByName("devUpload")
+        }
+        create("prod") {
+            dimension = "environment"
+            resValue("string", "app_name", "발맞춤")
+        }
+    }
+}
+
+// Production release needs a separately approved key/configuration. Never use the Dev key.
+androidComponents {
+    beforeVariants(selector().withFlavor("environment" to "prod").withBuildType("release")) {
+        it.enable = false
+    }
+}
+
+val validateDevSigning by tasks.registering {
+    doLast {
+        val required = listOf(
+            "BALMATCHUM_DEV_STORE_FILE",
+            "BALMATCHUM_DEV_STORE_PASSWORD",
+            "BALMATCHUM_DEV_KEY_PASSWORD",
+        )
+        check(required.all { !providers.environmentVariable(it).orNull.isNullOrBlank() }) {
+            "Dev release requires BALMATCHUM_DEV_STORE_FILE, BALMATCHUM_DEV_STORE_PASSWORD and BALMATCHUM_DEV_KEY_PASSWORD."
+        }
+        val store = file(providers.environmentVariable("BALMATCHUM_DEV_STORE_FILE").get())
+        check(store.isAbsolute && store.isFile) { "Dev signing requires an existing keystore file." }
+    }
+}
+
+tasks.matching { it.name == "preDevReleaseBuild" }.configureEach {
+    dependsOn(validateDevSigning)
 }
 
 kotlin {
