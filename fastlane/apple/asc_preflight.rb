@@ -33,6 +33,7 @@ module ApplePreflight
 
   def self.verify!(bundle:, app_id:, fetcher:)
     apps = fetcher.call("/v1/apps?filter%5BbundleId%5D=#{bundle}&limit=200")
+    apps = apps.select { |app| app.fetch('attributes')['bundleId'] == bundle }
     raise 'ASC target mismatch' unless apps.length == 1 && apps[0]['id'] == app_id && apps[0].fetch('attributes')['bundleId'] == bundle
     groups = fetcher.call("/v1/apps/#{app_id}/betaGroups?limit=200")
     # Fail closed if a group appears after the approved zero-group snapshot.

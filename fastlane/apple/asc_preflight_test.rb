@@ -15,6 +15,12 @@ class ApplePreflightTest < Minitest::Test
     assert verify([app], [])
   end
 
+  def test_selects_exact_bundle_when_api_returns_related_apps
+    prod = { 'id' => '6816329577', 'attributes' => { 'bundleId' => 'com.beomq.balmatchum' } }
+    assert ApplePreflight.verify!(bundle: 'com.beomq.balmatchum', app_id: '6816329577',
+      fetcher: ->(path) { path.include?('betaGroups') ? [] : [app, prod] })
+  end
+
   def test_rejects_missing_or_ambiguous_app
     assert_raises(RuntimeError) { verify([], []) }
     assert_raises(RuntimeError) { verify([app, app], []) }
