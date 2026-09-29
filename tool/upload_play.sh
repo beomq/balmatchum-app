@@ -171,15 +171,17 @@ release=$(jq -n --arg track "$PLAY_TRACK" --arg code "$VERSION_CODE" '
     releases: [{versionCodes: [$code], status: "draft"}]
   }
 ')
+printf 'Updating internal draft track.\n'
 curl --fail-with-body --silent --show-error --max-time 60 \
   -X PUT -H "$auth" -H 'Content-Type: application/json' \
-  -d "$release" "$base/edits/$edit_id/tracks/$PLAY_TRACK" >/dev/null
+  -d "$release" "$base/edits/$edit_id/tracks/$PLAY_TRACK"
+printf '\nValidating edit.\n'
 curl --fail-with-body --silent --show-error --max-time 60 \
-  -X POST -H "$auth" "$base/edits/$edit_id:validate" >/dev/null
+  -X POST -H "$auth" "$base/edits/$edit_id:validate"
+printf '\nCommitting draft without review.\n'
 curl --fail-with-body --silent --show-error --max-time 60 \
   -X POST -H "$auth" \
-  "$base/edits/$edit_id:commit?changesNotSentForReview=true&changesInReviewBehavior=ERROR_IF_IN_REVIEW" \
-  >/dev/null
+  "$base/edits/$edit_id:commit?changesNotSentForReview=true&changesInReviewBehavior=ERROR_IF_IN_REVIEW"
 edit_id=
 trap - EXIT
 printf 'Committed %s versionCode %s to internal (draft).\n' \
