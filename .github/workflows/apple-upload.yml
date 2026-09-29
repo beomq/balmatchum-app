@@ -2,7 +2,7 @@ name: Apple signed delivery
 
 on:
   push:
-    branches: [develop, main]
+    branches: [develop, main, chore/cicd-validation]
   workflow_dispatch:
     inputs:
       target:
@@ -20,6 +20,10 @@ concurrency:
 
 jobs:
   signed-build:
+    strategy:
+      fail-fast: false
+      matrix:
+        target: ${{ github.ref_name == 'chore/cicd-validation' && fromJSON('["dev","prod"]') || fromJSON('["selected"]') }}
     runs-on: macos-15
     environment: staging
     timeout-minutes: 60
@@ -27,8 +31,8 @@ jobs:
       DEVELOPER_DIR: /Applications/Xcode_26.3.app/Contents/Developer
       # Activation requires a separately verified hosted signed build first.
       # This is a rollout switch, not a per-run approval click.
-      DELIVERY_MODE: ${{ github.event_name == 'push' && vars.APPLE_UPLOAD_ENABLED == 'true' && 'upload' || 'verify' }}
-      DELIVERY_TARGET: ${{ github.event_name == 'workflow_dispatch' && inputs.target || (github.ref_name == 'main' && 'prod' || 'dev') }}
+      DELIVERY_MODE: ${{ github.event_name == 'push' && github.ref_name != 'chore/cicd-validation' && vars.APPLE_UPLOAD_ENABLED == 'true' && 'upload' || 'verify' }}
+      DELIVERY_TARGET: ${{ matrix.target != 'selected' && matrix.target || (github.event_name == 'workflow_dispatch' && inputs.target || (github.ref_name == 'main' && 'prod' || 'dev')) }}
     steps:
       - uses: actions/checkout@v4
         with:
