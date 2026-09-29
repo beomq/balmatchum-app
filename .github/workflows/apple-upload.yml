@@ -1,0 +1,86 @@
+name: Apple signed delivery
+
+on:
+  push:
+    branches: [develop, main]
+  workflow_dispatch:
+    inputs:
+      target:
+        type: choice
+        options: [dev, prod]
+        required: true
+        default: dev
+
+permissions:
+  contents: read
+
+concurrency:
+  group: apple-delivery-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  signed-build:
+    runs-on: macos-15
+    environment: staging
+    timeout-minutes: 60
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_26.3.app/Contents/Developer
+      # Activation requires a separately verified hosted signed build first.
+      # This is a rollout switch, not a per-run approval click.
+      DELIVERY_MODE: ${{ github.event_name == 'push' && vars.APPLE_UPLOAD_ENABLED == 'true' && 'upload' || 'verify' }}
+      DELIVERY_TARGET: ${{ github.event_name == 'workflow_dispatch' && inputs.target || (github.ref_name == 'main' && 'prod' || 'dev') }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Verify exact source and toolchain
+        env:
+          EXPECTED_SHA: ${{ github.sha }}
+        run: |
+          test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
+          test "$(xcodebuild -version | awk 'NR == 1 {print $2}')" = 26.3
+          xcodebuild -showsdks
+      - name: Read Flutter pin
+        id: sdk
+        run: echo "version=$(jq -er .flutter .fvmrc)" >> "$GITHUB_OUTPUT"
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ steps.sdk.outputs.version }}
+          channel: stable
+          cache: true
+      - uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: '3.2'
+      - name: Install pinned tools
+        run: |
+          gem install fastlane -v 2.228.0 --no-document
+          dart pub global activate fvm 4.0.1
+          fvm use "$(jq -er .flutter .fvmrc)" --force --skip-pub-get
+      - name: Same-SHA checks
+        run: |
+          fvm flutter pub get --enforce-lockfile
+          fvm flutter analyze
+          fvm flutter test
+          ruby fastlane/apple/asc_preflight_test.rb
+          ruby tool/apple/build_number_test.rb
+          ruby tool/apple/delivery_target_test.rb
+      - name: Readonly signing and delivery
+        env:
+          MATCH_PASSWORD: ${{ secrets.MATCH_PASSWORD }}
+          MATCH_GIT_PRIVATE_KEY: ${{ secrets.MATCH_GIT_PRIVATE_KEY }}
+          ASC_PRIVATE_KEY: ${{ secrets.ASC_PRIVATE_KEY }}
+          ASC_KEY_ID: ${{ vars.ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ vars.ASC_ISSUER_ID }}
+          FASTLANE_SKIP_UPDATE_CHECK: '1'
+          FASTLANE_HIDE_CHANGELOG: '1'
+        run: ruby tool/apple/run_delivery.rb
+      - name: Retain signed package and identity evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: apple-${{ env.DELIVERY_TARGET }}-${{ github.sha }}-${{ github.run_attempt }}
+          path: |
+            ${{ runner.temp }}/apple-output/*.xcarchive/
+            ${{ runner.temp }}/apple-output/export/*.ipa
+            ${{ runner.temp }}/apple-output/identity-evidence.json
+          if-no-files-found: error
+          retention-days: 7

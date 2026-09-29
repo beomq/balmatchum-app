@@ -1,0 +1,67 @@
+require_relative 'asc_preflight'
+require_relative '../../tool/apple/build_number'
+require_relative '../../tool/apple/verify_package'
+require_relative '../../tool/apple/delivery_target'
+
+default_platform(:ios)
+
+platform :ios do
+  desc 'Build, sign, preflight, and upload only the explicit Dev or Prod app'
+  lane :upload_only do |options|
+    target = options[:target]
+    mode = options[:mode]
+    AppleDeliveryTarget.verify!(target: target, mode: mode, ref: ENV.fetch('GITHUB_REF'))
+    UI.user_error!('mode must be verify or upload') unless %w[verify upload].include?(mode)
+    UI.user_error!('target must be dev or prod') unless %w[dev prod].include?(target)
+    config = target == 'dev' ? 'Dev' : 'Prod'
+    scheme = target == 'dev' ? 'dev' : 'Runner'
+    configuration = target == 'dev' ? 'Release-dev' : 'Release'
+    bundle = target == 'dev' ? 'com.beomq.balmatchum.dev' : 'com.beomq.balmatchum'
+    app_id = target == 'dev' ? '6816329763' : '6816329577'
+    root = File.expand_path('../..', __dir__)
+    output = File.expand_path(ENV.fetch('APPLE_OUTPUT_DIR'))
+    key_path = ENV.fetch('ASC_KEY_PATH')
+    key_id = ENV.fetch('ASC_KEY_ID')
+    issuer = ENV.fetch('ASC_ISSUER_ID')
+    UI.user_error!('Unapproved ASC key metadata') unless key_id == '92H5A2KQDS' && issuer == '2da40195-da6d-460f-98b2-11ce9390c5f5'
+    private_key = OpenSSL::PKey.read(File.read(key_path))
+    fetcher = lambda { |path| ApplePreflight.get_pages(path, key_id: key_id, issuer: issuer, private_key: private_key) }
+    ApplePreflight.verify!(bundle: bundle, app_id: app_id, fetcher: fetcher)
+    builds_path = "/v1/builds?filter%5Bapp%5D=#{app_id}&limit=200"
+    history = fetcher.call(builds_path).map { |build| build.fetch('attributes').fetch('version') }
+    number = AppleBuildNumber.next_after(history)
+
+    # Caller supplies a restricted temporary keychain and cleans it in always/finally.
+    match(type: 'appstore', readonly: true, git_url: 'git@github.com:beomq/balmatchum-signing.git',
+      git_branch: 'main', team_id: 'Q4E6NKD9VN', app_identifier: [bundle, "#{bundle}.watchkitapp"],
+      keychain_name: ENV.fetch('MATCH_KEYCHAIN_NAME'), keychain_password: ENV.fetch('MATCH_KEYCHAIN_PASSWORD'))
+    identities = ApplePackage.command('security', 'find-identity', '-v', '-p', 'codesigning', ENV.fetch('MATCH_KEYCHAIN_NAME'))
+    UI.user_error!('Expected match identity missing') unless identities.include?('854F9BAF7FF80F154488723861262200C0F9960D')
+    UI.message('APPLE_MATCH_READONLY_IMPORT_VERIFIED certificate=848N8ZSD6A')
+
+    Dir.chdir(root) do
+      sh('fvm', 'flutter', 'pub', 'get', '--enforce-lockfile')
+      args = ['fvm', 'flutter', 'build', 'ios', '--release', '--config-only', '--no-codesign', '--no-pub', "--build-number=#{number}"]
+      args += ['--flavor', 'dev'] if target == 'dev'
+      sh(*args)
+      archive = File.join(output, "#{config}.xcarchive")
+      export = File.join(output, 'export')
+      sh('xcodebuild', '-workspace', 'ios/Runner.xcworkspace', '-scheme', scheme,
+        '-configuration', configuration, '-destination', 'generic/platform=iOS',
+        '-archivePath', archive, '-xcconfig', "ios/Signing/#{config}Archive.xcconfig", 'archive')
+      sh('xcodebuild', '-exportArchive', '-archivePath', archive, '-exportPath', export,
+        '-exportOptionsPlist', "ios/Signing/ExportOptions-#{config}.plist")
+      ApplePackage.verify!(archive: archive, ipa: File.join(export, 'balmatchum_app.ipa'), bundle: bundle, number: number)
+      ApplePreflight.verify!(bundle: bundle, app_id: app_id, fetcher: fetcher)
+      next if mode == 'verify'
+      current = fetcher.call(builds_path).map { |build| build.fetch('attributes').fetch('version') }
+      UI.user_error!('ASC build history changed; rebuild required') unless current.all? { |v| AppleBuildNumber.ordinal(v) < AppleBuildNumber.ordinal(number) }
+      api = app_store_connect_api_key(key_id: key_id, issuer_id: issuer, key_filepath: key_path,
+        duration: 120, in_house: false, set_spaceship_token: false)
+      upload_to_testflight(api_key: api, app_identifier: bundle, apple_id: app_id,
+        ipa: File.join(export, 'balmatchum_app.ipa'), skip_submission: true,
+        skip_waiting_for_build_processing: true, distribute_external: false,
+        notify_external_testers: false, submit_beta_review: false)
+    end
+  end
+end
