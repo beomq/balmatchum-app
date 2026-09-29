@@ -18,7 +18,9 @@ Dir.mktmpdir('apple-delivery-') do |temp|
     ENV['ASC_KEY_PATH'] = File.join(temp, "AuthKey_#{ENV.fetch('ASC_KEY_ID')}.p8")
     File.write(ENV['ASC_KEY_PATH'], ENV.delete('ASC_PRIVATE_KEY'))
     ssh = File.join(temp, 'match-key')
-    File.write(ssh, ENV.fetch('MATCH_GIT_PRIVATE_KEY'))
+    File.write(ssh, ENV.fetch('MATCH_GIT_PRIVATE_KEY').rstrip + "\n")
+    _, _, status = Open3.capture3('ssh-keygen', '-y', '-f', ssh)
+    raise 'CI SSH key format is invalid' unless status.success?
     ENV['MATCH_GIT_PRIVATE_KEY'] = ssh
     ENV['APPLE_OUTPUT_DIR'] = File.join(ENV.fetch('RUNNER_TEMP'), 'apple-output')
     # security accepts the generated ephemeral keychain password as an argument;
