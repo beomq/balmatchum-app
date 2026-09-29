@@ -1,8 +1,8 @@
-name: Deploy Dev to Play internal
+name: Upload Prod draft to Play internal
 
 on:
   push:
-    branches: [develop]
+    branches: [main]
   workflow_dispatch:
     inputs:
       version_code:
@@ -21,20 +21,20 @@ permissions:
   contents: read
 
 concurrency:
-  group: play-dev-internal
+  group: play-prod-internal
   cancel-in-progress: false
 
 jobs:
   deploy:
-    if: github.ref == 'refs/heads/develop'
+    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     timeout-minutes: 45
-    environment: play-dev
+    environment: play-prod
     permissions:
       contents: read
       id-token: write
     env:
-      FLAVOR: dev
+      FLAVOR: prod
       VERSION_CODE: ${{ inputs.version_code }}
       RELEASE_STATUS: draft
       ANDROID_PACKAGE_NAME: ${{ vars.ANDROID_PACKAGE_NAME }}
@@ -44,7 +44,7 @@ jobs:
       - name: Validate deployment target
         shell: bash
         run: |
-          [[ "$ANDROID_PACKAGE_NAME" == 'com.beomq.balmatchum.dev' ]]
+          [[ "$ANDROID_PACKAGE_NAME" == 'com.beomq.balmatchum' ]]
           [[ "$PLAY_TRACK" == 'internal' ]]
           [[ "$RELEASE_STATUS" == 'draft' ]]
       - uses: actions/setup-java@v4
@@ -86,28 +86,28 @@ jobs:
         env:
           PLAY_ACCESS_TOKEN: ${{ steps.versions-auth.outputs.access_token }}
         run: bash tool/upload_play.sh prepare
-      - name: Build signed Dev bundle
+      - name: Build signed Prod bundle
         shell: bash
         env:
           KEYSTORE_BASE64: ${{ secrets.ANDROID_UPLOAD_KEYSTORE_BASE64 }}
-          BALMATCHUM_DEV_STORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
-          BALMATCHUM_DEV_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
-          BALMATCHUM_DEV_STORE_FILE: ${{ runner.temp }}/balmatchum-dev-upload.p12
+          BALMATCHUM_PROD_STORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          BALMATCHUM_PROD_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+          BALMATCHUM_PROD_STORE_FILE: ${{ runner.temp }}/balmatchum-prod-upload.p12
         run: |
           set +x
-          : "${KEYSTORE_BASE64:?Missing Dev keystore}"
-          : "${BALMATCHUM_DEV_STORE_PASSWORD:?Missing store password}"
-          : "${BALMATCHUM_DEV_KEY_PASSWORD:?Missing key password}"
+          : "${KEYSTORE_BASE64:?Missing Prod keystore}"
+          : "${BALMATCHUM_PROD_STORE_PASSWORD:?Missing store password}"
+          : "${BALMATCHUM_PROD_KEY_PASSWORD:?Missing key password}"
           umask 077
-          trap 'rm -f "$BALMATCHUM_DEV_STORE_FILE"' EXIT
-          printf '%s' "$KEYSTORE_BASE64" | base64 --decode > "$BALMATCHUM_DEV_STORE_FILE"
-          fvm flutter build appbundle --flavor dev --release --build-number="$VERSION_CODE"
-          jarsigner -verify build/app/outputs/bundle/devRelease/app-dev-release.aab
+          trap 'rm -f "$BALMATCHUM_PROD_STORE_FILE"' EXIT
+          printf '%s' "$KEYSTORE_BASE64" | base64 --decode > "$BALMATCHUM_PROD_STORE_FILE"
+          fvm flutter build appbundle --flavor prod --release --build-number="$VERSION_CODE"
+          jarsigner -verify build/app/outputs/bundle/prodRelease/app-prod-release.aab
       - name: Keep signed bundle
         uses: actions/upload-artifact@v4
         with:
-          name: dev-aab-${{ env.VERSION_CODE }}
-          path: build/app/outputs/bundle/devRelease/app-dev-release.aab
+          name: prod-aab-${{ env.VERSION_CODE }}
+          path: build/app/outputs/bundle/prodRelease/app-prod-release.aab
           if-no-files-found: error
           retention-days: 7
       - name: Authenticate for Play upload

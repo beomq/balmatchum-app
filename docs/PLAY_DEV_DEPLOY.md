@@ -1,79 +1,58 @@
-# Dev 내부 테스트 수동 배포
+# Play 자동 draft 업로드
 
-## 범위와 준비
+## 대상과 활성화
 
-`.github/workflows/deploy-dev.yml`은 `develop`에서 수동 실행하며 `play-dev`만
-사용한다. 대상은 `com.beomq.balmatchum.dev`의 `internal`이다. 운영 앱 배포는
-구현하지 않으며 prod release variant도 비활성이다.
+- `deploy-dev.yml`: develop push → play-dev → com.beomq.balmatchum.dev / internal.
+- `deploy-prod.yml`: main push → play-prod → com.beomq.balmatchum / internal.
+- 두 경로 모두 draft 업로드만 수행한다. 테스터 rollout, completed release와 심사 제출은
+  자동화하지 않는다. 최종 출시는 사람이 Play Console에서 별도로 결정한다.
+- 현재 구현 브랜치는 chore/cicd-validation이다. 이 브랜치 push는 Play 업로드를 하지 않는다.
+  **develop 병합은 별도 승인 필요**하며 이 작업에서 병합하지 않는다. Prod 경로도 main에
+  승인된 변경이 반영돼야 활성화된다. 검증을 위해 환경 branch trust를 확장하지 않는다.
 
-기존 로컬 Dev flavor·서명 변경을 develop 기반 작업 공간에 가져왔다. 원본 앱
-작업 공간의 미커밋 변경은 보존했다. 이후 통합할 때 같은 Dev 변경을 중복 적용하지 않는다.
+## 버전 코드 정책
 
-환경 변수:
+빌드 전에 Play의 bundles, APKs, 모든 tracks에 나타나는 최대 versionCode를 조회하고
+그 값보다 1 큰 코드를 선택한다. 재실행도 다시 조회하므로 이미 확정된 업로드 코드를
+재사용하지 않는다. 수동 recovery 입력은 조회한 최대값보다 커야 한다.
+코드는 2100000000 미만이어야 하며 한도에 도달하면 실패한다.
 
-- `GCP_WORKLOAD_IDENTITY_PROVIDER`
-- `GCP_SERVICE_ACCOUNT`
-- `ANDROID_PACKAGE_NAME` = `com.beomq.balmatchum.dev`
-- `PLAY_TRACK` = `internal`
+확인된 Dev 이력은 초기 코드 1과 run 36303845066의 draft 코드 2다.
+이 값을 다음 코드로 고정하지 않고 실행마다 Play를 조회한다. Prod의 로컬 코드 1은
+Play 업로드 이력이 아니며 다음 사용 가능 번호의 근거가 아니다.
 
-환경 Secrets:
+GitHub 실행은 앱별 concurrency로 직렬화한다. 다만 Play Console의 수동 업로드는
+이 잠금에 참여하지 않으므로 원자적 예약을 보장할 수 없다. 업로드 직전에 다시 조회해
+경쟁을 발견하면 중단한다. 그 이후 경쟁이나 과거 삭제되어 API에 보이지 않는 코드도
+Play가 중복을 거부한다. 이런 경우 현재 Console 기록을 확인한 뒤 더 큰 수동 recovery
+코드로 새 실행을 시작한다. 업로드/commit 응답 유실 때는 상태 확인 없이 재시도하지 않는다.
+모든 변경 주체를 통제하지 않고 절대적인 무충돌을 약속하지 않는다.
 
-- `ANDROID_UPLOAD_KEYSTORE_BASE64`: 첫 업로드와 같은 Dev PKCS12 키의 base64
-- `ANDROID_KEYSTORE_PASSWORD`
-- `ANDROID_KEY_PASSWORD`
+## 환경 구성
 
-alias는 Gradle에 `balmatchum-dev-upload`로 고정되어 별도 변수는 사용하지 않는다.
-기존 `staging` Secrets는 원문을 읽을 수 없으므로 로컬 원본으로 등록해야 한다.
-키·비밀번호를 문서, 채팅, Git에 넣지 않는다. `play-prod`에는 Dev 키를 등록하지 않는다.
+각 환경은 다음 공개 Variables를 사용한다: ANDROID_PACKAGE_NAME, PLAY_TRACK,
+GCP_WORKLOAD_IDENTITY_PROVIDER, GCP_SERVICE_ACCOUNT.
+서명 Secrets는 ANDROID_UPLOAD_KEYSTORE_BASE64, ANDROID_KEYSTORE_PASSWORD,
+ANDROID_KEY_PASSWORD이며 각 앱 전용 키를 사용한다. 키 원문은 출력하거나 artifact에 넣지 않는다.
 
-## 실행 절차
+리드는 Prod 변수와 전용 서명 Secret 3개 준비를 확인했다. **Prod 최초 Play 앱 등록,
+첫 바이너리 수동 등록 필요 여부, 서비스 계정 API 접근은 별도 확인 대상**이다.
+서명 빌드 성공은 Play 등록/업로드 성공이 아니다. Apple 준비 상태와도 별개다.
+2026-09-29 조사 시 원격 main 브랜치도 없었다. main 생성·통합과 Prod 최초 등록 및
+API 권한 확인이 남아 있어 Prod 경로는 준비된 구현이지 현재 운영 중인 자동화가 아니다.
 
-1. 승인 후 변경을 커밋·push하고 PR/CI를 거쳐 `develop`에 반영한다.
-   기본 브랜치 develop에 workflow가 있어야 Actions 수동 실행 버튼이 표시된다.
-2. 첫 배포와 같은 키가 `play-dev`에 등록되어 있는지 확인한다.
-3. Play Console에서 이미 사용한 가장 높은 versionCode를 확인한다.
-4. Actions → Deploy Dev to Play internal → Run workflow에서 `develop` 선택.
-5. 사용하지 않은 더 큰 `version_code`를 입력한다. 자동 증가가 아니므로 재실행에도
-   Play 등록 상태를 먼저 확인한다. 로컬 검증용 번호 2는 실제 업로드에 예약되지 않았다.
-6. `release_status=draft`로만 업로드한다. 이 상태는 테스터에게 배포되지 않는다.
-   workflow와 스크립트 모두 completed를 거부한다. 테스터 출시는 별도 승인과
-   별도 구현 범위다.
-7. Actions의 성공뿐 아니라 Play Console의 패키지·버전·트랙·상태를 확인한다.
-   draft는 설치 검증을 수행하지 않으며 이를 결과에 명시한다.
+## 실행과 복구
 
-검사 → 서명 AAB 빌드 → 7일 보관 artifact → OIDC 인증 → edit 생성 → AAB 업로드 →
-트랙 변경 → validate → commit 순서다. 토큰은 빌드가 끝난 뒤 발급한다.
-Google 서비스 계정 JSON 키는 필요 없다. 서명 파일은 임시 경로에 복원하고 종료 시 삭제한다.
-한 번에 하나의 Dev 배포만 진행하며 진행 중인 배포를 새 실행으로 취소하지 않는다.
-GitHub concurrency는 중간 대기 실행을 대체할 수 있으므로 일괄 배포 큐로 사용하지 않는다.
+검사 → OIDC 조회 토큰 → 버전 선택 → 서명 빌드 → AAB 보관 → 새 OIDC 토큰 →
+버전 재확인 → binary 업로드 → literal draft 트랙 변경 → validate → commit 순서다.
+commit은 changesNotSentForReview=true 및 ERROR_IF_IN_REVIEW를 사용한다.
+검토 중 변경을 자동 취소하거나 심사 제출로 전환하지 않는다.
 
-`SERVER_URL`은 아직 제공되지 않아 연결 버튼이 비활성인 최소 부팅 빌드다.
-이 작업은 실제 산책 기능이나 서버 연동 완료를 의미하지 않는다.
+수동 workflow_dispatch는 해당 앱의 허용 브랜치에서만 복구용으로 사용할 수 있다.
+실패 시 ref/package/track → 환경과 OIDC → Play 등록/권한 → 사용된 버전 코드 →
+서명 순으로 확인한다. 성공 로그의 정확한 versionCode와 Console draft 상태를 확인한다.
+draft 성공은 설치 또는 공개 출시 완료가 아니다.
 
-## 실패 시 확인 순서
-
-- 검사 실패: Analyze/Test 로그. 로컬 한글 경로의 Flutter 분석 오류는 원격 Linux
-  분석 통과를 대신하지 않는다. 검사를 건너뛰어 배포하지 않는다.
-- 서명 실패: play-dev의 세 Secret 존재 여부 → PKCS12 암호·alias → 기존 업로드 인증서.
-- 인증 실패: develop 선택 → play-dev 환경 → OIDC 조건 → 서비스 계정 연결·Play 권한.
-- 업로드 실패: 패키지와 versionCode 중복 → 앱 초기 등록 상태 → API 오류 본문.
-- 확정 실패: 로그의 edit ID와 Play Console 상태를 확인한다. 검토 중인 변경은
-  자동 취소하지 않는다. 네트워크 응답 유실은 실패 확정이 아니므로 자동 재시도하지 않는다.
-- draft 성공: 테스터 설치 불가는 정상이다. 내부 테스트 출시와 테스터 참여를 따로 완료한다.
-
-## 옆 pane 배포 검증 전달문
-
-Dev 배포 테스트만 수행한다. 먼저 사용자 승인된 커밋·push·develop 통합 여부와
-play-dev의 서명 Secrets를 확인한다. 이 문서와 workflow를 읽고 실제 실행 전
-Play의 최대 versionCode 및 초기 출시 상태를 확인한다. 운영 앱·play-prod·main은
-수정하지 않는다. 첫 실행은 draft 업로드 검증으로 제한하고, completed 출시는
-사용자와 범위를 확인한다. 결과에는 Actions URL, 커밋 SHA, versionCode,
-패키지, internal 트랙 상태, AAB 인증서 확인 결과와 설치 검증 여부를 남긴다.
-실패 시 요청을 반복하기 전에 edit ID와 Play 반영 여부를 확인한다.
-
-## 공식 근거
-
-- https://github.com/google-github-actions/auth : service account WIF, access_token_scopes
-- https://developers.google.com/android-publisher/api-ref/rest/v3/edits.bundles/upload
-- https://developers.google.com/android-publisher/api-ref/rest/v3/edits.tracks/update
+공식 근거:
 - https://developers.google.com/android-publisher/api-ref/rest/v3/edits/commit
+- https://developers.google.com/android-publisher/tracks

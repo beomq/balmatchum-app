@@ -14,6 +14,8 @@ jobs:
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
+      - name: Test Play draft upload contract
+        run: bash tool/test_upload_play.sh
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
