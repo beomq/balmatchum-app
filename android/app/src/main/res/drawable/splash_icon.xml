@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Android scales this drawable to its icon box; retain transparent safe-area padding. -->
+<bitmap xmlns:android="http://schemas.android.com/apk/res/android"
+    android:src="@drawable/branding_splash_safe"
+    android:gravity="fill" />

@@ -1,0 +1,7 @@
+// Explicit opt-in: xcodebuild -xcconfig ios/Signing/ProdArchive.xcconfig.
+// Shared development configurations remain unchanged.
+CODE_SIGN_STYLE = Manual
+DEVELOPMENT_TEAM = Q4E6NKD9VN
+CODE_SIGN_IDENTITY = Apple Distribution
+PROVISIONING_PROFILE_SPECIFIER[sdk=iphoneos*] = Balmatchum AppStore
+PROVISIONING_PROFILE_SPECIFIER[sdk=watchos*] = Balmatchum Watch AppStore

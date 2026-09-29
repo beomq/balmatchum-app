@@ -41,6 +41,13 @@ android {
             keyAlias = "balmatchum-dev-upload"
             keyPassword = providers.environmentVariable("BALMATCHUM_DEV_KEY_PASSWORD").orNull
         }
+        create("prodUpload") {
+            storeType = "PKCS12"
+            storeFile = providers.environmentVariable("BALMATCHUM_PROD_STORE_FILE").orNull?.let { file(it) }
+            storePassword = providers.environmentVariable("BALMATCHUM_PROD_STORE_PASSWORD").orNull
+            keyAlias = "balmatchum-prod-upload"
+            keyPassword = providers.environmentVariable("BALMATCHUM_PROD_KEY_PASSWORD").orNull
+        }
     }
 
     flavorDimensions += "environment"
@@ -54,14 +61,8 @@ android {
         create("prod") {
             dimension = "environment"
             resValue("string", "app_name", "발맞춤")
+            signingConfig = signingConfigs.getByName("prodUpload")
         }
-    }
-}
-
-// Production release needs a separately approved key/configuration. Never use the Dev key.
-androidComponents {
-    beforeVariants(selector().withFlavor("environment" to "prod").withBuildType("release")) {
-        it.enable = false
     }
 }
 
@@ -82,6 +83,25 @@ val validateDevSigning by tasks.registering {
 
 tasks.matching { it.name == "preDevReleaseBuild" }.configureEach {
     dependsOn(validateDevSigning)
+}
+
+val validateProdSigning by tasks.registering {
+    doLast {
+        val required = listOf(
+            "BALMATCHUM_PROD_STORE_FILE",
+            "BALMATCHUM_PROD_STORE_PASSWORD",
+            "BALMATCHUM_PROD_KEY_PASSWORD",
+        )
+        check(required.all { !providers.environmentVariable(it).orNull.isNullOrBlank() }) {
+            "Prod release requires BALMATCHUM_PROD_STORE_FILE, BALMATCHUM_PROD_STORE_PASSWORD and BALMATCHUM_PROD_KEY_PASSWORD."
+        }
+        val store = file(providers.environmentVariable("BALMATCHUM_PROD_STORE_FILE").get())
+        check(store.isAbsolute && store.isFile) { "Prod signing requires an existing keystore file." }
+    }
+}
+
+tasks.matching { it.name == "preProdReleaseBuild" }.configureEach {
+    dependsOn(validateProdSigning)
 }
 
 kotlin {
