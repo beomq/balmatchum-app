@@ -11,6 +11,23 @@
 
 ## deploy key 검증 범위
 
+### 후속 실제 CI 진단
+
+- 후속 자동 실행 `36567264501`도 SHA `afa0f4b421244be710cff2a2e80a75d16ab3f4e6`에서 성공했다. 기존 build `1.0.0`을 조회해 `1.0.1`로 증가했고 App Store Connect 업로드 수락을 확인했다. IPA SHA-256 `24b28a743d044d7a1997b52c7b86e5fe4f65a9037b3a008ad5161d21bebd90a9`. 이 후속 빌드의 processingState는 별도 미확인이며 앞선 `1.0.0`의 VALID 결과로 대체하지 않는다.
+
+- **Dev 자동 업로드 및 ASC 처리 확인:** `develop`의 `4c63bd892e06da56585d8a83142bba4443784ab5`, 실행 `36565189816` 성공. Dev IPA SHA-256 `b157f1d4141a1d35cd7abf8b097588bfb0ab1dd86cd2b81eeecb8a167a0540ed`, build `1.0.0`. ASC build ID `3bcc2c57-c2a9-45aa-be0f-db151b81d412`, processingState `VALID`, expired=false를 담당자가 GET으로 확인했다. 앱 betaGroups, 빌드 betaGroups, individualTesters 모두 0개다. 내부·외부 beta 상태는 `MISSING_EXPORT_COMPLIANCE`이며 아직 테스트 가능 상태가 아니다. `autoNotifyEnabled=true`이므로 향후 수출 규정 입력·테스터 연결 전에 재확인이 필요하다. 현재 업로드 코드는 새 그룹이 생기면 실패한다. Prod 업로드 및 main 반영은 하지 않았다.
+
+- **Hosted Dev·Prod 서명 검증 통과:** 실행 `36562673588`, attempt 3, 앱 SHA `4c63bd892e06da56585d8a83142bba4443784ab5`. 두 작업 모두 match identity 설치 및 archive/IPA 검증 sentinel을 출력하고 성공했다. 두 대상 build `1.0.0`, `DELIVERY_MODE=verify`이며 업로드 실행 증거는 아니다.
+- Prod IPA SHA-256: `56e641e1d24ec934c26d56ab9e85a8d9d6a755de68d27574917f69bb8fa410a9`.
+- Dev IPA SHA-256: `1912d3cd0268f94cfed72f71e7a187923eef2a2adf062d7a1ae55baca30b49e5`.
+
+- 최초 hosted 실행에서 Prod bundle 검색이 Dev까지 반환해 정확한 bundleId 필터를 추가했다. 앱 ID 검증과 중복·누락 거절은 유지한다.
+- CI SSH 파일 끝 개행 누락을 로컬 ssh-keygen으로 재현하고 복원했다. 새 read-only deploy key ID `164810680`으로 실제 ls-remote를 검증했다. 기존 key는 삭제하지 않았다.
+- bootstrap은 암호 파일에 `.strip`을 적용하므로 CI MATCH_PASSWORD도 동일하게 정규화해 재등록했다. 이후 Dev·Prod 모두 clone과 복호화에 성공했다.
+- OpenSSL PKCS12 parse 성공만으로 macOS import를 보장할 수 없었다. hosted에서 MAC verification 실패를 확인해 기존 키·인증서를 macOS native export로 재포장했다. 서명 저장소 `545b028c079eb91982a1490703eb72b66a8d2d7e`는 암호화 P12 한 파일만 변경한다. 담당자는 암호화 전·재복호화 후·원격 clone 후 임시 keychain import와 예상 identity 확인을 통과했다. 새 자료의 hosted archive/export 결과는 실행 `36562673588` 재시도에서 별도로 확인한다.
+
+아래 최초 준비 기록은 당시 상태이며, 위 후속 검증과 구분한다.
+
 GitHub deploy key ID `164494925`, 제목 `balmatchum-app-staging-match-readonly`, `read_only=true`를 API로 확인했다. 하지만 해당 private key는 GitHub Secret에만 있고 로컬 SSH agent는 identity 0개다. 따라서 **그 CI key로 실제 clone/decrypt/import한 증거는 아직 없다**. GitHub API 사용자 인증으로 원격 blob을 검증한 것과 deploy key 접근을 혼동하지 않는다.
 
 리드가 staging MATCH_PASSWORD를 이번 로컬 파일에서 동기화했다고 전달했다. 값은 조회하지 않았다. 다음 hosted verify 실행이 MATCH_GIT_PRIVATE_KEY clone → MATCH_PASSWORD 복호화 → 임시 keychain import → 실제 signed archive/export까지 증명하는 최초 단계다.

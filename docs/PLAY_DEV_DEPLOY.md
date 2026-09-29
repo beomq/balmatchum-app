@@ -7,11 +7,18 @@
 - 두 경로 모두 draft 업로드만 수행한다. 테스터 rollout과 completed release는
   자동화하지 않는다. 사용자가 2026-09-29 Google의 자동 심사 처리는 허용했다.
   최종 출시는 사람이 Play Console에서 별도로 결정한다.
-- 현재 구현 브랜치는 chore/cicd-validation이다. 이 브랜치 push는 Play 업로드를 하지 않는다.
-  **develop 병합은 별도 승인 필요**하며 이 작업에서 병합하지 않는다. Prod 경로도 main에
-  승인된 변경이 반영돼야 활성화된다. 검증을 위해 환경 branch trust를 확장하지 않는다.
+- 구현·검증 브랜치는 chore/cicd-validation이며 이 브랜치 push는 Play 업로드를 하지 않는다.
+  사용자가 develop 반영과 Dev 자동 업로드를 승인해 활성화했다. 심사 보류 옵션 거절 이후
+  자동 심사 허용 수정의 실제 draft 저장은 별도 검증 중이다. Prod는 main에 승인된 변경이
+  반영돼야 활성화된다. main 생성·통합은 하지 않았고 환경 branch trust도 확장하지 않았다.
 
 ## 버전 코드 정책
+
+2026-09-29 실제 자동 실행 `36567264490`이 앱 SHA
+`afa0f4b421244be710cff2a2e80a75d16ab3f4e6`에서 성공했다.
+Play 최대 코드 2를 조회해 Dev versionCode 3을 빌드했고, internal 트랙의
+status=draft 응답 및 commit 성공을 확인했다. 테스터 rollout·최종 공개는 하지 않았다.
+이는 Dev 업로드 증거이며 Prod 등록·업로드 증거가 아니다.
 
 빌드 전에 Play의 bundles, APKs, 모든 tracks에 나타나는 최대 versionCode를 조회하고
 그 값보다 1 큰 코드를 선택한다. 재실행도 다시 조회하므로 이미 확정된 업로드 코드를
