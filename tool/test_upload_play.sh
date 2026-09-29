@@ -175,10 +175,10 @@ assert_request '
 '
 assert_request '
   .method == "POST"
-  and (.url | endswith(":commit?changesNotSentForReview=true&changesInReviewBehavior=ERROR_IF_IN_REVIEW"))
+  and (.url | endswith(":commit?changesInReviewBehavior=ERROR_IF_IN_REVIEW"))
 '
 assert_no_request '.method == "DELETE"'
-printf 'ok - upload uses literal draft and no-review commit controls\n'
+printf 'ok - upload uses literal draft and preserves existing reviews\n'
 
 new_case
 mkdir -p "$case_dir/build/app/outputs/bundle/devRelease"

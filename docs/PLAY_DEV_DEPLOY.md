@@ -4,8 +4,9 @@
 
 - `deploy-dev.yml`: develop push → play-dev → com.beomq.balmatchum.dev / internal.
 - `deploy-prod.yml`: main push → play-prod → com.beomq.balmatchum / internal.
-- 두 경로 모두 draft 업로드만 수행한다. 테스터 rollout, completed release와 심사 제출은
-  자동화하지 않는다. 최종 출시는 사람이 Play Console에서 별도로 결정한다.
+- 두 경로 모두 draft 업로드만 수행한다. 테스터 rollout과 completed release는
+  자동화하지 않는다. 사용자가 2026-09-29 Google의 자동 심사 처리는 허용했다.
+  최종 출시는 사람이 Play Console에서 별도로 결정한다.
 - 현재 구현 브랜치는 chore/cicd-validation이다. 이 브랜치 push는 Play 업로드를 하지 않는다.
   **develop 병합은 별도 승인 필요**하며 이 작업에서 병합하지 않는다. Prod 경로도 main에
   승인된 변경이 반영돼야 활성화된다. 검증을 위해 환경 branch trust를 확장하지 않는다.
@@ -45,8 +46,11 @@ API 권한 확인이 남아 있어 Prod 경로는 준비된 구현이지 현재 
 
 검사 → OIDC 조회 토큰 → 버전 선택 → 서명 빌드 → AAB 보관 → 새 OIDC 토큰 →
 버전 재확인 → binary 업로드 → literal draft 트랙 변경 → validate → commit 순서다.
-commit은 changesNotSentForReview=true 및 ERROR_IF_IN_REVIEW를 사용한다.
-검토 중 변경을 자동 취소하거나 심사 제출로 전환하지 않는다.
+현재 앱에서 changesNotSentForReview=true는 HTTP 400으로 거절된다. 사용자 승인으로
+이 옵션은 제거하고 ERROR_IF_IN_REVIEW를 유지한다. Google 자동 심사는 허용하되
+기존 심사를 취소하지 않고, release status는 항상 draft로 고정한다.
+validate 응답이 60초를 초과한 실제 실패에 따라 해당 요청만 최대 300초를 허용한다.
+자동 재시도는 하지 않는다.
 
 수동 workflow_dispatch는 해당 앱의 허용 브랜치에서만 복구용으로 사용할 수 있다.
 실패 시 ref/package/track → 환경과 OIDC → Play 등록/권한 → 사용된 버전 코드 →
