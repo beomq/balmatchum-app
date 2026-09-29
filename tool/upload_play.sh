@@ -155,10 +155,13 @@ current_max=$(read_max_version_code)
   die "VERSION_CODE $VERSION_CODE is no longer above Play maximum $current_max"
 
 # Do not retry this write automatically: a lost response does not prove failure.
-upload=$(curl --fail-with-body --silent --show-error --max-time 300 \
+if ! upload=$(curl --fail-with-body --silent --show-error --max-time 300 \
   -H "$auth" -H 'Content-Type: application/octet-stream' \
   --data-binary "@$bundle" \
-  "$upload_base/edits/$edit_id/bundles?uploadType=media")
+  "$upload_base/edits/$edit_id/bundles?uploadType=media"); then
+  jq -r '.error | {code, status, message}' <<< "$upload" >&2
+  die 'bundle upload failed; edit will be discarded'
+fi
 jq -e --argjson expected "$VERSION_CODE" \
   '.versionCode == $expected' <<< "$upload" >/dev/null
 
