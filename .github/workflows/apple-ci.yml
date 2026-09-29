@@ -1,0 +1,88 @@
+name: Apple compile checks
+
+on:
+  push:
+    branches: [chore/cicd-validation]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  compile:
+    runs-on: macos-15
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - environment: prod
+            scheme: Runner
+            configuration: Release
+            bundle: com.beomq.balmatchum
+          - environment: dev
+            scheme: dev
+            configuration: Release-dev
+            bundle: com.beomq.balmatchum.dev
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_26.3.app/Contents/Developer
+      APP_ENVIRONMENT: ${{ matrix.environment }}
+      APP_SCHEME: ${{ matrix.scheme }}
+      APP_CONFIGURATION: ${{ matrix.configuration }}
+      APP_BUNDLE: ${{ matrix.bundle }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Verify hosted Xcode and SDKs
+        run: |
+          xcodebuild -version
+          test "$(xcodebuild -version | awk 'NR == 1 {print $2}')" = 26.3
+          test "$(xcrun --sdk iphoneos --show-sdk-version)" = 26.2
+          test "$(xcrun --sdk watchos --show-sdk-version)" = 26.2
+          xcodebuild -showsdks
+      - name: Read pinned Flutter version
+        id: sdk
+        run: echo "version=$(jq -er .flutter .fvmrc)" >> "$GITHUB_OUTPUT"
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ steps.sdk.outputs.version }}
+          channel: stable
+          cache: true
+      - name: Install FVM and select project SDK
+        env:
+          FLUTTER_VERSION: ${{ steps.sdk.outputs.version }}
+        run: |
+          dart pub global activate fvm 4.0.1
+          fvm use "$FLUTTER_VERSION" --force --skip-pub-get
+          fvm flutter --version
+      - name: Resolve locked dependencies
+        run: fvm flutter pub get --enforce-lockfile
+      - name: Prepare Flutter release configuration
+        run: |
+          if [ "$APP_ENVIRONMENT" = dev ]; then
+            fvm flutter build ios --release --flavor dev --config-only --no-codesign --no-pub
+          else
+            fvm flutter build ios --release --config-only --no-codesign --no-pub
+          fi
+      - name: Compile iOS and embedded watch without signing
+        run: |
+          xcodebuild -workspace ios/Runner.xcworkspace \
+            -scheme "$APP_SCHEME" -configuration "$APP_CONFIGURATION" \
+            -destination 'generic/platform=iOS' \
+            -derivedDataPath "$RUNNER_TEMP/apple-build" \
+            CODE_SIGNING_ALLOWED=NO build
+      - name: Verify embedded watch and shared versions
+        run: |
+          app="$RUNNER_TEMP/apple-build/Build/Products/$APP_CONFIGURATION-iphoneos/Runner.app"
+          watch="$app/Watch/BalmatchumWatch.app"
+          test -f "$app/Runner"
+          test -f "$watch/BalmatchumWatch"
+          test -f "$watch/Assets.car"
+          test "$(plutil -extract CFBundleIdentifier raw "$app/Info.plist")" = "$APP_BUNDLE"
+          test "$(plutil -extract CFBundleIdentifier raw "$watch/Info.plist")" = "$APP_BUNDLE.watchkitapp"
+          test "$(plutil -extract WKCompanionAppBundleIdentifier raw "$watch/Info.plist")" = "$APP_BUNDLE"
+          for key in CFBundleShortVersionString CFBundleVersion; do
+            test "$(plutil -extract "$key" raw "$app/Info.plist")" = "$(plutil -extract "$key" raw "$watch/Info.plist")"
+          done

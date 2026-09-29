@@ -21,6 +21,8 @@ coverage/
 *.jks
 *.keystore
 *.p12
+*.pfx
+keystore-password.txt
 gha-creds-*.json
 key.properties
 local.properties
