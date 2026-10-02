@@ -17,4 +17,14 @@ class AppleDeliveryTargetTest < Minitest::Test
     AppleDeliveryTarget.verify!(target: 'dev', mode: 'verify', ref: 'refs/heads/chore/cicd-validation')
     assert_raises(RuntimeError) { AppleDeliveryTarget.verify!(target: 'dev', mode: 'verify', ref: 'refs/heads/other') }
   end
+
+  def test_manual_prod_validation_requires_all_conditions
+    args = { target: 'prod', mode: 'upload', ref: 'refs/heads/chore/cicd-validation',
+      event: 'workflow_dispatch', validation_upload: true }
+    assert_nil AppleDeliveryTarget.verify!(**args)
+    [{ target: 'dev' }, { event: 'push' }, { event: nil },
+      { validation_upload: false }, { ref: 'refs/heads/other' }].each do |change|
+      assert_raises(RuntimeError) { AppleDeliveryTarget.verify!(**args.merge(change)) }
+    end
+  end
 end

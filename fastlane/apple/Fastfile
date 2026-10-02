@@ -10,7 +10,8 @@ platform :ios do
   lane :upload_only do |options|
     target = options[:target]
     mode = options[:mode]
-    AppleDeliveryTarget.verify!(target: target, mode: mode, ref: ENV.fetch('GITHUB_REF'))
+    AppleDeliveryTarget.verify!(target: target, mode: mode, ref: ENV.fetch('GITHUB_REF'),
+      event: ENV['GITHUB_EVENT_NAME'], validation_upload: ENV['PROD_VALIDATION_UPLOAD'] == 'true')
     UI.user_error!('mode must be verify or upload') unless %w[verify upload].include?(mode)
     UI.user_error!('target must be dev or prod') unless %w[dev prod].include?(target)
     config = target == 'dev' ? 'Dev' : 'Prod'
