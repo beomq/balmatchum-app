@@ -20,7 +20,8 @@ private func ack(_ stage: String, context: String = "A", id: String = recordID) 
     #expect(!state.apply(try snapshot()))
     state.activate(contextId: "A")
     #expect(state.apply(try snapshot("A", 2)))
-    #expect(!state.apply(try snapshot("A", 1)))
+    let staleAccepted = state.apply(try snapshot("A", 1))
+    #expect(!staleAccepted)
     #expect(!state.apply(try snapshot("A", 2)))
     #expect(!state.apply(try snapshot("B", 99)))
     state.activate(contextId: "B")
@@ -47,6 +48,33 @@ private func ack(_ stage: String, context: String = "A", id: String = recordID) 
     }
 }
 
+@Test func explicitNullAndSignedOutBoundary() throws {
+    let value = try snapshot()
+    let encoded = try JSONEncoder().encode(value)
+    let object = try JSONSerialization.jsonObject(with: encoded) as! [String: Any]
+    #expect(object["selectedDog"] is NSNull)
+    #expect(object["dailySteps"] is NSNull)
+    var missing = object
+    missing.removeValue(forKey: "dailySteps")
+    #expect(throws: (any Error).self) {
+        try DisplaySnapshot.decode(JSONSerialization.data(withJSONObject: missing))
+    }
+    var state = DisplayState()
+    state.activate(contextId: "A")
+    #expect(state.apply(try snapshot("A", 2)))
+    state.activate(contextId: "A")
+    #expect(!state.apply(try snapshot("A", 1)))
+    let signedOut = try DisplaySnapshot.decode(data("""
+    {"schemaVersion":1,"contextId":"A","revision":3,"authState":"signedOut","selectedDog":null,"dailySteps":null}
+    """))
+    let logoutAccepted = state.apply(signedOut)
+    #expect(logoutAccepted)
+    #expect(state.snapshot == nil)
+    #expect(state.contextId == nil)
+    let afterLogoutAccepted = state.apply(try snapshot("A", 4))
+    #expect(!afterLogoutAccepted)
+}
+
 @Test func acknowledgementMonotonicAndScoped() throws {
     var state = AcknowledgementState(contextId: "A", recordId: recordID)
     #expect(state.stage == .transferQueued)
@@ -71,6 +99,21 @@ private func ack(_ stage: String, context: String = "A", id: String = recordID) 
                 json.replacingOccurrences(of: "01:00:30", with: "02:00:00"),
                 json.replacingOccurrences(of: "\"horizontalAccuracyMeters\":5", with: "\"horizontalAccuracyMeters\":-1")] {
         #expect(throws: (any Error).self) { try GPSRecord.decode(data(bad)) }
+    }
+}
+
+@Test func gpsTimestampIntervalAndOrder() throws {
+    func record(_ times: [String]) throws -> GPSRecord {
+        let points = times.map {
+            "{\"latitude\":37.5,\"longitude\":127,\"horizontalAccuracyMeters\":5,\"recordedAt\":\"2026-10-09T\($0)Z\"}"
+        }.joined(separator: ",")
+        return try GPSRecord.decode(data("""
+        {"schemaVersion":1,"kind":"gpsRecord","contextId":"A","recordId":"\(recordID)","startedAt":"2026-10-09T01:00:00Z","endedAt":"2026-10-09T01:01:00Z","payload":{"points":[\(points)]}}
+        """))
+    }
+    #expect(try record(["01:00:00", "01:00:30", "01:00:30", "01:01:00"]).payload.points.count == 4)
+    for times in [["00:59:59"], ["01:01:01"], ["01:00:30", "01:00:29"]] {
+        #expect(throws: ContractError.self) { try record(times) }
     }
 }
 

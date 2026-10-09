@@ -10,6 +10,16 @@ public struct DisplaySnapshot: Codable, Equatable, Sendable {
     public let selectedDog: Dog?
     public let dailySteps: Steps?
 
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(schemaVersion, forKey: .schemaVersion)
+        try container.encode(contextId, forKey: .contextId)
+        try container.encode(revision, forKey: .revision)
+        try container.encode(authState, forKey: .authState)
+        try container.encode(selectedDog, forKey: .selectedDog)
+        try container.encode(dailySteps, forKey: .dailySteps)
+    }
+
     public enum AuthState: String, Codable, Sendable { case authenticated, signedOut }
     public struct Dog: Codable, Equatable, Sendable {
         public let dogId: String
@@ -24,6 +34,10 @@ public struct DisplaySnapshot: Codable, Equatable, Sendable {
     }
 
     public static func decode(_ data: Data) throws -> Self {
+        guard let object = try JSONSerialization.jsonObject(with: data) as? [String: Any],
+              object.keys.contains("selectedDog"), object.keys.contains("dailySteps") else {
+            throw ContractError.invalidPayload
+        }
         let value = try JSONDecoder().decode(Self.self, from: data)
         guard value.schemaVersion == 1, !value.contextId.isEmpty, value.revision >= 0 else {
             throw ContractError.invalidPayload
@@ -122,11 +136,16 @@ public struct DisplayState {
     public init() {}
     // Called only by the trusted iPhone authentication boundary, not incoming snapshots.
     public mutating func activate(contextId: String?) {
+        guard self.contextId != contextId else { return }
         self.contextId = contextId
         snapshot = nil
     }
     @discardableResult public mutating func apply(_ incoming: DisplaySnapshot) -> Bool {
         guard incoming.contextId == contextId, incoming.revision > (snapshot?.revision ?? -1) else { return false }
+        if incoming.authState == .signedOut {
+            activate(contextId: nil)
+            return true
+        }
         snapshot = incoming
         return true
     }
