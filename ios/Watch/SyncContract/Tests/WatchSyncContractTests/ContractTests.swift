@@ -89,6 +89,8 @@ private func ack(_ stage: String, context: String = "A", id: String = recordID) 
 }
 
 @Test func gpsBoundaryAndRoundtrip() throws {
+    #expect(!validRecordID("12345678-1234-1234-1234-123456789abc"))
+    #expect(validRecordID("12345678-1234-4234-8234-123456789abc"))
     let json = """
     {"schemaVersion":1,"kind":"gpsRecord","contextId":"A","recordId":"\(recordID)","startedAt":"2026-10-09T01:00:00Z","endedAt":"2026-10-09T01:01:00Z","payload":{"points":[{"latitude":37.5,"longitude":127,"horizontalAccuracyMeters":5,"recordedAt":"2026-10-09T01:00:30Z"}]}}
     """

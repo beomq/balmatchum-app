@@ -73,6 +73,10 @@ func utcDate(_ value: String) -> Date? {
     return formatter.date(from: value)
 }
 
+func validRecordID(_ value: String) -> Bool {
+    value.range(of: "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$", options: .regularExpression) != nil
+}
+
 public struct GPSRecord: Codable, Equatable, Sendable {
     public let schemaVersion: Int
     public let kind: String
@@ -91,7 +95,7 @@ public struct GPSRecord: Codable, Equatable, Sendable {
     public static func decode(_ data: Data) throws -> Self {
         let value = try JSONDecoder().decode(Self.self, from: data)
         guard value.schemaVersion == 1, value.kind == "gpsRecord", !value.contextId.isEmpty,
-              UUID(uuidString: value.recordId) != nil,
+              validRecordID(value.recordId),
               let start = utcDate(value.startedAt), let end = utcDate(value.endedAt), end >= start else {
             throw ContractError.invalidPayload
         }
@@ -123,7 +127,7 @@ public struct Acknowledgement: Codable, Equatable, Sendable {
     }
     public static func decode(_ data: Data) throws -> Self {
         let value = try JSONDecoder().decode(Self.self, from: data)
-        guard value.schemaVersion == 1, !value.contextId.isEmpty, UUID(uuidString: value.recordId) != nil else {
+        guard value.schemaVersion == 1, !value.contextId.isEmpty, validRecordID(value.recordId) else {
             throw ContractError.invalidPayload
         }
         return value
