@@ -80,6 +80,8 @@ void main() {
       {'horizontalAccuracyMeters': -1},
       {'latitude': '37'},
       {'recordedAt': 'invalid'},
+      {'recordedAt': '2026-10-09T00:59:59Z'},
+      {'recordedAt': '2026-10-09T01:02:01Z'},
     ]) {
       final json = fixture('record');
       final points = (json['payload']! as JsonObject)['points']! as List;
@@ -96,6 +98,15 @@ void main() {
       () => GpsRecord.fromJson(fixture('record')..['recordId'] = 'not-uuid'),
       throwsFormatException,
     );
+  });
+
+  test('GPS point order is nondecreasing within the record interval', () {
+    final json = fixture('record');
+    final points = (json['payload']! as JsonObject)['points']! as List;
+    points.add({...points.first as JsonObject});
+    expect(() => GpsRecord.fromJson(json), returnsNormally);
+    (points.last as JsonObject)['recordedAt'] = '2026-10-09T01:00:30Z';
+    expect(() => GpsRecord.fromJson(json), throwsFormatException);
   });
 
   test('context requires explicit activation; revisions cannot regress', () {
@@ -130,6 +141,12 @@ void main() {
   });
 
   test('signed out clears state and does not adopt a following context', () {
+    expect(
+      () => DisplaySnapshot.fromJson(
+        fixture('snapshot')..['authState'] = 'signedOut',
+      ),
+      throwsFormatException,
+    );
     final state = WatchContractState()..activateContext('test-context-a');
     state.acceptSnapshot(DisplaySnapshot.fromJson(fixture('snapshot')));
     final json = fixture('snapshot')
@@ -154,6 +171,17 @@ void main() {
       final ack = RecordAcknowledgement.fromJson(fixture('ack'));
       expect(state.acceptAcknowledgement(ack), isFalse);
       state.activateContext(ack.contextId);
+      expect(
+        state.acceptAcknowledgement(
+          RecordAcknowledgement.fromJson(
+            fixture('ack')
+              ..['stage'] = 'serverSaved'
+              ..['errorCode'] = 'storageFailed',
+          ),
+        ),
+        isFalse,
+      );
+      expect(state.acknowledgementFor(ack.recordId), isNull);
       expect(state.acceptAcknowledgement(ack), isTrue);
       expect(state.acceptAcknowledgement(ack), isTrue);
       expect(

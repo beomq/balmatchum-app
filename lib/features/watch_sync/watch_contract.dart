@@ -53,6 +53,10 @@ class DisplaySnapshot extends WatchMessage {
       _integer(steps, 'count');
       _utc(steps, 'observedAt');
     }
+    if (json['authState'] == 'signedOut' &&
+        (json['selectedDog'] != null || json['dailySteps'] != null)) {
+      throw const FormatException('Signed out snapshot contains display data');
+    }
     return DisplaySnapshot._(jsonEncode(json));
   }
 
@@ -75,12 +79,19 @@ class GpsRecord extends WatchMessage {
     final payload = _object(json['payload']);
     final points = payload['points'];
     if (points is! List) throw const FormatException('Invalid points');
+    DateTime? previous;
     for (final value in points) {
       final point = _object(value);
       _number(point, 'latitude', -90, 90);
       _number(point, 'longitude', -180, 180);
       _number(point, 'horizontalAccuracyMeters', 0, double.maxFinite);
-      _utc(point, 'recordedAt');
+      final recordedAt = _utc(point, 'recordedAt');
+      if (recordedAt.isBefore(start) ||
+          recordedAt.isAfter(end) ||
+          (previous != null && recordedAt.isBefore(previous))) {
+        throw const FormatException('Invalid point interval/order');
+      }
+      previous = recordedAt;
     }
     return GpsRecord._(jsonEncode(json));
   }
@@ -144,7 +155,9 @@ class WatchContractState {
   AckStage? acknowledgementFor(String recordId) => _acknowledgements[recordId];
 
   bool acceptAcknowledgement(RecordAcknowledgement ack) {
-    if (ack.contextId != _activeContext) return false;
+    if (ack.contextId != _activeContext ||
+        ack.toJson().containsKey('errorCode'))
+      return false;
     final previous = _acknowledgements[ack.recordId];
     if (previous != null && ack.stage.index < previous.index) return false;
     _acknowledgements[ack.recordId] = ack.stage;
