@@ -98,6 +98,12 @@ void main() {
       () => GpsRecord.fromJson(fixture('record')..['recordId'] = 'not-uuid'),
       throwsFormatException,
     );
+    expect(
+      () => GpsRecord.fromJson(
+        fixture('record')..['recordId'] = '12345678-1234-1234-1234-123456789abc',
+      ),
+      throwsFormatException,
+    );
   });
 
   test('GPS point order is nondecreasing within the record interval', () {
@@ -202,7 +208,7 @@ void main() {
         isTrue,
       );
       final other = fixture('ack')
-        ..['recordId'] = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa'
+        ..['recordId'] = 'aaaaaaaa-aaaa-4aaa-aaaa-aaaaaaaaaaaa'
         ..['stage'] = 'transferQueued';
       expect(
         state.acceptAcknowledgement(RecordAcknowledgement.fromJson(other)),
