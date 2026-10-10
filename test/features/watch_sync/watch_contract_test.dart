@@ -100,7 +100,8 @@ void main() {
     );
     expect(
       () => GpsRecord.fromJson(
-        fixture('record')..['recordId'] = '12345678-1234-1234-1234-123456789abc',
+        fixture('record')
+          ..['recordId'] = '12345678-1234-1234-1234-123456789abc',
       ),
       throwsFormatException,
     );
