@@ -156,8 +156,9 @@ class WatchContractState {
 
   bool acceptAcknowledgement(RecordAcknowledgement ack) {
     if (ack.contextId != _activeContext ||
-        ack.toJson().containsKey('errorCode'))
+        ack.toJson().containsKey('errorCode')) {
       return false;
+    }
     final previous = _acknowledgements[ack.recordId];
     if (previous != null && ack.stage.index < previous.index) return false;
     _acknowledgements[ack.recordId] = ack.stage;
