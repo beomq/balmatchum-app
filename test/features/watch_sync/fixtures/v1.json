@@ -1,0 +1,25 @@
+{
+  "snapshot": {
+    "schemaVersion": 1,
+    "contextId": "test-context-a",
+    "revision": 2,
+    "authState": "authenticated",
+    "selectedDog": {"dogId": "test-dog", "displayName": "Bori", "assetKey": "dog.preview.shih-tzu"},
+    "dailySteps": {"date": "2026-10-09", "timeZone": "Asia/Seoul", "count": 0, "observedAt": "2026-10-09T01:02:03Z"}
+  },
+  "record": {
+    "schemaVersion": 1,
+    "contextId": "test-context-a",
+    "kind": "gpsRecord",
+    "recordId": "12345678-1234-4234-8234-123456789abc",
+    "startedAt": "2026-10-09T01:00:00Z",
+    "endedAt": "2026-10-09T01:02:00Z",
+    "payload": {"points": [{"latitude": 37.5, "longitude": 127.0, "horizontalAccuracyMeters": 5, "recordedAt": "2026-10-09T01:01:00Z"}]}
+  },
+  "ack": {
+    "schemaVersion": 1,
+    "contextId": "test-context-a",
+    "recordId": "12345678-1234-4234-8234-123456789abc",
+    "stage": "phoneReceived"
+  }
+}
