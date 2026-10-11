@@ -1,6 +1,6 @@
 import 'package:balmatchum_app/app/app.dart';
 import 'package:balmatchum_app/app/router.dart';
-import 'package:balmatchum_app/features/bootstrap/presentation/bootstrap_screen.dart';
+import 'package:balmatchum_app/features/auth/sign_in_screen.dart';
 import 'package:balmatchum_app/main.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -25,7 +25,7 @@ void main() {
     final app = tester.widget<BalmatchumApp>(find.byType(BalmatchumApp));
     expect(app.router, same(router));
     expect(router.routeInformationProvider.value.uri.path, '/');
-    expect(find.byType(BootstrapScreen), findsOneWidget);
+    expect(find.byType(SignInScreen), findsOneWidget);
     expect(find.byType(SafeArea), findsOneWidget);
     expect(tester.takeException(), isNull);
 
