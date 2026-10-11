@@ -306,6 +306,14 @@ packages:
     description: flutter
     source: sdk
     version: "0.0.0"
+  social_signin_kit:
+    dependency: "direct main"
+    description:
+      name: social_signin_kit
+      sha256: ef48bb2b94464400aebd97f04deef954637303d6c0988748f82e15c38ce8a768
+      url: "https://pub.dev"
+    source: hosted
+    version: "0.1.1"
   source_span:
     dependency: transitive
     description:

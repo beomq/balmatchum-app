@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:balmatchum_app/app/dependencies.dart';
+import 'package:balmatchum_app/app/router.dart';
 import 'package:balmatchum_app/main.dart';
 import 'package:balmatchum_client/balmatchum_client.dart';
 import 'package:flutter/material.dart';
@@ -24,6 +25,10 @@ void main() {
         child: const AppBootstrap(),
       ),
     );
+    await tester.pumpAndSettle();
+    ProviderScope.containerOf(tester.element(find.byType(AppBootstrap)))
+        .read(routerProvider)
+        .go('/greeting');
     await tester.pumpAndSettle();
     expect(names, isEmpty);
 
@@ -71,6 +76,10 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
+    ProviderScope.containerOf(tester.element(find.byType(AppBootstrap)))
+        .read(routerProvider)
+        .go('/greeting');
+    await tester.pumpAndSettle();
     final button = find.byKey(const ValueKey('bootstrap_check_connection'));
     await tester.tap(button);
     await tester.pumpAndSettle();
@@ -100,6 +109,10 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
+    ProviderScope.containerOf(tester.element(find.byType(AppBootstrap)))
+        .read(routerProvider)
+        .go('/greeting');
+    await tester.pumpAndSettle();
     final button = tester.widget<FilledButton>(
       find.byKey(const ValueKey('bootstrap_check_connection')),
     );
@@ -118,6 +131,10 @@ void main() {
           child: const AppBootstrap(),
         ),
       );
+      await tester.pumpAndSettle();
+      ProviderScope.containerOf(tester.element(find.byType(AppBootstrap)))
+          .read(routerProvider)
+          .go('/greeting');
       await tester.pumpAndSettle();
       await tester.tap(
         find.byKey(const ValueKey('bootstrap_check_connection')),

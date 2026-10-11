@@ -16,6 +16,7 @@ dependencies:
     sdk: flutter
   flutter_riverpod: ^3.4.3
   go_router: ^18.0.1
+  social_signin_kit: ^0.1.1
 
 dev_dependencies:
   integration_test:
@@ -26,3 +27,8 @@ dev_dependencies:
 
 flutter:
   uses-material-design: true
+  assets:
+    - assets/social/google.png
+    - assets/social/apple.png
+    - assets/social/kakao.png
+    - assets/social/naver.png
