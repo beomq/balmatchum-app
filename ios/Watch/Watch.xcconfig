@@ -9,6 +9,7 @@ INFOPLIST_KEY_CFBundleDisplayName = $(APP_DISPLAY_NAME)
 INFOPLIST_KEY_WKApplication = YES
 INFOPLIST_KEY_WKCompanionAppBundleIdentifier = $(COMPANION_BUNDLE_IDENTIFIER)
 INFOPLIST_KEY_WKRunsIndependentlyOfCompanionApp = NO
+INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO
 LD_RUNPATH_SEARCH_PATHS = $(inherited) @executable_path/Frameworks
 PRODUCT_BUNDLE_IDENTIFIER = $(COMPANION_BUNDLE_IDENTIFIER).watchkitapp
 PRODUCT_NAME = BalmatchumWatch
