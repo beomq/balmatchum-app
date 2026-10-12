@@ -18,6 +18,12 @@ platform :ios do
     configuration = target == 'dev' ? 'Release-dev' : 'Release'
     bundle = target == 'dev' ? 'com.beomq.balmatchum.dev' : 'com.beomq.balmatchum'
     app_id = target == 'dev' ? '6816329763' : '6816329577'
+    # Per-target profiles: Swift package resource bundles must not receive one.
+    profiles = if target == 'dev'
+      { 'Runner' => 'Balmatchum Dev AppStore', 'BalmatchumWatch' => 'Balmatchum Dev Watch AppStore' }
+    else
+      { 'Runner' => 'Balmatchum AppStore', 'BalmatchumWatch' => 'Balmatchum Watch AppStore' }
+    end
     root = File.expand_path('../..', __dir__)
     output = File.expand_path(ENV.fetch('APPLE_OUTPUT_DIR'))
     key_path = ENV.fetch('ASC_KEY_PATH')
@@ -44,6 +50,12 @@ platform :ios do
       args = ['fvm', 'flutter', 'build', 'ios', '--release', '--config-only', '--no-codesign', '--no-pub', "--build-number=#{number}"]
       args += ['--flavor', 'dev'] if target == 'dev'
       sh(*args)
+      profiles.each do |name, profile|
+        update_code_signing_settings(path: File.join(root, 'ios/Runner.xcodeproj'),
+          use_automatic_signing: false, team_id: 'Q4E6NKD9VN', targets: [name],
+          build_configurations: [configuration], code_sign_identity: 'Apple Distribution',
+          profile_name: profile)
+      end
       archive = File.join(output, "#{config}.xcarchive")
       export = File.join(output, 'export')
       sh('xcodebuild', '-workspace', 'ios/Runner.xcworkspace', '-scheme', scheme,
