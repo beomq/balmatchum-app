@@ -36,9 +36,18 @@ module ApplePreflight
     apps = apps.select { |app| app.fetch('attributes')['bundleId'] == bundle }
     raise 'ASC target mismatch' unless apps.length == 1 && apps[0]['id'] == app_id && apps[0].fetch('attributes')['bundleId'] == bundle
     groups = fetcher.call("/v1/apps/#{app_id}/betaGroups?limit=200")
-    # Fail closed if a group appears after the approved zero-group snapshot.
-    # A server-side automatic-distribution toggle cannot be overridden by pilot.
-    raise 'ASC beta groups changed: read-only review required before upload' unless groups.empty?
+    # Internal groups may receive builds automatically (user-approved 2026-10-12).
+    # Fail closed on external groups, public links, or missing attributes,
+    # because a server-side distribution toggle cannot be overridden by pilot.
+    unless groups.all? { |group| internal_only?(group) }
+      raise 'ASC external or public beta group present: read-only review required before upload'
+    end
     true
+  end
+
+  def self.internal_only?(group)
+    attributes = group['attributes']
+    attributes.is_a?(Hash) && attributes['isInternalGroup'] == true &&
+      attributes['publicLinkEnabled'] != true
   end
 end
