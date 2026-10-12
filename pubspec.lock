@@ -310,10 +310,10 @@ packages:
     dependency: "direct main"
     description:
       name: social_signin_kit
-      sha256: ef48bb2b94464400aebd97f04deef954637303d6c0988748f82e15c38ce8a768
+      sha256: "9336cdcef4a3f5c23258646cecca563b523095662f4ba94bfc62024ac5afd0b4"
       url: "https://pub.dev"
     source: hosted
-    version: "0.1.1"
+    version: "0.1.2"
   source_span:
     dependency: transitive
     description:
