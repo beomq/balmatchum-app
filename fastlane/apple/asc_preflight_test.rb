@@ -33,4 +33,25 @@ class ApplePreflightTest < Minitest::Test
   def test_rejects_any_new_group_even_when_attribute_is_missing
     assert_raises(RuntimeError) { verify([app], [{ 'id' => 'new-group' }]) }
   end
+
+  def group(attributes)
+    { 'id' => 'group', 'attributes' => attributes }
+  end
+
+  def test_accepts_internal_group_with_automatic_distribution
+    assert verify([app], [group('isInternalGroup' => true, 'hasAccessToAllBuilds' => true, 'publicLinkEnabled' => nil)])
+  end
+
+  def test_rejects_external_group
+    assert_raises(RuntimeError) { verify([app], [group('isInternalGroup' => false)]) }
+  end
+
+  def test_rejects_internal_group_with_public_link
+    assert_raises(RuntimeError) { verify([app], [group('isInternalGroup' => true, 'publicLinkEnabled' => true)]) }
+  end
+
+  def test_rejects_when_any_group_is_not_internal_only
+    internal = group('isInternalGroup' => true)
+    assert_raises(RuntimeError) { verify([app], [internal, group('isInternalGroup' => nil)]) }
+  end
 end
