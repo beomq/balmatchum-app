@@ -1,11 +1,29 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:kakao_flutter_sdk_user/kakao_flutter_sdk_user.dart';
+import 'package:serverpod_auth_core_flutter/serverpod_auth_core_flutter.dart';
 
 import 'app/app.dart';
+import 'app/dependencies.dart';
 import 'app/router.dart';
+import 'features/auth/auth_adapters.dart';
 
-void main() {
-  runApp(const ProviderScope(child: AppBootstrap()));
+Future<void> main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  initializeKakaoSdk(
+    nativeAppKey: kakaoNativeAppKey,
+    initialize: (key) => KakaoSdk.init(nativeAppKey: key),
+  );
+  final container = ProviderContainer();
+  if (serverUrl.isNotEmpty) {
+    await container.read(clientProvider).auth.restore();
+  }
+  runApp(
+    UncontrolledProviderScope(
+      container: container,
+      child: const AppBootstrap(),
+    ),
+  );
 }
 
 class AppBootstrap extends ConsumerWidget {

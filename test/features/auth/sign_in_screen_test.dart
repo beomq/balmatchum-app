@@ -25,6 +25,33 @@ void main() {
     await tester.pumpAndSettle();
   }
 
+  testWidgets('completed Kakao outcomes expose status without leaving login', (
+    tester,
+  ) async {
+    for (final outcome in [
+      SignInOutcome.signedIn,
+      SignInOutcome.cancelled,
+      SignInOutcome.failed('invalidToken'),
+    ]) {
+      await mount(tester, _Starter((_) async => outcome));
+      await tester.tap(find.text('카카오 로그인'));
+      await tester.pumpAndSettle();
+      expect(find.byType(SignInScreen), findsOneWidget);
+      expect(
+        find.byKey(
+          ValueKey(
+            outcome.status == SignInStatus.failed
+                ? 'sign_in_error'
+                : 'sign_in_status',
+          ),
+        ),
+        findsOneWidget,
+      );
+      expect(find.text('로그인 연결 전'), findsNothing);
+      expect(tester.takeException(), isNull);
+    }
+  });
+
   testWidgets('requested provider assets and inherited styles render equally', (
     tester,
   ) async {
