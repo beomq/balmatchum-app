@@ -16,7 +16,7 @@ Future<void> main() async {
   );
   final container = ProviderContainer();
   if (serverUrl.isNotEmpty) {
-    await container.read(clientProvider).auth.restore();
+    await restoreSession(container.read(clientProvider).auth.restore);
   }
   runApp(
     UncontrolledProviderScope(
@@ -24,6 +24,14 @@ Future<void> main() async {
       child: const AppBootstrap(),
     ),
   );
+}
+
+Future<void> restoreSession(Future<void> Function() restore) async {
+  try {
+    await restore();
+  } on Exception {
+    debugPrint('Session restore failed; continuing signed out.');
+  }
 }
 
 class AppBootstrap extends ConsumerWidget {
