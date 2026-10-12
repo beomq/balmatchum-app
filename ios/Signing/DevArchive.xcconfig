@@ -1,7 +1,8 @@
 // Explicit opt-in: xcodebuild -xcconfig ios/Signing/DevArchive.xcconfig.
 // Shared development configurations remain unchanged.
+// Provisioning profiles are set per target by fastlane/apple/Fastfile:
+// a command-line xcconfig applies to every target, and Swift package
+// resource bundles reject provisioning profiles.
 CODE_SIGN_STYLE = Manual
 DEVELOPMENT_TEAM = Q4E6NKD9VN
 CODE_SIGN_IDENTITY = Apple Distribution
-PROVISIONING_PROFILE_SPECIFIER[sdk=iphoneos*] = Balmatchum Dev AppStore
-PROVISIONING_PROFILE_SPECIFIER[sdk=watchos*] = Balmatchum Dev Watch AppStore
