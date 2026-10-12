@@ -111,11 +111,27 @@ class _SignInScreenState extends State<SignInScreen> {
                           ? '로그인 연결 확인 중'
                           : _failed
                           ? '로그인을 시작하지 못했습니다. 다시 시도해 주세요.'
-                          : switch (_outcome) {
-                              SignInOutcome.notConnected || null => '로그인 연결 전',
+                          : switch (_outcome?.status) {
+                              SignInStatus.notConnected || null => '로그인 연결 전',
+                              SignInStatus.signedIn => '로그인되었습니다.',
+                              SignInStatus.cancelled => '로그인을 취소했습니다.',
+                              SignInStatus.failed => switch (_outcome?.code) {
+                                'configurationMissing' => '로그인 설정이 준비되지 않았습니다.',
+                                'unsupportedProvider' => '지원하지 않는 로그인 제공자입니다.',
+                                'invalidAttempt' =>
+                                  '로그인 요청이 만료되었습니다. 다시 시도해 주세요.',
+                                'invalidToken' =>
+                                  '로그인 정보를 확인하지 못했습니다. 다시 시도해 주세요.',
+                                'missingIdToken' =>
+                                  '카카오 OpenID Connect 설정을 확인해 주세요.',
+                                'networkError' => '네트워크 연결을 확인하고 다시 시도해 주세요.',
+                                _ => '로그인을 완료하지 못했습니다. 다시 시도해 주세요.',
+                              },
                             },
                       key: ValueKey(
-                        _failed ? 'sign_in_error' : 'sign_in_status',
+                        _failed || _outcome?.status == SignInStatus.failed
+                            ? 'sign_in_error'
+                            : 'sign_in_status',
                       ),
                       style: textTheme.bodyLarge,
                       textAlign: TextAlign.center,
