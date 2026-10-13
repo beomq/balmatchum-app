@@ -88,6 +88,10 @@ jobs:
           test "$(plutil -extract CFBundleIdentifier raw "$app/Info.plist")" = "$APP_BUNDLE"
           test "$(plutil -extract CFBundleIdentifier raw "$watch/Info.plist")" = "$APP_BUNDLE.watchkitapp"
           test "$(plutil -extract WKCompanionAppBundleIdentifier raw "$watch/Info.plist")" = "$APP_BUNDLE"
+          for key in NSHealthShareUsageDescription NSHealthUpdateUsageDescription; do
+            purpose="$(plutil -extract "$key" raw "$app/Info.plist")"
+            test -n "$purpose"
+          done
           for key in CFBundleShortVersionString CFBundleVersion; do
             test "$(plutil -extract "$key" raw "$app/Info.plist")" = "$(plutil -extract "$key" raw "$watch/Info.plist")"
           done

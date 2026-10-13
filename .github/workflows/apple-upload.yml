@@ -68,6 +68,7 @@ jobs:
           ruby fastlane/apple/asc_preflight_test.rb
           ruby tool/apple/build_number_test.rb
           ruby tool/apple/delivery_target_test.rb
+          ruby tool/apple/verify_package_test.rb
       - name: Readonly signing and delivery
         env:
           MATCH_PASSWORD: ${{ secrets.MATCH_PASSWORD }}

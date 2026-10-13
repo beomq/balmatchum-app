@@ -17,6 +17,9 @@ module ApplePackage
 
   def self.verify_app(app, bundle, number)
     ios = plist(File.join(app, 'Info.plist'))
+    %w[NSHealthShareUsageDescription NSHealthUpdateUsageDescription].each do |key|
+      raise "Missing HealthKit purpose: #{key}" unless ios[key].is_a?(String) && !ios[key].strip.empty?
+    end
     watch_path = File.join(app, 'Watch/BalmatchumWatch.app')
     watch = plist(File.join(watch_path, 'Info.plist'))
     raise 'Companion mismatch' unless watch['WKCompanionAppBundleIdentifier'] == bundle
