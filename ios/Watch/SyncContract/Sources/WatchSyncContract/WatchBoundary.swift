@@ -89,6 +89,7 @@ public final class WatchBoundary {
             // attached display body is malformed and cannot be persisted.
             confirmed = false
             hideCached = true
+            if !reply { requestId = nil }
         }
         var snapshot = installation == state?.installation && context == state?.context ? state?.snapshot : nil
         if let bytes = envelope["snapshotJSON"] as? Data {

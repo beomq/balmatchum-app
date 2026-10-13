@@ -153,6 +153,8 @@ import Testing
         "requestId": boundary.request()["requestId"]!, "phoneInstallationId": UUID().uuidString,
         "boundaryRevision": 1, "contextId": context]
     #expect(try boundary.receive(envelope, reply: true))
+    var delayedReply = envelope
+    delayedReply["requestId"] = boundary.request()["requestId"]!
     envelope["kind"] = "context"
     envelope["boundaryRevision"] = 2
     envelope["contextId"] = UUID().uuidString
@@ -160,4 +162,6 @@ import Testing
     #expect(throws: (any Error).self) { try boundary.receive(envelope, reply: false) }
     #expect(boundary.sendContext == nil)
     #expect(boundary.snapshot == nil)
+    #expect(try !boundary.receive(delayedReply, reply: true))
+    #expect(boundary.sendContext == nil)
 }

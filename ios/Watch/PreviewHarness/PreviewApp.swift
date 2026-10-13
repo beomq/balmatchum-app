@@ -1,6 +1,7 @@
 // Simulator-only executable. Never add this file to the product Watch target.
 import SwiftUI
 import WatchSyncContract
+import Darwin
 
 @main
 struct WatchPreviewApp: App {
@@ -22,6 +23,10 @@ struct WatchPreviewApp: App {
                     storageError: scenario == "error")
             }
             .environment(\.dynamicTypeSize, ProcessInfo.processInfo.arguments.contains("largeText") ? .accessibility3 : .large)
+            .onAppear {
+                print("WATCH_PREVIEW_READY")
+                fflush(stdout)
+            }
         }
     }
 }
