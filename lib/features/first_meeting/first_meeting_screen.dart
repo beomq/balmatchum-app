@@ -3,14 +3,13 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:social_signin_kit/social_signin_kit.dart';
 
-import 'data/first_meeting_file_storage.dart';
 import 'domain/first_meeting.dart';
 import 'meeting_theme.dart';
 import 'meeting_widgets.dart';
 
 class FirstMeetingScreen extends StatefulWidget {
-  const FirstMeetingScreen({this.controller, super.key});
-  final FirstMeetingController? controller;
+  const FirstMeetingScreen({required this.controller, super.key});
+  final FirstMeetingController controller;
   @override
   State<FirstMeetingScreen> createState() => _FirstMeetingScreenState();
 }
@@ -21,6 +20,7 @@ class _FirstMeetingScreenState extends State<FirstMeetingScreen> {
   final name = TextEditingController();
   final goal = TextEditingController();
   final pageStorage = PageStorageBucket();
+  int catalogPage = 0;
 
   @override
   void initState() {
@@ -30,15 +30,20 @@ class _FirstMeetingScreenState extends State<FirstMeetingScreen> {
 
   Future<void> load() async {
     try {
-      final value =
-          widget.controller ??
-          FirstMeetingController(storage: FirstMeetingFileStorage.device());
+      final value = widget.controller;
       await value.initialize();
       if (!mounted) {
-        if (widget.controller == null) value.dispose();
         return;
       }
       controller = value;
+      final candidate = value.state.candidate;
+      if (candidate != null) {
+        catalogPage =
+            FirstMeetingCatalog.groups.indexWhere(
+              (group) => group.breeds.contains(candidate),
+            ) ~/
+            4;
+      }
       name.text = value.state.name;
       goal.text = value.state.goalInput;
       value.addListener(changed);
@@ -55,7 +60,6 @@ class _FirstMeetingScreenState extends State<FirstMeetingScreen> {
   @override
   void dispose() {
     controller?.removeListener(changed);
-    if (widget.controller == null) controller?.dispose();
     name.dispose();
     goal.dispose();
     super.dispose();
@@ -275,35 +279,76 @@ class _FirstMeetingScreenState extends State<FirstMeetingScreen> {
         ];
       case FirstMeetingStep.catalog:
         return [
-          const MeetingHeading('함께할 친구를 골라 주세요', '30종 · 8개 그룹의 친구들을 만나 보세요.'),
-          for (final group in FirstMeetingCatalog.groups) ...[
-            Padding(
-              padding: const EdgeInsets.symmetric(vertical: 12),
-              child: Text(
-                '${group.id} · ${group.name}',
-                style: Theme.of(context).textTheme.titleMedium,
-              ),
-            ),
-            LayoutBuilder(
-              builder: (context, bounds) {
-                final columns = bounds.maxWidth < 320
-                    ? 2
-                    : ((bounds.maxWidth + 16) / 180).floor().clamp(2, 4);
-                final width = (bounds.maxWidth - 12 * (columns - 1)) / columns;
-                return Wrap(
-                  spacing: 12,
-                  runSpacing: 12,
-                  children: [
-                    for (final breed in group.breeds)
-                      SizedBox(
-                        width: width,
-                        child: dogCard(breed, c, CandidateOrigin.catalog),
+          MeetingHeading(
+            '30종 직접 고르기 · ${catalogPage + 1}/2',
+            '${catalogPage == 0 ? 'G1–G4' : 'G5–G8'} · 품종을 누르면 최종 확인으로 이동',
+          ),
+          LayoutBuilder(
+            builder: (context, bounds) {
+              final columns = bounds.maxWidth < 552
+                  ? (bounds.maxWidth >= 328 &&
+                            MediaQuery.textScalerOf(context).scale(16) <= 21
+                        ? 2
+                        : 1)
+                  : ((bounds.maxWidth + 16) / 256).floor().clamp(1, 4);
+              final width = (bounds.maxWidth - 16 * (columns - 1)) / columns;
+              return Wrap(
+                spacing: 16,
+                runSpacing: 16,
+                children: [
+                  for (final group
+                      in FirstMeetingCatalog.groups
+                          .skip(catalogPage * 4)
+                          .take(4))
+                    Container(
+                      key: ValueKey('group_${group.id}'),
+                      width: width,
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        border: Border.all(color: MeetingColors.line),
+                        borderRadius: BorderRadius.circular(16),
                       ),
-                  ],
-                );
-              },
-            ),
-          ],
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          Text(
+                            '${group.id} · ${group.name}',
+                            style: Theme.of(context).textTheme.titleMedium,
+                          ),
+                          const SizedBox(height: 12),
+                          for (final breed in group.breeds)
+                            TextButton(
+                              key: ValueKey('breed_${breed.id}'),
+                              onPressed: enabled
+                                  ? () => c.selectCandidate(
+                                      breed.id,
+                                      origin: CandidateOrigin.catalog,
+                                    )
+                                  : null,
+                              child: Text(breed.name),
+                            ),
+                          Image.asset(
+                            group.breeds.first.spritePath,
+                            height: 96,
+                            fit: BoxFit.contain,
+                            filterQuality: FilterQuality.none,
+                          ),
+                        ],
+                      ),
+                    ),
+                ],
+              );
+            },
+          ),
+          const SizedBox(height: 16),
+          OutlinedButton(
+            key: const ValueKey('meeting_catalog_page'),
+            onPressed: enabled
+                ? () => setState(() => catalogPage = 1 - catalogPage)
+                : null,
+            child: Text(catalogPage == 0 ? '다음 그룹 보기' : '이전 그룹 보기'),
+          ),
         ];
       case FirstMeetingStep.confirm:
         return [
@@ -469,175 +514,162 @@ class _FirstMeetingScreenState extends State<FirstMeetingScreen> {
             ).difference(DateTime.utc(met.year, met.month, met.day)).inDays +
             1;
         return [
-          Center(
-            child: ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 600),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  Row(
-                    children: [
-                      Expanded(
-                        child: Text(
-                          '${s.name} · 함께한 지 $days일',
-                          textAlign: TextAlign.center,
-                          style: Theme.of(context).textTheme.titleLarge,
-                        ),
-                      ),
-                      IconButton(
-                        onPressed: reset,
-                        tooltip: 'Dev 체험 초기화',
-                        icon: Image.asset(
-                          'assets/first_meeting/icons/settings.png',
-                          width: 32,
-                          height: 32,
-                        ),
-                      ),
-                    ],
+          MeetingHomeLayout(
+            header: Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    '${s.name} · 함께한 지 $days일',
+                    textAlign: TextAlign.center,
+                    style: Theme.of(context).textTheme.titleLarge,
                   ),
-                  const SizedBox(height: 12),
-                  ClipRRect(
-                    borderRadius: BorderRadius.circular(16),
-                    child: SizedBox(
-                      height:
-                          MediaQuery.sizeOf(context).height < 600 &&
-                              MediaQuery.textScalerOf(context).scale(16) <= 21
-                          ? 220
-                          : 330,
-                      child: Stack(
-                        fit: StackFit.expand,
+                ),
+                IconButton(
+                  onPressed: reset,
+                  tooltip: 'Dev 체험 초기화',
+                  icon: Image.asset(
+                    'assets/first_meeting/icons/settings.png',
+                    width: 32,
+                    height: 32,
+                  ),
+                ),
+              ],
+            ),
+            scene: ClipRRect(
+              borderRadius: BorderRadius.circular(16),
+              child: SizedBox(
+                height:
+                    MediaQuery.sizeOf(context).height < 600 &&
+                        MediaQuery.textScalerOf(context).scale(16) <= 21
+                    ? 220
+                    : 330,
+                child: Stack(
+                  fit: StackFit.expand,
+                  children: [
+                    Image.asset(
+                      'assets/first_meeting/sunny.png',
+                      fit: BoxFit.cover,
+                    ),
+                    Padding(
+                      padding: const EdgeInsets.all(18),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Image.asset(
-                            'assets/first_meeting/sunny.png',
-                            fit: BoxFit.cover,
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 14,
+                              vertical: 10,
+                            ),
+                            decoration: BoxDecoration(
+                              color: Colors.white,
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            child: Text(
+                              '오늘도 네 옆에서 걸을게',
+                              style: Theme.of(context).textTheme.titleMedium
+                                  ?.copyWith(fontFamily: 'Galmuri11'),
+                            ),
                           ),
-                          Padding(
-                            padding: const EdgeInsets.all(18),
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Container(
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: 14,
-                                    vertical: 10,
-                                  ),
-                                  decoration: BoxDecoration(
-                                    color: Colors.white,
-                                    borderRadius: BorderRadius.circular(12),
-                                  ),
-                                  child: Text(
-                                    '오늘도 네 옆에서 걸을게',
-                                    style: Theme.of(context)
-                                        .textTheme
-                                        .titleMedium
-                                        ?.copyWith(fontFamily: 'Galmuri11'),
-                                  ),
-                                ),
-                                const SizedBox(height: 8),
-                                Expanded(
-                                  child: Center(
-                                    child: Image.asset(
-                                      s.candidate!.spritePath,
-                                      fit: BoxFit.contain,
-                                      filterQuality: FilterQuality.none,
-                                    ),
-                                  ),
-                                ),
-                              ],
+                          const SizedBox(height: 8),
+                          Expanded(
+                            child: Center(
+                              child: Image.asset(
+                                s.candidate!.spritePath,
+                                fit: BoxFit.contain,
+                                filterQuality: FilterQuality.none,
+                              ),
                             ),
                           ),
                         ],
                       ),
                     ),
+                  ],
+                ),
+              ),
+            ),
+            status: Container(
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(16),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Text('오늘 걸음 · 목표 ${s.goal}'),
+                  const SizedBox(height: 12),
+                  Text(
+                    '— 걸음',
+                    style: Theme.of(context).textTheme.headlineSmall,
                   ),
-                  const SizedBox(height: 16),
-                  Container(
-                    padding: const EdgeInsets.all(16),
-                    decoration: BoxDecoration(
-                      color: Colors.white,
-                      borderRadius: BorderRadius.circular(16),
+                  const Text('걸음 정보를 조회하지 않은 체험 화면이에요.'),
+                  const SizedBox(height: 12),
+                  LayoutBuilder(
+                    builder: (context, bounds) {
+                      final stack =
+                          bounds.maxWidth < 280 ||
+                          MediaQuery.textScalerOf(context).scale(16) > 21;
+                      final actions = [
+                        OutlinedButton(
+                          onPressed: () => unavailable('기록 보기'),
+                          child: const Text('기록 보기'),
+                        ),
+                        FilledButton(
+                          onPressed: () => unavailable('포인트 받기'),
+                          child: const Text('포인트 받기'),
+                        ),
+                      ];
+                      return stack
+                          ? Column(
+                              children: [
+                                actions[0],
+                                const SizedBox(height: 8),
+                                actions[1],
+                              ],
+                            )
+                          : Row(
+                              children: [
+                                Expanded(child: actions[0]),
+                                const SizedBox(width: 8),
+                                Expanded(child: actions[1]),
+                              ],
+                            );
+                    },
+                  ),
+                ],
+              ),
+            ),
+            shortcuts: MeetingShortcuts(
+              children: [
+                for (final entry in [
+                  ('기록', 'calendar-record'),
+                  ('퀴즈', 'question-quiz'),
+                  ('꾸미기', 'wardrobe'),
+                  ('사진', 'camera-photo'),
+                ])
+                  OutlinedButton(
+                    style: OutlinedButton.styleFrom(
+                      minimumSize: const Size(72, 80),
                     ),
+                    onPressed: () => unavailable(entry.$1),
                     child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      mainAxisSize: MainAxisSize.min,
                       children: [
-                        Text('오늘 걸음 · 목표 ${s.goal}'),
-                        const SizedBox(height: 12),
-                        Text(
-                          '— 걸음',
-                          style: Theme.of(context).textTheme.headlineSmall,
+                        Image.asset(
+                          'assets/first_meeting/icons/${entry.$2}.png',
+                          width: 32,
+                          height: 32,
                         ),
-                        const Text('걸음 정보를 조회하지 않은 체험 화면이에요.'),
-                        const SizedBox(height: 12),
-                        LayoutBuilder(
-                          builder: (context, bounds) {
-                            final stack =
-                                bounds.maxWidth < 280 ||
-                                MediaQuery.textScalerOf(context).scale(16) > 21;
-                            final actions = [
-                              OutlinedButton(
-                                onPressed: () => unavailable('기록 보기'),
-                                child: const Text('기록 보기'),
-                              ),
-                              FilledButton(
-                                onPressed: () => unavailable('포인트 받기'),
-                                child: const Text('포인트 받기'),
-                              ),
-                            ];
-                            return stack
-                                ? Column(
-                                    children: [
-                                      actions[0],
-                                      const SizedBox(height: 8),
-                                      actions[1],
-                                    ],
-                                  )
-                                : Row(
-                                    children: [
-                                      Expanded(child: actions[0]),
-                                      const SizedBox(width: 8),
-                                      Expanded(child: actions[1]),
-                                    ],
-                                  );
-                          },
-                        ),
+                        const SizedBox(height: 8),
+                        Text(entry.$1),
                       ],
                     ),
                   ),
-                  const SizedBox(height: 16),
-                  Wrap(
-                    spacing: 12,
-                    runSpacing: 12,
-                    children: [
-                      for (final entry in [
-                        ('기록', 'calendar-record'),
-                        ('퀴즈', 'question-quiz'),
-                        ('꾸미기', 'wardrobe'),
-                        ('사진', 'camera-photo'),
-                      ])
-                        OutlinedButton(
-                          style: OutlinedButton.styleFrom(
-                            minimumSize: const Size(72, 80),
-                          ),
-                          onPressed: () => unavailable(entry.$1),
-                          child: Column(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Image.asset(
-                                'assets/first_meeting/icons/${entry.$2}.png',
-                                width: 32,
-                                height: 32,
-                              ),
-                              const SizedBox(height: 8),
-                              Text(entry.$1),
-                            ],
-                          ),
-                        ),
-                    ],
-                  ),
-                  const SizedBox(height: 16),
-                  const Text('Dev 체험 · 이 기기에 저장', textAlign: TextAlign.center),
-                ],
-              ),
+              ],
+            ),
+            footer: const Text(
+              'Dev 체험 · 이 기기에 저장',
+              textAlign: TextAlign.center,
             ),
           ),
         ];

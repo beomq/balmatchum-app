@@ -2,6 +2,96 @@ import 'package:flutter/material.dart';
 
 import 'meeting_theme.dart';
 
+class MeetingShortcuts extends StatelessWidget {
+  const MeetingShortcuts({required this.children, super.key});
+  final List<Widget> children;
+
+  @override
+  Widget build(BuildContext context) => LayoutBuilder(
+    builder: (context, bounds) {
+      final label = TextPainter(
+        text: TextSpan(
+          text: '꾸미기',
+          style: Theme.of(context).textTheme.labelLarge,
+        ),
+        textDirection: Directionality.of(context),
+        textScaler: MediaQuery.textScalerOf(context),
+      )..layout();
+      final minimum = (label.width + 48).clamp(72.0, double.infinity);
+      label.dispose();
+      final columns = (bounds.maxWidth - 36) / 4 >= minimum
+          ? 4
+          : (bounds.maxWidth - 12) / 2 >= minimum
+          ? 2
+          : 1;
+      final width = (bounds.maxWidth - 12 * (columns - 1)) / columns;
+      return Wrap(
+        spacing: 12,
+        runSpacing: 12,
+        children: [
+          for (final child in children) SizedBox(width: width, child: child),
+        ],
+      );
+    },
+  );
+}
+
+class MeetingHomeLayout extends StatelessWidget {
+  const MeetingHomeLayout({
+    required this.header,
+    required this.scene,
+    required this.status,
+    required this.shortcuts,
+    required this.footer,
+    super.key,
+  });
+  final Widget header;
+  final Widget scene;
+  final Widget status;
+  final Widget shortcuts;
+  final Widget footer;
+
+  @override
+  Widget build(BuildContext context) => LayoutBuilder(
+    builder: (context, bounds) {
+      final twoColumns =
+          bounds.maxWidth >= 776 && (bounds.maxWidth - 24) * .45 >= 300;
+      final details = Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [status, const SizedBox(height: 16), shortcuts],
+      );
+      return Center(
+        child: ConstrainedBox(
+          constraints: BoxConstraints(maxWidth: twoColumns ? 1200 : 600),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              header,
+              const SizedBox(height: 12),
+              if (twoColumns)
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Expanded(flex: 55, child: scene),
+                    const SizedBox(width: 24),
+                    Expanded(flex: 45, child: details),
+                  ],
+                )
+              else ...[
+                scene,
+                const SizedBox(height: 16),
+                details,
+              ],
+              const SizedBox(height: 16),
+              footer,
+            ],
+          ),
+        ),
+      );
+    },
+  );
+}
+
 class MeetingPage extends StatelessWidget {
   const MeetingPage({
     required this.children,

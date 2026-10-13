@@ -25,6 +25,45 @@ class MemoryStore implements FirstMeetingStorage {
 }
 
 void main() {
+  testWidgets('catalog pages preserve the candidate return group', (
+    tester,
+  ) async {
+    final c = FirstMeetingController(storage: MemoryStore());
+    await c.initialize();
+    await c.enter();
+    await c.chooseCatalog();
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: meetingTheme(),
+        home: FirstMeetingScreen(controller: c),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('group_G1')), findsOneWidget);
+    final page = find.byKey(const ValueKey('meeting_catalog_page'));
+    await tester.ensureVisible(page);
+    await tester.tap(page);
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('group_G1')), findsNothing);
+    expect(find.byKey(const ValueKey('group_G5')), findsOneWidget);
+    final breed = FirstMeetingCatalog.groups[4].breeds.first;
+    final card = find.byKey(ValueKey('breed_${breed.id}'));
+    await tester.ensureVisible(card);
+    await tester.tap(card);
+    await tester.pumpAndSettle();
+    expect(c.state.candidate!.id, breed.id);
+    await tester.ensureVisible(find.text('다시 고르기'));
+    await tester.tap(find.text('다시 고르기'));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('group_G5')), findsOneWidget);
+    await tester.ensureVisible(page);
+    await tester.tap(page);
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('group_G1')), findsOneWidget);
+    await tester.pumpWidget(const SizedBox.shrink());
+    c.dispose();
+  });
+
   testWidgets('home unavailable action and confirmed reset are honest', (
     tester,
   ) async {
@@ -150,7 +189,7 @@ void main() {
     c.dispose();
   });
 
-  for (final width in [320.0, 390.0, 768.0]) {
+  for (final width in [320.0, 390.0, 768.0, 1024.0, 1440.0]) {
     for (final scale in [1.0, 1.3, 2.0]) {
       testWidgets('name and goal click flow width $width text $scale', (
         tester,
@@ -218,6 +257,12 @@ void main() {
           tester.getRect(dog).top,
           greaterThan(tester.getRect(bubble).bottom),
         );
+        final status = tester.getRect(find.text('— 걸음'));
+        if (width >= 1024) {
+          expect(status.left, greaterThan(tester.getRect(dog).right));
+        } else {
+          expect(status.top, greaterThan(tester.getRect(dog).bottom));
+        }
         expect(tester.takeException(), isNull);
         final restored = FirstMeetingController(storage: store);
         await restored.initialize();
