@@ -20,12 +20,19 @@ struct WatchDashboard: View {
                 }
                 if let snapshot, snapshot.authState == .authenticated {
                     if let steps = snapshot.dailySteps {
-                        Text(dayLabel(steps.date))
-                            .font(.caption)
-                        Text(steps.count, format: .number)
-                            .font(.system(.title, design: .rounded).bold())
-                            .accessibilityLabel("오늘 \(steps.count)걸음")
-                        dog(snapshot.selectedDog)
+                        HStack(spacing: 6) {
+                            VStack(spacing: 3) {
+                                Text(dayLabel(steps.date))
+                                    .font(.caption)
+                                Text(steps.count, format: .number)
+                                    .font(.system(.title2, design: .rounded).bold())
+                                    .minimumScaleFactor(0.7)
+                                    .lineLimit(1)
+                                    .accessibilityLabel("\(dayLabel(steps.date)) \(steps.count)걸음")
+                            }
+                            dogImage(snapshot.selectedDog)
+                        }
+                        dogName(snapshot.selectedDog)
                         Text(updatedLabel(steps.observedAt))
                             .font(.caption2)
                             .foregroundStyle(.secondary)
@@ -75,16 +82,25 @@ struct WatchDashboard: View {
     }
 
     @ViewBuilder private func dog(_ selected: DisplaySnapshot.Dog?) -> some View {
+        dogImage(selected)
+        dogName(selected)
+    }
+
+    @ViewBuilder private func dogImage(_ selected: DisplaySnapshot.Dog?) -> some View {
+        if let selected, selected.assetKey == "dog.preview.shih-tzu" {
+            Image("SelectedDogShihTzu")
+                .resizable()
+                .interpolation(.none)
+                .scaledToFit()
+                .frame(width: 60, height: 60)
+                .accessibilityLabel(selected.displayName)
+        }
+    }
+
+    @ViewBuilder private func dogName(_ selected: DisplaySnapshot.Dog?) -> some View {
         if let selected {
             // Asset resolution is deliberately explicit; no other breed is substituted.
-            if selected.assetKey == "dog.preview.shih-tzu" {
-                Image("SelectedDogShihTzu")
-                    .resizable()
-                    .interpolation(.none)
-                    .scaledToFit()
-                    .frame(width: 60, height: 60)
-                    .accessibilityLabel(selected.displayName)
-            } else {
+            if selected.assetKey != "dog.preview.shih-tzu" {
                 Text("강아지 이미지 준비 중")
                     .font(.caption)
             }
