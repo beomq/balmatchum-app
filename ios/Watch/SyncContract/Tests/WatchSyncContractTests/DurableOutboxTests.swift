@@ -65,3 +65,19 @@ private func temporaryStore(_ body: (URL) throws -> Void) throws {
         #expect(outbox.entries.isEmpty)
     }
 }
+
+@Test func outboxFailedAcknowledgementWriteDoesNotAdvance() throws {
+    try temporaryStore { file in
+        let outbox = try DurableOutbox(file: file)
+        try outbox.enqueue(recordBytes())
+        let original = try Data(contentsOf: file)
+        try FileManager.default.removeItem(at: file)
+        try FileManager.default.createDirectory(at: file, withIntermediateDirectories: true)
+        #expect(throws: (any Error).self) { try outbox.receive(ackBytes("serverSaved")) }
+        #expect(outbox.entries[0].stage == .transferQueued)
+        #expect(outbox.pending(contextId: "A").count == 1)
+        try FileManager.default.removeItem(at: file)
+        try original.write(to: file, options: .atomic)
+        #expect(try DurableOutbox(file: file).entries[0].stage == .transferQueued)
+    }
+}

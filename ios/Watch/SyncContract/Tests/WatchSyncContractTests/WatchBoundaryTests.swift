@@ -112,3 +112,32 @@ import Testing
     #expect(boundary.sendContext == nil)
     #expect(boundary.snapshot == nil)
 }
+
+@Test func newInstallationInvalidatesOldOutstandingReply() throws {
+    let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let boundary = try WatchBoundary(file: directory.appendingPathComponent("boundary.json"))
+    let context = UUID().uuidString
+    var old: [String: Any] = ["transportVersion": 1, "kind": "contextReply",
+        "requestId": boundary.request()["requestId"]!, "phoneInstallationId": UUID().uuidString,
+        "boundaryRevision": 1, "contextId": context]
+    #expect(try boundary.receive(old, reply: true))
+    old["requestId"] = boundary.request()["requestId"]!
+    var new = old
+    new["kind"] = "context"
+    new["phoneInstallationId"] = UUID().uuidString
+    new.removeValue(forKey: "requestId")
+    #expect(try !boundary.receive(new, reply: false))
+    #expect(try !boundary.receive(old, reply: true))
+    #expect(boundary.sendContext == nil)
+    new["kind"] = "contextReply"
+    new["requestId"] = boundary.request()["requestId"]!
+    #expect(try boundary.receive(new, reply: true))
+    #expect(boundary.sendContext == context)
+    new["kind"] = "context"
+    new["contextId"] = UUID().uuidString
+    #expect(throws: BoundaryError.self) { try boundary.receive(new, reply: false) }
+    #expect(boundary.sendContext == nil)
+    #expect(boundary.snapshot == nil)
+}

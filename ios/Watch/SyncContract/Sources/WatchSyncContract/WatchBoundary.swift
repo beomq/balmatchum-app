@@ -67,11 +67,22 @@ public final class WatchBoundary {
         if installation != state?.installation && !reply {
             confirmed = false
             hideCached = true
+            requestId = nil
+            if var cleared = state {
+                cleared.snapshot = nil
+                try JSONEncoder().encode(cleared).write(to: file, options: .atomic)
+                state = cleared
+            }
             return false
         }
         if let state, state.installation == installation {
             guard revision >= state.revision else { return false }
-            if revision == state.revision && context != state.context { throw BoundaryError.conflictingRevision }
+            if revision == state.revision && context != state.context {
+                confirmed = false
+                hideCached = true
+                requestId = nil
+                throw BoundaryError.conflictingRevision
+            }
         }
         var snapshot = installation == state?.installation && context == state?.context ? state?.snapshot : nil
         if let bytes = envelope["snapshotJSON"] as? Data {

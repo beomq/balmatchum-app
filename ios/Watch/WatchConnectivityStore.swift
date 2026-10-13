@@ -10,7 +10,7 @@ final class WatchConnectivityStore: NSObject, ObservableObject, WCSessionDelegat
     private var boundary: WatchBoundary?
     private var outbox: DurableOutbox?
     private var directory: URL?
-    private var handshakePending = false
+    private var handshakeRequestId: String?
     private var boundaryChangedDuringHandshake = false
     private let session: WCSession
 
@@ -47,13 +47,17 @@ final class WatchConnectivityStore: NSObject, ObservableObject, WCSessionDelegat
     }
 
     private func handshake() {
-        guard !storageError, !handshakePending, session.isReachable, let boundary else { refresh(); return }
-        handshakePending = true
-        session.sendMessage(boundary.request(), replyHandler: { reply in
+        guard !storageError, handshakeRequestId == nil, session.activationState == .activated,
+              session.isReachable, let boundary else { refresh(); return }
+        let request = boundary.request()
+        let requestId = request["requestId"] as! String
+        handshakeRequestId = requestId
+        session.sendMessage(request, replyHandler: { reply in
             // Extract property-list bytes before crossing the main-actor boundary.
             let bytes = try? PropertyListSerialization.data(fromPropertyList: reply, format: .binary, options: 0)
             Task { @MainActor in
-                self.handshakePending = false
+                guard self.handshakeRequestId == requestId else { return }
+                self.handshakeRequestId = nil
                 do {
                     guard let bytes, let envelope = try PropertyListSerialization.propertyList(from: bytes, format: nil) as? [String: Any] else { throw BoundaryError.invalidEnvelope }
                     try self.boundary?.receive(envelope, reply: true)
@@ -71,14 +75,24 @@ final class WatchConnectivityStore: NSObject, ObservableObject, WCSessionDelegat
                 }
             }
         }, errorHandler: { _ in
-            Task { @MainActor in self.handshakePending = false; self.refresh() }
+            Task { @MainActor in
+                guard self.handshakeRequestId == requestId else { return }
+                self.handshakeRequestId = nil
+                self.refresh()
+                if self.boundaryChangedDuringHandshake {
+                    self.boundaryChangedDuringHandshake = false
+                    self.handshake()
+                }
+            }
         })
     }
 
     private func resend() {
         guard !storageError, session.activationState == .activated,
               let context = boundary?.sendContext, let outbox, let directory else { return }
-        for entry in outbox.pending(contextId: context) {
+        // phoneReceived is durable phone custody. The phone replays its ACKs
+        // on reconnect; don't repeatedly send that GPS payload while it uploads.
+        for entry in outbox.pending(contextId: context).filter({ $0.stage == .transferQueued }) {
             let record = entry.record
             guard !session.outstandingFileTransfers.contains(where: {
                 $0.file.metadata?["contextId"] as? String == context && $0.file.metadata?["recordId"] as? String == record.recordId
@@ -94,8 +108,19 @@ final class WatchConnectivityStore: NSObject, ObservableObject, WCSessionDelegat
     nonisolated func session(_ session: WCSession, activationDidCompleteWith activationState: WCSessionActivationState, error: Error?) {
         Task { @MainActor in
             self.boundary?.reconcile()
-            self.handshakePending = false
+            self.handshakeRequestId = nil
             self.boundaryChangedDuringHandshake = false
+            if let directory = self.directory, activationState == .activated {
+                do {
+                    let outstanding = Set(self.session.outstandingFileTransfers.map { $0.file.fileURL.standardizedFileURL })
+                    for url in try FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil)
+                    where url.lastPathComponent.hasPrefix("transfer-") && url.pathExtension == "json" && !outstanding.contains(url.standardizedFileURL) {
+                        // These are only this adapter's abandoned transport copies.
+                        // The authoritative GPS payload remains in outbox.json.
+                        try FileManager.default.removeItem(at: url)
+                    }
+                } catch { self.message = "임시 전송 파일 정리를 완료하지 못했어요" }
+            }
             if !self.session.receivedApplicationContext.isEmpty {
                 do { try self.boundary?.receive(self.session.receivedApplicationContext, reply: false) }
                 catch { self.message = "이전 동기화 정보를 확인할 수 없어요" }
@@ -113,7 +138,7 @@ final class WatchConnectivityStore: NSObject, ObservableObject, WCSessionDelegat
                 guard let bytes, let envelope = try PropertyListSerialization.propertyList(from: bytes, format: nil) as? [String: Any] else { throw BoundaryError.invalidEnvelope }
                 try self.boundary?.receive(envelope, reply: false)
                 self.refresh()
-                if self.handshakePending { self.boundaryChangedDuringHandshake = true }
+                if self.handshakeRequestId != nil { self.boundaryChangedDuringHandshake = true }
                 self.handshake()
             } catch {
                 self.snapshot = self.boundary?.snapshot
@@ -124,6 +149,13 @@ final class WatchConnectivityStore: NSObject, ObservableObject, WCSessionDelegat
     nonisolated func session(_ session: WCSession, didReceiveUserInfo userInfo: [String: Any]) {
         guard userInfo["transportVersion"] as? Int == 1, userInfo["kind"] as? String == "ack",
               let data = userInfo["ackJSON"] as? Data else { return }
+        // Invalid transport data is not evidence of a broken disk. A valid ACK
+        // that fails durable storage below still stops transmission.
+        do { _ = try Acknowledgement.decode(data) }
+        catch {
+            Task { @MainActor in self.message = "저장 확인 응답이 올바르지 않아요" }
+            return
+        }
         Task { @MainActor in
             do { try self.outbox?.receive(data) }
             catch { self.storageError = true }
