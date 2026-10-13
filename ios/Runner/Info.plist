@@ -32,6 +32,8 @@
 	<string>개발용 실험 실행 중 백그라운드 위치 표본을 기록합니다.</string>
 	<key>NSHealthShareUsageDescription</key>
 	<string>건강 앱의 통합 오늘 걸음 수를 표시합니다.</string>
+	<key>NSHealthUpdateUsageDescription</key>
+	<string>발맞춤은 건강 앱의 걸음 수를 읽어 표시하며, 건강 데이터를 추가하거나 변경하지 않습니다.</string>
 	<key>UIApplicationSceneManifest</key>
 	<dict>
 		<key>UIApplicationSupportsMultipleScenes</key>
