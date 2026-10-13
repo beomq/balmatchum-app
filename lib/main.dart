@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:kakao_flutter_sdk_user/kakao_flutter_sdk_user.dart';
 import 'package:serverpod_auth_core_flutter/serverpod_auth_core_flutter.dart';
@@ -10,6 +11,10 @@ import 'features/auth/auth_adapters.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  if (appFlavor == 'dev') {
+    runApp(const ProviderScope(child: AppBootstrap()));
+    return;
+  }
   initializeKakaoSdk(
     nativeAppKey: kakaoNativeAppKey,
     initialize: (key) => KakaoSdk.init(nativeAppKey: key),
