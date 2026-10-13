@@ -33,7 +33,19 @@ dev_dependencies:
 flutter:
   uses-material-design: true
   assets:
+    - assets/fonts/LICENSE-Pretendard.txt
+    - assets/fonts/LICENSE-Galmuri.txt
+    - assets/first_meeting/
+    - assets/first_meeting/dogs/
+    - assets/first_meeting/icons/
     - assets/social/google.png
     - assets/social/apple.png
     - assets/social/kakao.png
     - assets/social/naver.png
+  fonts:
+    - family: Pretendard
+      fonts:
+        - asset: assets/fonts/PretendardVariable.ttf
+    - family: Galmuri11
+      fonts:
+        - asset: assets/fonts/Galmuri11.ttf
