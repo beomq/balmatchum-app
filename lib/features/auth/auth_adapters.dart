@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:kakao_flutter_sdk_user/kakao_flutter_sdk_user.dart';
 import 'package:serverpod_auth_core_flutter/serverpod_auth_core_flutter.dart';
 
+import '../watch_sync/watch_sync_service.dart';
 import 'kakao_auth_service.dart';
 
 const kakaoNativeAppKey = String.fromEnvironment('KAKAO_NATIVE_APP_KEY');
@@ -31,15 +32,28 @@ class ServerpodKakaoLoginServer implements KakaoLoginServer {
 }
 
 class ServerpodAuthSession implements AuthSession {
-  ServerpodAuthSession(this.manager);
+  ServerpodAuthSession(this.manager, {this.watchSync});
 
   final FlutterAuthSessionManager manager;
+  final WatchSyncService? watchSync;
 
   @override
-  Future<void> save(AuthSuccess auth) => manager.updateSignedInUser(auth);
+  Future<void> save(AuthSuccess auth) {
+    final watch = watchSync;
+    return watch == null
+        ? manager.updateSignedInUser(auth)
+        : watch.saveAuthenticatedSession(
+            () => manager.updateSignedInUser(auth),
+          );
+  }
 
   @override
-  Future<SessionLogoutOutcome> logout() async {
+  Future<SessionLogoutOutcome> logout() {
+    final watch = watchSync;
+    return watch == null ? _logout() : watch.logoutSession(_logout);
+  }
+
+  Future<SessionLogoutOutcome> _logout() async {
     try {
       final revoked = await manager.signOutDevice();
       return SessionLogoutOutcome(serverRevoked: revoked, localCleared: true);

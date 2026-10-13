@@ -42,6 +42,11 @@ jobs:
           test "$(xcrun --sdk iphoneos --show-sdk-version)" = 26.2
           test "$(xcrun --sdk watchos --show-sdk-version)" = 26.2
           xcodebuild -showsdks
+      - name: Test Watch and phone persistence contracts
+        if: matrix.environment == 'dev'
+        run: |
+          swift test --package-path ios/Watch/SyncContract
+          swift test --package-path ios/PhoneWatchBridge
       - name: Read pinned Flutter version
         id: sdk
         run: echo "version=$(jq -er .flutter .fvmrc)" >> "$GITHUB_OUTPUT"

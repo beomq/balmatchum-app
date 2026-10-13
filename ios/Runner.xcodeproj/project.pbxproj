@@ -7,6 +7,13 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		A01300000000000000000001 = {isa = PBXBuildFile; fileRef = A01300000000000000000011; };
+		A01300000000000000000002 = {isa = PBXBuildFile; fileRef = A01300000000000000000012; };
+		A01300000000000000000003 = {isa = PBXBuildFile; fileRef = A01300000000000000000013; };
+		A01300000000000000000004 = {isa = PBXBuildFile; fileRef = A01300000000000000000014; };
+		A01300000000000000000005 = {isa = PBXBuildFile; productRef = A01300000000000000000021; };
+		A01300000000000000000006 = {isa = PBXBuildFile; productRef = A01300000000000000000022; };
+		A01300000000000000000007 = {isa = PBXBuildFile; productRef = A01300000000000000000023; };
 		A92800000000000000000001 = {isa = PBXBuildFile; fileRef = A92800000000000000000011; };
 		A92800000000000000000002 = {isa = PBXBuildFile; fileRef = A92800000000000000000012; };
 		A92800000000000000000003 = {isa = PBXBuildFile; fileRef = A92800000000000000000013; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
@@ -48,6 +55,10 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
+		A01300000000000000000011 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchDashboard.swift; sourceTree = "<group>"; };
+		A01300000000000000000012 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchConnectivityStore.swift; sourceTree = "<group>"; };
+		A01300000000000000000013 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PhoneWatchBridgePlugin.swift; sourceTree = "<group>"; };
+		A01300000000000000000014 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DailyStepsReader.swift; sourceTree = "<group>"; };
 		A92800000000000000000011 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchApp.swift; sourceTree = "<group>"; };
 		A92800000000000000000012 = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		A92800000000000000000013 = {isa = PBXFileReference; explicitFileType = wrapper.application; path = BalmatchumWatch.app; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -73,11 +84,13 @@
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
-		A92800000000000000000033 = {isa = PBXFrameworksBuildPhase; buildActionMask = 2147483647; files = (); runOnlyForDeploymentPostprocessing = 0; };
+		A92800000000000000000033 = {isa = PBXFrameworksBuildPhase; buildActionMask = 2147483647; files = (A01300000000000000000005, ); runOnlyForDeploymentPostprocessing = 0; };
 		97C146EB1CF9000F007C117D /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				A01300000000000000000006,
+				A01300000000000000000007,
 				78A318202AECB46A00862997 /* FlutterGeneratedPluginSwiftPackage in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -85,7 +98,7 @@
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
-		A92800000000000000000020 /* Watch */ = {isa = PBXGroup; children = (A92800000000000000000011, A92800000000000000000012, A92800000000000000000014, ); path = Watch; sourceTree = "<group>"; };
+		A92800000000000000000020 /* Watch */ = {isa = PBXGroup; children = (A92800000000000000000011, A01300000000000000000011, A01300000000000000000012, A92800000000000000000012, A92800000000000000000014, ); path = Watch; sourceTree = "<group>"; };
 		331C8082294A63A400263BE5 /* RunnerTests */ = {
 			isa = PBXGroup;
 			children = (
@@ -130,6 +143,8 @@
 		97C146F01CF9000F007C117D /* Runner */ = {
 			isa = PBXGroup;
 			children = (
+				A01300000000000000000013,
+				A01300000000000000000014,
 				97C146FA1CF9000F007C117D /* Main.storyboard */,
 				97C146FD1CF9000F007C117D /* Assets.xcassets */,
 				97C146FF1CF9000F007C117D /* LaunchScreen.storyboard */,
@@ -147,7 +162,7 @@
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
-		A92800000000000000000030 /* BalmatchumWatch */ = {isa = PBXNativeTarget; buildConfigurationList = A92800000000000000000040; buildPhases = (A92800000000000000000031, A92800000000000000000032, A92800000000000000000033, ); buildRules = (); dependencies = (); name = BalmatchumWatch; productName = BalmatchumWatch; productReference = A92800000000000000000013; productType = "com.apple.product-type.application"; };
+		A92800000000000000000030 /* BalmatchumWatch */ = {isa = PBXNativeTarget; buildConfigurationList = A92800000000000000000040; buildPhases = (A92800000000000000000031, A92800000000000000000032, A92800000000000000000033, ); buildRules = (); dependencies = (); name = BalmatchumWatch; packageProductDependencies = (A01300000000000000000021, ); productName = BalmatchumWatch; productReference = A92800000000000000000013; productType = "com.apple.product-type.application"; };
 		331C8080294A63A400263BE5 /* RunnerTests */ = {
 			isa = PBXNativeTarget;
 			buildConfigurationList = 331C8087294A63A400263BE5 /* Build configuration list for PBXNativeTarget "RunnerTests" */;
@@ -184,6 +199,8 @@
 			);
 			name = Runner;
 			packageProductDependencies = (
+				A01300000000000000000022,
+				A01300000000000000000023,
 				78A3181F2AECB46A00862997 /* FlutterGeneratedPluginSwiftPackage */,
 			);
 			productName = Runner;
@@ -220,6 +237,8 @@
 			);
 			mainGroup = 97C146E51CF9000F007C117D;
 			packageReferences = (
+				A01300000000000000000031,
+				A01300000000000000000032,
 				781AD8BC2B33823900A9FFBB /* XCLocalSwiftPackageReference "Flutter/ephemeral/Packages/FlutterGeneratedPluginSwiftPackage" */,
 			);
 			productRefGroup = 97C146EF1CF9000F007C117D /* Products */;
@@ -291,7 +310,7 @@
 /* End PBXShellScriptBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
-		A92800000000000000000031 = {isa = PBXSourcesBuildPhase; buildActionMask = 2147483647; files = (A92800000000000000000001, ); runOnlyForDeploymentPostprocessing = 0; };
+		A92800000000000000000031 = {isa = PBXSourcesBuildPhase; buildActionMask = 2147483647; files = (A92800000000000000000001, A01300000000000000000001, A01300000000000000000002, ); runOnlyForDeploymentPostprocessing = 0; };
 		331C807D294A63A400263BE5 /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
@@ -304,6 +323,8 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				A01300000000000000000003,
+				A01300000000000000000004,
 				74858FAF1ED2DC5600515810 /* AppDelegate.swift in Sources */,
 				1498D2341E8E89220040F4C2 /* GeneratedPluginRegistrant.m in Sources */,
 				7884E8682EC3CC0700C636F2 /* SceneDelegate.swift in Sources */,
@@ -714,7 +735,7 @@
 				CLANG_ENABLE_MODULES = YES;
 				CURRENT_PROJECT_VERSION = "$(FLUTTER_BUILD_NUMBER)";
 				ENABLE_BITCODE = NO;
-				INFOPLIST_FILE = Runner/Info.plist;
+				INFOPLIST_FILE = "Runner/Info-Debug-dev.plist";
 				LAUNCH_SCREEN_NAME = LaunchScreenDev;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
@@ -818,6 +839,8 @@
 /* End XCConfigurationList section */
 
 /* Begin XCLocalSwiftPackageReference section */
+		A01300000000000000000031 = {isa = XCLocalSwiftPackageReference; relativePath = Watch/SyncContract; };
+		A01300000000000000000032 = {isa = XCLocalSwiftPackageReference; relativePath = PhoneWatchBridge; };
 		781AD8BC2B33823900A9FFBB /* XCLocalSwiftPackageReference "Flutter/ephemeral/Packages/FlutterGeneratedPluginSwiftPackage" */ = {
 			isa = XCLocalSwiftPackageReference;
 			relativePath = Flutter/ephemeral/Packages/FlutterGeneratedPluginSwiftPackage;
@@ -825,6 +848,9 @@
 /* End XCLocalSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
+		A01300000000000000000021 = {isa = XCSwiftPackageProductDependency; package = A01300000000000000000031; productName = WatchSyncContract; };
+		A01300000000000000000022 = {isa = XCSwiftPackageProductDependency; package = A01300000000000000000032; productName = PhoneWatchBridge; };
+		A01300000000000000000023 = {isa = XCSwiftPackageProductDependency; package = A01300000000000000000031; productName = WatchSyncContract; };
 		78A3181F2AECB46A00862997 /* FlutterGeneratedPluginSwiftPackage */ = {
 			isa = XCSwiftPackageProductDependency;
 			productName = FlutterGeneratedPluginSwiftPackage;

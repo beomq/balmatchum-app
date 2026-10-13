@@ -4,6 +4,8 @@ import 'package:go_router/go_router.dart';
 import '../features/auth/sign_in_screen.dart';
 import '../features/auth/sign_in_starter.dart';
 import '../features/bootstrap/presentation/bootstrap_screen.dart';
+import '../features/location_experiment/location_experiment_screen.dart';
+import '../features/watch_sync/watch_diagnostics_screen.dart';
 import 'dependencies.dart';
 
 final routerProvider = Provider<GoRouter>((ref) {
@@ -11,6 +13,16 @@ final routerProvider = Provider<GoRouter>((ref) {
   final signInStarter = ref.watch(signInStarterProvider);
   final router = GoRouter(
     routes: [
+      if (phoneLocationExperimentEnabled)
+        GoRoute(
+          path: '/debug/watch',
+          builder: (context, state) => const WatchDiagnosticsScreen(),
+        ),
+      if (phoneLocationExperimentEnabled)
+        GoRoute(
+          path: '/debug/location',
+          builder: (context, state) => const PhoneLocationExperimentScreen(),
+        ),
       GoRoute(
         path: '/',
         builder: (context, state) => SignInScreen(starter: signInStarter),
