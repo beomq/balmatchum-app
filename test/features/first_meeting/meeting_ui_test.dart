@@ -202,6 +202,22 @@ void main() {
         await tester.pumpAndSettle();
         expect(c.state.isComplete, isTrue);
         expect(find.text('— 걸음'), findsOneWidget);
+        final dog = find.byWidgetPredicate(
+          (widget) =>
+              widget is Image &&
+              widget.image is AssetImage &&
+              (widget.image as AssetImage).assetName ==
+                  c.state.candidate!.spritePath,
+        );
+        final bubble = find.byWidgetPredicate(
+          (widget) => widget is Text && widget.style?.fontFamily == 'Galmuri11',
+        );
+        expect(dog, findsOneWidget);
+        expect(bubble, findsOneWidget);
+        expect(
+          tester.getRect(dog).top,
+          greaterThan(tester.getRect(bubble).bottom),
+        );
         expect(tester.takeException(), isNull);
         final restored = FirstMeetingController(storage: store);
         await restored.initialize();

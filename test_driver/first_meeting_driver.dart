@@ -7,22 +7,8 @@ Future<void> main() async {
   await integrationDriver(
     onScreenshot: (name, bytes, [args]) async {
       await File('${evidence.path}/$name.png').writeAsBytes(bytes);
-      if (name == 'meeting-native-os-keyboard') {
-        final device = Platform.environment['SIMULATOR_UDID'];
-        if (device == null) {
-          throw StateError('SIMULATOR_UDID required for OS keyboard evidence');
-        }
-        final result = await Process.run('xcrun', [
-          'simctl',
-          'io',
-          device,
-          'screenshot',
-          '${evidence.path}/meeting-os-keyboard-simctl.png',
-        ]);
-        if (result.exitCode != 0) {
-          throw StateError('simctl screenshot failed: ${result.stderr}');
-        }
-      }
+      // UIKit keyboard evidence is captured at KEYBOARD_CAPTURE_READY while
+      // the test is live, not here after the test has completed.
       return true;
     },
   );

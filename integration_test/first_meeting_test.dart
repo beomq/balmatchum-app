@@ -6,7 +6,6 @@ import 'package:balmatchum_app/features/first_meeting/domain/first_meeting.dart'
 import 'package:balmatchum_app/features/first_meeting/first_meeting_screen.dart';
 import 'package:balmatchum_app/features/first_meeting/meeting_theme.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 
@@ -91,10 +90,6 @@ void main() {
     await tester.ensureVisible(find.text('이 친구로 결정'));
     await tester.tap(find.text('이 친구로 결정'));
     await tester.pumpAndSettle();
-    await tester.tap(find.byKey(const ValueKey('meeting_name')));
-    await tester.enterText(find.byKey(const ValueKey('meeting_name')), '몽글');
-    await tester.pumpAndSettle();
-    await binding.takeScreenshot('meeting-native-input-focus');
     final keyboard = Completer<void>();
     final observer = _KeyboardObserver(() {
       if (binding.platformDispatcher.views.first.viewInsets.bottom > 0 &&
@@ -104,9 +99,12 @@ void main() {
     });
     binding.addObserver(observer);
     try {
-      await SystemChannels.textInput.invokeMethod<void>('TextInput.show');
+      await tester.tap(find.byKey(const ValueKey('meeting_name')));
+      await tester.pump();
       observer.didChangeMetrics();
       await keyboard.future.timeout(const Duration(seconds: 10));
+      await tester.pumpAndSettle();
+      await tester.enterText(find.byKey(const ValueKey('meeting_name')), '몽글');
       await tester.pumpAndSettle();
       await binding.takeScreenshot('meeting-native-os-keyboard');
       if (const bool.fromEnvironment('CAPTURE_OS_KEYBOARD')) {

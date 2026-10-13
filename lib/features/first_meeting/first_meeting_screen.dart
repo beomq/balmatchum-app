@@ -349,6 +349,7 @@ class _FirstMeetingScreenState extends State<FirstMeetingScreen> {
             decoration: const InputDecoration(
               hintText: '강아지 이름',
               helperText: '한글·영문·숫자·공백 1–12글자',
+              helperMaxLines: 3,
             ),
           ),
           const SizedBox(height: 20),
@@ -498,7 +499,9 @@ class _FirstMeetingScreenState extends State<FirstMeetingScreen> {
                   ClipRRect(
                     borderRadius: BorderRadius.circular(16),
                     child: SizedBox(
-                      height: MediaQuery.sizeOf(context).height < 600
+                      height:
+                          MediaQuery.sizeOf(context).height < 600 &&
+                              MediaQuery.textScalerOf(context).scale(16) <= 21
                           ? 220
                           : 330,
                       child: Stack(
@@ -508,32 +511,39 @@ class _FirstMeetingScreenState extends State<FirstMeetingScreen> {
                             'assets/first_meeting/sunny.png',
                             fit: BoxFit.cover,
                           ),
-                          Positioned(
-                            top: 18,
-                            left: 18,
-                            right: 18,
-                            child: Container(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 14,
-                                vertical: 10,
-                              ),
-                              decoration: BoxDecoration(
-                                color: Colors.white,
-                                borderRadius: BorderRadius.circular(12),
-                              ),
-                              child: Text(
-                                '오늘도 네 옆에서 걸을게',
-                                style: Theme.of(context).textTheme.titleMedium
-                                    ?.copyWith(fontFamily: 'Galmuri11'),
-                              ),
-                            ),
-                          ),
                           Padding(
-                            padding: const EdgeInsets.fromLTRB(40, 65, 40, 16),
-                            child: Image.asset(
-                              s.candidate!.spritePath,
-                              fit: BoxFit.contain,
-                              filterQuality: FilterQuality.none,
+                            padding: const EdgeInsets.all(18),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Container(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 14,
+                                    vertical: 10,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    color: Colors.white,
+                                    borderRadius: BorderRadius.circular(12),
+                                  ),
+                                  child: Text(
+                                    '오늘도 네 옆에서 걸을게',
+                                    style: Theme.of(context)
+                                        .textTheme
+                                        .titleMedium
+                                        ?.copyWith(fontFamily: 'Galmuri11'),
+                                  ),
+                                ),
+                                const SizedBox(height: 8),
+                                Expanded(
+                                  child: Center(
+                                    child: Image.asset(
+                                      s.candidate!.spritePath,
+                                      fit: BoxFit.contain,
+                                      filterQuality: FilterQuality.none,
+                                    ),
+                                  ),
+                                ),
+                              ],
                             ),
                           ),
                         ],
