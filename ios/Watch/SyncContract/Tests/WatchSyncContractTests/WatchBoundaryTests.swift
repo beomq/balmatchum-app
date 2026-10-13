@@ -131,6 +131,7 @@ import Testing
     #expect(try !boundary.receive(new, reply: false))
     #expect(try !boundary.receive(old, reply: true))
     #expect(boundary.sendContext == nil)
+    #expect(try WatchBoundary(file: directory.appendingPathComponent("boundary.json")).snapshot == nil)
     new["kind"] = "contextReply"
     new["requestId"] = boundary.request()["requestId"]!
     #expect(try boundary.receive(new, reply: true))
@@ -138,6 +139,25 @@ import Testing
     new["kind"] = "context"
     new["contextId"] = UUID().uuidString
     #expect(throws: BoundaryError.self) { try boundary.receive(new, reply: false) }
+    #expect(boundary.sendContext == nil)
+    #expect(boundary.snapshot == nil)
+}
+
+@Test func malformedNewContextHidesPreviouslyConfirmedAccount() throws {
+    let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let boundary = try WatchBoundary(file: directory.appendingPathComponent("boundary.json"))
+    let context = UUID().uuidString
+    var envelope: [String: Any] = ["transportVersion": 1, "kind": "contextReply",
+        "requestId": boundary.request()["requestId"]!, "phoneInstallationId": UUID().uuidString,
+        "boundaryRevision": 1, "contextId": context]
+    #expect(try boundary.receive(envelope, reply: true))
+    envelope["kind"] = "context"
+    envelope["boundaryRevision"] = 2
+    envelope["contextId"] = UUID().uuidString
+    envelope["snapshotJSON"] = Data("invalid".utf8)
+    #expect(throws: (any Error).self) { try boundary.receive(envelope, reply: false) }
     #expect(boundary.sendContext == nil)
     #expect(boundary.snapshot == nil)
 }

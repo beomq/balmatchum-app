@@ -84,6 +84,12 @@ public final class WatchBoundary {
                 throw BoundaryError.conflictingRevision
             }
         }
+        if context != state?.context || installation != state?.installation {
+            // A newer account boundary clears the old view even when its
+            // attached display body is malformed and cannot be persisted.
+            confirmed = false
+            hideCached = true
+        }
         var snapshot = installation == state?.installation && context == state?.context ? state?.snapshot : nil
         if let bytes = envelope["snapshotJSON"] as? Data {
             let incoming = try DisplaySnapshot.decode(bytes)
@@ -93,10 +99,6 @@ public final class WatchBoundary {
             if incoming.revision > (snapshot?.revision ?? -1) { snapshot = incoming }
         } else if envelope["snapshotJSON"] != nil { throw BoundaryError.invalidEnvelope }
         if context == nil { snapshot = nil }
-        if context != state?.context || installation != state?.installation {
-            confirmed = false
-            hideCached = true
-        }
         let next = State(installation: installation, revision: revision, context: context, snapshot: snapshot)
         do { try JSONEncoder().encode(next).write(to: file, options: .atomic) }
         catch {
