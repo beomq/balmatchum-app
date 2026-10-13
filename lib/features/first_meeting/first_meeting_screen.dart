@@ -20,7 +20,6 @@ class _FirstMeetingScreenState extends State<FirstMeetingScreen> {
   final name = TextEditingController();
   final goal = TextEditingController();
   final pageStorage = PageStorageBucket();
-  int catalogPage = 0;
 
   @override
   void initState() {
@@ -36,14 +35,6 @@ class _FirstMeetingScreenState extends State<FirstMeetingScreen> {
         return;
       }
       controller = value;
-      final candidate = value.state.candidate;
-      if (candidate != null) {
-        catalogPage =
-            FirstMeetingCatalog.groups.indexWhere(
-              (group) => group.breeds.contains(candidate),
-            ) ~/
-            4;
-      }
       name.text = value.state.name;
       goal.text = value.state.goalInput;
       value.addListener(changed);
@@ -171,6 +162,7 @@ class _FirstMeetingScreenState extends State<FirstMeetingScreen> {
 
   List<Widget> screen(FirstMeetingController c) {
     final s = c.state;
+    final catalogPage = s.catalogPage;
     final enabled = !c.isBusy;
     switch (s.step) {
       case FirstMeetingStep.login:
@@ -344,9 +336,7 @@ class _FirstMeetingScreenState extends State<FirstMeetingScreen> {
           const SizedBox(height: 16),
           OutlinedButton(
             key: const ValueKey('meeting_catalog_page'),
-            onPressed: enabled
-                ? () => setState(() => catalogPage = 1 - catalogPage)
-                : null,
+            onPressed: enabled ? c.toggleCatalogPage : null,
             child: Text(catalogPage == 0 ? '다음 그룹 보기' : '이전 그룹 보기'),
           ),
         ];

@@ -34,6 +34,7 @@ class FirstMeetingState {
     this.step = FirstMeetingStep.login,
     List<bool> answers = const [],
     this.questionIndex = 0,
+    this.catalogPage = 0,
     this.representativeBreedId,
     this.candidateBreedId,
     this.candidateOrigin,
@@ -48,6 +49,7 @@ class FirstMeetingState {
   final FirstMeetingStep step;
   final List<bool> answers;
   final int questionIndex;
+  final int catalogPage;
   final String? representativeBreedId;
   final String? candidateBreedId;
   final CandidateOrigin? candidateOrigin;
@@ -78,6 +80,7 @@ class FirstMeetingState {
     FirstMeetingStep? step,
     List<bool>? answers,
     int? questionIndex,
+    int? catalogPage,
     Object? representativeBreedId = _unchanged,
     Object? candidateBreedId = _unchanged,
     Object? candidateOrigin = _unchanged,
@@ -91,6 +94,7 @@ class FirstMeetingState {
     step: step ?? this.step,
     answers: answers ?? this.answers,
     questionIndex: questionIndex ?? this.questionIndex,
+    catalogPage: catalogPage ?? this.catalogPage,
     representativeBreedId: identical(representativeBreedId, _unchanged)
         ? this.representativeBreedId
         : representativeBreedId as String?,
@@ -115,6 +119,7 @@ class FirstMeetingState {
     'step': step.name,
     'answers': answers,
     'questionIndex': questionIndex,
+    'catalogPage': catalogPage,
     'representativeBreedId': representativeBreedId,
     'candidateBreedId': candidateBreedId,
     'candidateOrigin': candidateOrigin?.name,
@@ -132,6 +137,7 @@ class FirstMeetingState {
       step: FirstMeetingStep.values.byName(json['step'] as String),
       answers: (json['answers'] as List).cast<bool>(),
       questionIndex: json['questionIndex'] as int,
+      catalogPage: json['catalogPage'] as int? ?? 0,
       representativeBreedId: json['representativeBreedId'] as String?,
       candidateBreedId: json['candidateBreedId'] as String?,
       candidateOrigin: json['candidateOrigin'] == null
@@ -149,6 +155,8 @@ class FirstMeetingState {
       isComplete: json['isComplete'] as bool,
     );
     if (state.answers.length > 3 ||
+        state.catalogPage < 0 ||
+        state.catalogPage > 1 ||
         state.questionIndex < 0 ||
         state.questionIndex > 2 ||
         state.questionIndex > state.answers.length ||

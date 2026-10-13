@@ -55,7 +55,8 @@ class MeetingHomeLayout extends StatelessWidget {
   Widget build(BuildContext context) => LayoutBuilder(
     builder: (context, bounds) {
       final twoColumns =
-          bounds.maxWidth >= 776 && (bounds.maxWidth - 24) * .45 >= 300;
+          MediaQuery.sizeOf(context).width >= 840 &&
+          (bounds.maxWidth - 24) * .45 >= 300;
       final details = Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [status, const SizedBox(height: 16), shortcuts],
@@ -122,35 +123,38 @@ class MeetingPage extends StatelessWidget {
               onBack == null ? 'meeting_root_scroll' : 'meeting_scroll',
             ),
             padding: EdgeInsets.fromLTRB(padding, 16, padding, 24),
-            child: Center(
-              child: ConstrainedBox(
-                constraints: BoxConstraints(maxWidth: wide ? 960 : 480),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    if (showHeader)
-                      SizedBox(
-                        height: 48,
-                        child: Align(
-                          alignment: Alignment.centerLeft,
-                          child: onBack == null
-                              ? const SizedBox.shrink()
-                              : IconButton(
-                                  key: const ValueKey('meeting_back'),
-                                  tooltip: '이전 단계',
-                                  onPressed: onBack,
-                                  icon: Image.asset(
-                                    'assets/first_meeting/icons/back.png',
-                                    width: 32,
-                                    height: 32,
-                                    filterQuality: FilterQuality.none,
+            child: MediaQuery(
+              data: MediaQuery.of(context).copyWith(size: constraints.biggest),
+              child: Center(
+                child: ConstrainedBox(
+                  constraints: BoxConstraints(maxWidth: wide ? 960 : 480),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      if (showHeader)
+                        SizedBox(
+                          height: 48,
+                          child: Align(
+                            alignment: Alignment.centerLeft,
+                            child: onBack == null
+                                ? const SizedBox.shrink()
+                                : IconButton(
+                                    key: const ValueKey('meeting_back'),
+                                    tooltip: '이전 단계',
+                                    onPressed: onBack,
+                                    icon: Image.asset(
+                                      'assets/first_meeting/icons/back.png',
+                                      width: 32,
+                                      height: 32,
+                                      filterQuality: FilterQuality.none,
+                                    ),
                                   ),
-                                ),
+                          ),
                         ),
-                      ),
-                    if (showHeader) const SizedBox(height: 18),
-                    ...children,
-                  ],
+                      if (showHeader) const SizedBox(height: 18),
+                      ...children,
+                    ],
+                  ),
                 ),
               ),
             ),

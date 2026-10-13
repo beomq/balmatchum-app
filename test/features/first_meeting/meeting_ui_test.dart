@@ -46,6 +46,11 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.byKey(const ValueKey('group_G1')), findsNothing);
     expect(find.byKey(const ValueKey('group_G5')), findsOneWidget);
+    final restored = FirstMeetingController(storage: c.storage);
+    await restored.initialize();
+    expect(restored.state.catalogPage, 1);
+    expect(restored.state.step, FirstMeetingStep.catalog);
+    restored.dispose();
     final breed = FirstMeetingCatalog.groups[4].breeds.first;
     final card = find.byKey(ValueKey('breed_${breed.id}'));
     await tester.ensureVisible(card);
@@ -189,7 +194,16 @@ void main() {
     c.dispose();
   });
 
-  for (final width in [320.0, 390.0, 768.0, 1024.0, 1440.0]) {
+  for (final width in [
+    320.0,
+    390.0,
+    768.0,
+    824.0,
+    839.0,
+    840.0,
+    1024.0,
+    1440.0,
+  ]) {
     for (final scale in [1.0, 1.3, 2.0]) {
       testWidgets('name and goal click flow width $width text $scale', (
         tester,
@@ -258,7 +272,7 @@ void main() {
           greaterThan(tester.getRect(bubble).bottom),
         );
         final status = tester.getRect(find.text('— 걸음'));
-        if (width >= 1024) {
+        if (width >= 840) {
           expect(status.left, greaterThan(tester.getRect(dog).right));
         } else {
           expect(status.top, greaterThan(tester.getRect(dog).bottom));
