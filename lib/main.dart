@@ -18,6 +18,15 @@ Future<void> main() async {
   if (serverUrl.isNotEmpty) {
     await restoreSession(container.read(clientProvider).auth.restore);
   }
+  // Restoring credentials never vouches for a Watch account boundary.
+  final watchSync = container.read(watchSyncServiceProvider);
+  if (watchSync != null) {
+    try {
+      await watchSync.initialize();
+    } on Exception {
+      debugPrint('Watch reconciliation failed; explicit sync is required.');
+    }
+  }
   runApp(
     UncontrolledProviderScope(
       container: container,
