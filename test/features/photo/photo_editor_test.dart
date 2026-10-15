@@ -6,6 +6,7 @@ import 'package:flutter_test/flutter_test.dart';
 
 class FakePhotoAdapter implements PhotoAdapter {
   Uint8List? next;
+  Uint8List? recovered;
   Object? failure;
   Uint8List? saved;
   Uint8List? shared;
@@ -19,7 +20,7 @@ class FakePhotoAdapter implements PhotoAdapter {
   }
 
   @override
-  Future<Uint8List?> recoverLostPhoto() async => null;
+  Future<Uint8List?> recoverLostPhoto() async => recovered;
   @override
   Future<void> save(Uint8List png) async {
     if (failure != null) throw failure!;
@@ -41,6 +42,53 @@ Future<Uint8List> photoFixture() async {
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
+  for (final dimensions in [(8192, 8), (8, 8192), (128, 64), (8192, 1)]) {
+    for (final recover in [false, true]) {
+      test('decode $dimensions with recovery=$recover stays bounded', () async {
+        final (width, height) = dimensions;
+        final recorder = ui.PictureRecorder();
+        ui.Canvas(recorder)
+            .drawColor(const ui.Color(0xFF336699), ui.BlendMode.src);
+        final picture = recorder.endRecording();
+        final image = await picture.toImage(width, height);
+        final data = (await image.toByteData(format: ui.ImageByteFormat.png))!;
+        final bytes = data.buffer.asUint8List();
+        image.dispose();
+        picture.dispose();
+        final adapter = FakePhotoAdapter();
+        if (recover) {
+          adapter.recovered = bytes;
+        } else {
+          adapter.next = bytes;
+        }
+        final editor = PhotoEditor(
+          adapter: adapter,
+          dogAssetPath: 'assets/first_meeting/dogs/pug.png',
+        );
+        addTearDown(editor.dispose);
+        await editor.initialize();
+        if (!recover) await editor.pick(PhotoSource.gallery);
+        expect(editor.isError, isFalse);
+        expect(
+          editor.photo!.width,
+          width > 4096
+              ? 4096
+              : height > 4096
+              ? width ~/ 2
+              : width,
+        );
+        expect(
+          editor.photo!.height,
+          height > 4096
+              ? 4096
+              : width > 4096
+              ? (height / 2).ceil()
+              : height,
+        );
+      });
+    }
+  }
+
   test('normalized transform clamps limits and preserves sprite ratio', () {
     final s = const DogSticker().copyWith(
       x: -1,

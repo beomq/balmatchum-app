@@ -102,15 +102,27 @@ class ProductController extends ChangeNotifier {
   Future<RecordDay> loadDay(DateTime date) async =>
       recordDay(await repository.day(date));
 
-  Future<RecordDay> deleteDay(DateTime date) async {
+  Future<T> _mutate<T>(Future<T> Function() action) async {
+    if (busy) throw const FormatException('Product operation in progress');
+    busy = true;
+    notifyListeners();
+    try {
+      return await action();
+    } finally {
+      busy = false;
+      notifyListeners();
+    }
+  }
+
+  Future<RecordDay> deleteDay(DateTime date) => _mutate(() async {
     final key = 'delete:${ProductRepository.dateKey(date)}';
     final result = await repository.deleteDay(date, request(key));
     _requests.remove(key);
     await refreshAfterSuccess();
     return recordDay(result);
-  }
+  });
 
-  Future<int> claim(RecordDay day) async {
+  Future<int> claim(RecordDay day) => _mutate(() async {
     final date = ProductRepository.dateKey(day.date);
     final key = 'claim:$date:${day.revision}';
     final grant = await repository.client.product.claimDay(
@@ -123,7 +135,7 @@ class ProductController extends ChangeNotifier {
     notifyListeners();
     await refreshAfterSuccess();
     return grant.amount;
-  }
+  });
 
   QuizView quizView(api.DailyQuiz value) => QuizView(
     date: value.date,
@@ -140,13 +152,13 @@ class ProductController extends ChangeNotifier {
   Future<QuizView> loadQuiz() async =>
       quizView(await repository.quiz(ProductRepository.today));
 
-  Future<QuizView> answer(QuizView question, int index) async {
+  Future<QuizView> answer(QuizView question, int index) => _mutate(() async {
     final key = 'quiz:${question.date}:$index';
     quiz = await repository.answer(question.date, index, request(key));
     _requests.remove(key);
     notifyListeners();
     return quizView(quiz!);
-  }
+  });
 
   WardrobeSnapshot wardrobe(api.ThemeStore value) => WardrobeSnapshot(
     equippedThemeId: value.equippedTheme,
@@ -173,7 +185,7 @@ class ProductController extends ChangeNotifier {
   Future<WardrobeSnapshot> themeAction(
     WardrobeTheme theme, {
     required bool equip,
-  }) async {
+  }) => _mutate(() async {
     final key = '${equip ? 'equip' : 'buy'}:${theme.id}';
     try {
       final confirmed = equip
@@ -201,5 +213,5 @@ class ProductController extends ChangeNotifier {
             : WardrobeFailureReason.unavailable,
       );
     }
-  }
+  });
 }

@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:balmatchum_app/features/daily_activity/product_controller.dart';
 import 'package:balmatchum_app/features/daily_activity/product_repository.dart';
 import 'package:balmatchum_app/features/daily_activity/daily_steps_controller.dart';
@@ -12,7 +14,39 @@ class MissingSessionRepository extends ProductRepository {
       throw const FormatException('No session');
 }
 
+class PendingSessionRepository extends MissingSessionRepository {
+  final session = Completer<void>();
+  @override
+  Future<void> connectDevelopmentUser() => session.future;
+}
+
 void main() {
+  test('mutation is rejected while sync owns the busy state', () async {
+    final repository = PendingSessionRepository();
+    final steps = DailyStepsController(
+      readSteps: () async =>
+          const DailyStepsResult(DailyStepsStatus.empty, null),
+    );
+    final controller = ProductController(repository, steps, null)
+      ..connected = true;
+    final sync = controller.sync();
+    expect(controller.busy, isTrue);
+    await expectLater(
+      controller.deleteDay(DateTime(2026, 10, 15)),
+      throwsFormatException,
+    );
+    expect(controller.busy, isTrue);
+    repository.session.completeError(const FormatException('Session revoked'));
+    await sync;
+    expect(controller.connected, isFalse);
+    expect(controller.today, isNull);
+    expect(controller.store, isNull);
+    expect(controller.busy, isFalse);
+    controller.dispose();
+    steps.dispose();
+    repository.client.close();
+  });
+
   test(
     'missing and revoked sessions enable reconnect without throwing',
     () async {

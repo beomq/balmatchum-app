@@ -3,6 +3,8 @@ import 'dart:io';
 import 'dart:ui' as ui;
 
 import 'package:balmatchum_app/features/first_meeting/meeting_theme.dart';
+import 'package:balmatchum_app/features/photo/photo_editor.dart'
+    show DogSticker;
 import 'package:balmatchum_app/features/photo/photo_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
@@ -10,6 +12,14 @@ import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'photo_editor_test.dart' show FakePhotoAdapter, photoFixture;
+
+class PendingPhotoAdapter extends FakePhotoAdapter {
+  Completer<Uint8List?>? pendingPick;
+
+  @override
+  Future<Uint8List?> pick(PhotoSource source) =>
+      pendingPick?.future ?? super.pick(source);
+}
 
 Future<void> idle(PhotoScreenState state) {
   if (!state.editor.busy) return Future.value();
@@ -26,6 +36,77 @@ Future<void> idle(PhotoScreenState state) {
 }
 
 void main() {
+  testWidgets('scale updates require a fresh idle start', (tester) async {
+    final adapter = PendingPhotoAdapter();
+    await tester.runAsync(
+      () => tester.pumpWidget(
+        MaterialApp(
+          theme: meetingTheme(),
+          home: PhotoScreen(
+            dogAssetPath: 'assets/first_meeting/dogs/pug.png',
+            dogName: '콩이',
+            adapter: adapter,
+            onBack: () {},
+            onHome: () {},
+          ),
+        ),
+      ),
+    );
+    final state = tester.state<PhotoScreenState>(find.byType(PhotoScreen));
+    await tester.runAsync(() => idle(state));
+    adapter.next = await tester.runAsync(photoFixture);
+    await tester.runAsync(() => state.editor.pick(PhotoSource.gallery));
+    await tester.pumpAndSettle();
+    GestureDetector canvas() => tester.widget<GestureDetector>(
+      find.byKey(const ValueKey('photo_canvas')),
+    );
+    final start = ScaleStartDetails(localFocalPoint: const Offset(50, 50));
+    final update = ScaleUpdateDetails(
+      localFocalPoint: const Offset(70, 50),
+      scale: 1.2,
+      rotation: .3,
+    );
+    final original = state.editor.sticker;
+    canvas().onScaleUpdate!(update);
+    expect(state.editor.sticker, same(original));
+
+    // A gesture that starts while busy must not become active on completion.
+    adapter.pendingPick = Completer<Uint8List?>();
+    var picking = state.editor.pick(PhotoSource.gallery);
+    await tester.pump();
+    canvas().onScaleStart!(start);
+    canvas().onScaleUpdate!(update);
+    adapter.pendingPick!.complete(null);
+    await picking;
+    await tester.pump();
+    canvas().onScaleUpdate!(update);
+    expect(state.editor.sticker, same(original));
+
+    // Busy transitions invalidate an already active gesture, even without a frame.
+    canvas().onScaleStart!(start);
+    canvas().onScaleUpdate!(update);
+    expect(state.editor.sticker.scale, 1.2);
+    adapter.pendingPick = Completer<Uint8List?>();
+    picking = state.editor.pick(PhotoSource.gallery);
+    adapter.pendingPick!.complete(null);
+    await picking;
+    state.editor.edit(const DogSticker(x: .2, scale: .6));
+    final changed = state.editor.sticker;
+    canvas().onScaleUpdate!(update);
+    expect(state.editor.sticker, same(changed));
+
+    canvas().onScaleStart!(start);
+    canvas().onScaleUpdate!(update);
+    expect(state.editor.sticker.scale, closeTo(.72, .00001));
+    canvas().onScaleEnd!(ScaleEndDetails());
+    final ended = state.editor.sticker;
+    canvas().onScaleUpdate!(update);
+    expect(state.editor.sticker, same(ended));
+    await tester.pumpAndSettle();
+    expect(tester.takeException(), isNull);
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
+
   for (final size in [
     const Size(390, 844),
     const Size(1024, 768),

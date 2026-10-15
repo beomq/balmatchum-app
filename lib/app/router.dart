@@ -54,6 +54,14 @@ final routerProvider = Provider<GoRouter>((ref) {
               routes: [
                 GoRoute(
                   path: ':date',
+                  redirect: (context, state) {
+                    final value = state.pathParameters['date']!;
+                    final date = DateTime.tryParse(value);
+                    return date == null ||
+                            ProductRepository.dateKey(date) != value
+                        ? '/records'
+                        : null;
+                  },
                   builder: (context, state) => RecordDayScreen(
                     date: DateTime.parse(state.pathParameters['date']!),
                     isToday:

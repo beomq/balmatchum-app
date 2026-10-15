@@ -41,11 +41,22 @@ class PhotoScreenState extends State<PhotoScreen> {
       adapter: widget.adapter,
       dogAssetPath: widget.dogAssetPath,
     );
+    editor.addListener(_invalidateBusyGesture);
     editor.initialize();
+  }
+
+  void _clearGesture() {
+    _gestureStart = null;
+    _focalStart = null;
+  }
+
+  void _invalidateBusyGesture() {
+    if (editor.busy) _clearGesture();
   }
 
   @override
   void dispose() {
+    editor.removeListener(_invalidateBusyGesture);
     editor.dispose();
     super.dispose();
   }
@@ -157,26 +168,26 @@ class PhotoScreenState extends State<PhotoScreen> {
             child: GestureDetector(
               key: const ValueKey('photo_canvas'),
               behavior: HitTestBehavior.opaque,
-              onScaleStart: editor.busy
-                  ? null
-                  : (details) {
-                      _gestureStart = editor.sticker;
-                      _focalStart = details.localFocalPoint;
-                    },
-              onScaleUpdate: editor.busy
-                  ? null
-                  : (details) {
-                      final start = _gestureStart!;
-                      final delta = details.localFocalPoint - _focalStart!;
-                      editor.edit(
-                        start.copyWith(
-                          x: start.x + delta.dx / size.width,
-                          y: start.y + delta.dy / size.height,
-                          scale: start.scale * details.scale,
-                          rotation: start.rotation + details.rotation,
-                        ),
-                      );
-                    },
+              onScaleStart: (details) {
+                if (editor.busy) return;
+                _gestureStart = editor.sticker;
+                _focalStart = details.localFocalPoint;
+              },
+              onScaleUpdate: (details) {
+                final start = _gestureStart;
+                final focalStart = _focalStart;
+                if (editor.busy || start == null || focalStart == null) return;
+                final delta = details.localFocalPoint - focalStart;
+                editor.edit(
+                  start.copyWith(
+                    x: start.x + delta.dx / size.width,
+                    y: start.y + delta.dy / size.height,
+                    scale: start.scale * details.scale,
+                    rotation: start.rotation + details.rotation,
+                  ),
+                );
+              },
+              onScaleEnd: (_) => _clearGesture(),
               child: ClipRect(
                 child: CustomPaint(
                   painter: _PhotoPainter(photo, editor.dog, editor.sticker),

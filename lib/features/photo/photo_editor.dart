@@ -114,7 +114,17 @@ class PhotoEditor extends ChangeNotifier {
   bool get canExport => photo != null && dog != null && !busy;
 
   Future<ui.Image> _decode(Uint8List bytes) async {
-    final codec = await ui.instantiateImageCodec(bytes);
+    final buffer = await ui.ImmutableBuffer.fromUint8List(bytes);
+    final codec = await ui.instantiateImageCodecWithSize(
+      buffer,
+      getTargetSize: (width, height) {
+        final ratio = math.min(1.0, 4096 / math.max(width, height));
+        return ui.TargetImageSize(
+          width: math.max(1, (width * ratio).round()),
+          height: math.max(1, (height * ratio).round()),
+        );
+      },
+    );
     try {
       return (await codec.getNextFrame()).image;
     } finally {
