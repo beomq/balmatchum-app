@@ -1,1 +1,2 @@
 #include "Generated.xcconfig"
+COMPANION_BUNDLE_IDENTIFIER = $(PRODUCT_BUNDLE_IDENTIFIER)

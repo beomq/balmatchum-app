@@ -32,6 +32,12 @@
 	<string>개발용 실험 실행 중 백그라운드 위치 표본을 기록합니다.</string>
 	<key>NSHealthShareUsageDescription</key>
 	<string>건강 앱의 통합 오늘 걸음 수를 표시합니다.</string>
+	<key>NSCameraUsageDescription</key>
+	<string>사진에 반려견을 함께 담기 위해 카메라를 사용합니다.</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>반려견과 함께 편집할 사진을 선택합니다.</string>
+	<key>NSPhotoLibraryAddUsageDescription</key>
+	<string>반려견과 합성한 사진을 사진 보관함에 저장합니다.</string>
 	<key>NSHealthUpdateUsageDescription</key>
 	<string>발맞춤은 건강 앱의 걸음 수를 읽어 표시하며, 건강 데이터를 추가하거나 변경하지 않습니다.</string>
 	<key>UIApplicationSceneManifest</key>
