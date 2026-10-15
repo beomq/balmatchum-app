@@ -3,6 +3,13 @@ import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
 
 import '../features/auth/sign_in_screen.dart';
+import '../features/daily_activity/daily_activity_providers.dart';
+import '../features/photo/photo_screen.dart';
+import '../features/photo/platform_photo_adapter.dart';
+import '../features/records/records_screen.dart';
+import '../features/quiz/quiz_screen.dart';
+import '../features/wardrobe/wardrobe_screen.dart';
+import '../features/daily_activity/product_repository.dart';
 import '../features/first_meeting/first_meeting_screen.dart';
 import '../features/first_meeting/first_meeting_providers.dart';
 import '../features/auth/sign_in_starter.dart';
@@ -18,11 +25,104 @@ final routerProvider = Provider<GoRouter>((ref) {
       routes: [
         GoRoute(
           path: '/',
-          builder: (context, state) =>
-              FirstMeetingScreen(controller: controller),
+          builder: (context, state) => FirstMeetingScreen(
+            controller: controller,
+            dailySteps: ref.read(dailyStepsControllerProvider),
+            product: serverUrl.isEmpty
+                ? null
+                : ref.read(productControllerProvider),
+            onOpenPhoto: () => context.push('/photo'),
+            onOpenRecords: serverUrl.isEmpty
+                ? null
+                : () => context.push('/records'),
+            onOpenQuiz: serverUrl.isEmpty ? null : () => context.push('/quiz'),
+            onOpenWardrobe: serverUrl.isEmpty
+                ? null
+                : () => context.push('/wardrobe'),
+          ),
+          routes: [
+            GoRoute(
+              path: 'records',
+              builder: (context, state) => RecordsCalendarScreen(
+                initialMonth: ProductRepository.today,
+                loadMonth: ref.read(productControllerProvider).loadMonth,
+                onOpenDay: (date) =>
+                    context.push('/records/${ProductRepository.dateKey(date)}'),
+                onBack: () => context.pop(),
+                onHome: () => context.go('/'),
+              ),
+              routes: [
+                GoRoute(
+                  path: ':date',
+                  builder: (context, state) => RecordDayScreen(
+                    date: DateTime.parse(state.pathParameters['date']!),
+                    isToday:
+                        state.pathParameters['date'] ==
+                        ProductRepository.dateKey(ProductRepository.today),
+                    loadDay: ref.read(productControllerProvider).loadDay,
+                    deleteDay: ref.read(productControllerProvider).deleteDay,
+                    claimDay: ref.read(productControllerProvider).claim,
+                    onBack: () => context.pop(),
+                    onHome: () => context.go('/'),
+                  ),
+                ),
+              ],
+            ),
+            GoRoute(
+              path: 'quiz',
+              builder: (context, state) => DailyQuizScreen(
+                loadQuiz: ref.read(productControllerProvider).loadQuiz,
+                loadHistory: () async {
+                  final product = ref.read(productControllerProvider);
+                  return (await product.repository.client.product
+                          .listQuizHistory('9999-12-31'))
+                      .map(product.quizView)
+                      .toList();
+                },
+                submitAnswer: ref.read(productControllerProvider).answer,
+                onBack: () => context.pop(),
+                onHome: () => context.go('/'),
+              ),
+            ),
+            GoRoute(
+              path: 'wardrobe',
+              builder: (context, state) => WardrobeScreen(
+                dogAsset: controller.state.candidate!.spritePath,
+                loadWardrobe: ref.read(productControllerProvider).loadWardrobe,
+                purchaseTheme: (theme) => ref
+                    .read(productControllerProvider)
+                    .themeAction(theme, equip: false),
+                equipTheme: (theme) => ref
+                    .read(productControllerProvider)
+                    .themeAction(theme, equip: true),
+                onBack: () => context.pop(),
+                onHome: () => context.go('/'),
+              ),
+            ),
+            GoRoute(
+              path: 'photo',
+              builder: (context, state) => PhotoScreen(
+                dogAssetPath: controller.state.candidate!.spritePath,
+                dogName: controller.state.name,
+                adapter: PlatformPhotoAdapter(),
+                onBack: () => context.pop(),
+                onHome: () => context.go('/'),
+              ),
+            ),
+          ],
         ),
       ],
-      redirect: (context, state) => state.uri.path == '/' ? null : '/',
+      redirect: (context, state) =>
+          state.uri.path == '/' ||
+              (controller.state.isComplete &&
+                  (state.uri.path == '/photo' ||
+                      (serverUrl.isNotEmpty &&
+                          (state.uri.path == '/quiz' ||
+                              state.uri.path == '/wardrobe' ||
+                              state.uri.path == '/records' ||
+                              state.uri.path.startsWith('/records/')))))
+          ? null
+          : '/',
     );
     ref.onDispose(router.dispose);
     return router;

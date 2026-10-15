@@ -3,13 +3,32 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:social_signin_kit/social_signin_kit.dart';
 
+import '../daily_activity/daily_steps_controller.dart';
+import '../daily_activity/product_controller.dart';
+import '../daily_activity/record_mapping.dart';
+import '../watch_sync/watch_bridge.dart';
 import 'domain/first_meeting.dart';
 import 'meeting_theme.dart';
 import 'meeting_widgets.dart';
 
 class FirstMeetingScreen extends StatefulWidget {
-  const FirstMeetingScreen({required this.controller, super.key});
+  const FirstMeetingScreen({
+    required this.controller,
+    this.dailySteps,
+    this.onOpenPhoto,
+    this.onOpenRecords,
+    this.onOpenQuiz,
+    this.onOpenWardrobe,
+    this.product,
+    super.key,
+  });
   final FirstMeetingController controller;
+  final DailyStepsController? dailySteps;
+  final VoidCallback? onOpenPhoto;
+  final VoidCallback? onOpenRecords;
+  final VoidCallback? onOpenQuiz;
+  final VoidCallback? onOpenWardrobe;
+  final ProductController? product;
   @override
   State<FirstMeetingScreen> createState() => _FirstMeetingScreenState();
 }
@@ -24,6 +43,8 @@ class _FirstMeetingScreenState extends State<FirstMeetingScreen> {
   @override
   void initState() {
     super.initState();
+    widget.dailySteps?.addListener(changed);
+    widget.product?.addListener(changed);
     unawaited(load());
   }
 
@@ -50,6 +71,8 @@ class _FirstMeetingScreenState extends State<FirstMeetingScreen> {
 
   @override
   void dispose() {
+    widget.dailySteps?.removeListener(changed);
+    widget.product?.removeListener(changed);
     controller?.removeListener(changed);
     name.dispose();
     goal.dispose();
@@ -94,6 +117,63 @@ class _FirstMeetingScreenState extends State<FirstMeetingScreen> {
       ],
     ),
   );
+
+  Future<void> reward() async {
+    final product = widget.product;
+    final day = product?.today;
+    if (product == null || !product.connected || day == null) {
+      unavailable('포인트 받기');
+      return;
+    }
+    var claiming = false;
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setSheetState) {
+          return SafeArea(
+            child: Padding(
+              padding: const EdgeInsets.all(24),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Text('오늘 포인트'),
+                  if (day.fixtureLabel != null) const Text('개발 검증용'),
+                  Text('${day.claimablePoints ?? '—'} P'),
+                  FilledButton(
+                    onPressed:
+                        claiming ||
+                            product.busy ||
+                            (day.claimablePoints ?? 0) <= 0
+                        ? null
+                        : () async {
+                            setSheetState(() => claiming = true);
+                            try {
+                              await product.claim(recordDay(day));
+                              if (context.mounted) Navigator.pop(context);
+                            } on Exception {
+                              if (context.mounted) {
+                                setSheetState(() => claiming = false);
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(
+                                    content: Text(
+                                      '수령 결과를 확인하지 못했어요. 다시 조회해 주세요.',
+                                    ),
+                                  ),
+                                );
+                              }
+                            }
+                          },
+                    child: const Text('기본 포인트 받기'),
+                  ),
+                ],
+              ),
+            ),
+          );
+        },
+      ),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -536,10 +616,24 @@ class _FirstMeetingScreenState extends State<FirstMeetingScreen> {
                 child: Stack(
                   fit: StackFit.expand,
                   children: [
-                    Image.asset(
-                      'assets/first_meeting/sunny.png',
-                      fit: BoxFit.cover,
-                    ),
+                    if (widget.product?.store == null ||
+                        widget.product!.store!.equippedTheme == 'sunny')
+                      Image.asset(
+                        'assets/first_meeting/sunny.png',
+                        fit: BoxFit.cover,
+                      )
+                    else
+                      ColoredBox(
+                        color: Color(
+                          widget.product!.store!.items
+                              .firstWhere(
+                                (item) =>
+                                    item.themeId ==
+                                    widget.product!.store!.equippedTheme,
+                              )
+                              .colorValue,
+                        ),
+                      ),
                     Padding(
                       padding: const EdgeInsets.all(18),
                       child: Column(
@@ -589,10 +683,43 @@ class _FirstMeetingScreenState extends State<FirstMeetingScreen> {
                   Text('오늘 걸음 · 목표 ${s.goal}'),
                   const SizedBox(height: 12),
                   Text(
-                    '— 걸음',
+                    '${widget.dailySteps?.count ?? '—'} 걸음',
                     style: Theme.of(context).textTheme.headlineSmall,
                   ),
-                  const Text('걸음 정보를 조회하지 않은 체험 화면이에요.'),
+                  Text(switch (widget.dailySteps?.result?.status) {
+                    DailyStepsStatus.available =>
+                      '${widget.dailySteps!.date} · 한국 기준',
+                    DailyStepsStatus.capabilityUnavailable =>
+                      '이 기기에서는 걸음 조회를 지원하지 않아요.',
+                    DailyStepsStatus.empty => '아직 확인할 걸음 자료가 없어요.',
+                    DailyStepsStatus.unavailable => '걸음 자료를 확인할 수 없어요.',
+                    DailyStepsStatus.error => '걸음을 불러오지 못했어요. 다시 시도해 주세요.',
+                    null => '걸음 정보를 아직 조회하지 않았어요.',
+                  }),
+                  if (widget.dailySteps != null)
+                    TextButton(
+                      onPressed: widget.dailySteps!.isLoading
+                          ? null
+                          : widget.dailySteps!.refresh,
+                      child: Text(
+                        widget.dailySteps!.isLoading ? '조회 중' : '걸음 새로고침',
+                      ),
+                    ),
+                  if (widget.product case final product?) ...[
+                    TextButton(
+                      onPressed: product.busy
+                          ? null
+                          : product.connected
+                          ? product.sync
+                          : product.connect,
+                      child: Text(
+                        product.connected ? '서버 동기화' : '개발 테스트 사용자 연결',
+                      ),
+                    ),
+                    if (product.error != null) Text(product.error!),
+                    if (product.store != null)
+                      Text('${product.store!.balance} P · 개발 검증용'),
+                  ],
                   const SizedBox(height: 12),
                   LayoutBuilder(
                     builder: (context, bounds) {
@@ -601,11 +728,13 @@ class _FirstMeetingScreenState extends State<FirstMeetingScreen> {
                           MediaQuery.textScalerOf(context).scale(16) > 21;
                       final actions = [
                         OutlinedButton(
-                          onPressed: () => unavailable('기록 보기'),
+                          onPressed:
+                              widget.onOpenRecords ??
+                              () => unavailable('기록 보기'),
                           child: const Text('기록 보기'),
                         ),
                         FilledButton(
-                          onPressed: () => unavailable('포인트 받기'),
+                          onPressed: reward,
                           child: const Text('포인트 받기'),
                         ),
                       ];
@@ -641,7 +770,15 @@ class _FirstMeetingScreenState extends State<FirstMeetingScreen> {
                     style: OutlinedButton.styleFrom(
                       minimumSize: const Size(72, 80),
                     ),
-                    onPressed: () => unavailable(entry.$1),
+                    onPressed:
+                        switch (entry.$1) {
+                          '사진' => widget.onOpenPhoto,
+                          '기록' => widget.onOpenRecords,
+                          '퀴즈' => widget.onOpenQuiz,
+                          '꾸미기' => widget.onOpenWardrobe,
+                          _ => null,
+                        } ??
+                        () => unavailable(entry.$1),
                     child: Column(
                       mainAxisSize: MainAxisSize.min,
                       children: [
@@ -652,6 +789,10 @@ class _FirstMeetingScreenState extends State<FirstMeetingScreen> {
                         ),
                         const SizedBox(height: 8),
                         Text(entry.$1),
+                        if (entry.$1 == '퀴즈' &&
+                            widget.product?.quiz != null &&
+                            widget.product!.quiz!.answerIndex == null)
+                          Semantics(label: '오늘 퀴즈 미응답', child: const Text('·')),
                       ],
                     ),
                   ),
