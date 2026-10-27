@@ -11,7 +11,7 @@ permissions:
 
 jobs:
   compile:
-    runs-on: macos-15
+    runs-on: xcode-27
     timeout-minutes: 45
     strategy:
       fail-fast: false
@@ -26,7 +26,7 @@ jobs:
             configuration: Release-dev
             bundle: com.beomq.balmatchum.dev
     env:
-      DEVELOPER_DIR: /Applications/Xcode_26.3.app/Contents/Developer
+      DEVELOPER_DIR: /Applications/Xcode_27.1.app/Contents/Developer
       APP_ENVIRONMENT: ${{ matrix.environment }}
       APP_SCHEME: ${{ matrix.scheme }}
       APP_CONFIGURATION: ${{ matrix.configuration }}
@@ -39,9 +39,9 @@ jobs:
       - name: Verify hosted Xcode and SDKs
         run: |
           xcodebuild -version
-          test "$(xcodebuild -version | awk 'NR == 1 {print $2}')" = 26.3
-          test "$(xcrun --sdk iphoneos --show-sdk-version)" = 26.2
-          test "$(xcrun --sdk watchos --show-sdk-version)" = 26.2
+          test "$(xcodebuild -version | awk 'NR == 1 {print $2}')" = 27.1
+          test "$(xcrun --sdk iphoneos --show-sdk-version)" = 27.1
+          test "$(xcrun --sdk watchos --show-sdk-version)" = 27.0
           xcodebuild -showsdks
       - name: Test Watch and phone persistence contracts
         if: matrix.environment == 'dev'
