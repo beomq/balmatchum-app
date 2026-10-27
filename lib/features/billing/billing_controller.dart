@@ -297,7 +297,12 @@ class BillingController extends ChangeNotifier {
       _notify();
       return;
     }
-    if (result.purchases.any((p) => p.acknowledgementPending)) {
+    if (result.purchases.any(
+      (p) =>
+          p.store == store.store &&
+          p.productId == purchase.productID &&
+          p.acknowledgementPending,
+    )) {
       phase = BillingPhase.retry;
       errorCode = 'acknowledgementPending';
       _notify();
