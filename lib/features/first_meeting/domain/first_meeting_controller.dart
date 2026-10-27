@@ -3,19 +3,36 @@ import 'dart:math';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/widgets.dart' show StringCharacters;
+import 'package:balmatchum_client/balmatchum_client.dart';
 
+import '../data/profile_repository.dart';
 import 'dog_catalog.dart';
 import 'first_meeting_state.dart';
 
 class FirstMeetingController extends ChangeNotifier {
   FirstMeetingController({
     required this.storage,
+    this.profileRepository,
+    this.isCurrentAccount,
     DateTime Function()? clock,
     Random? random,
   }) : _clock = clock ?? DateTime.now,
        _random = random ?? Random();
 
   final FirstMeetingStorage storage;
+  final ProfileRepository? profileRepository;
+  final bool Function()? isCurrentAccount;
+  ProfileView? profile;
+  String? profileError;
+  Map<String, dynamic>? _pendingMutation;
+  bool _closed = false;
+  bool get _disposed => _closed || !(isCurrentAccount?.call() ?? true);
+  @override
+  void dispose() {
+    _closed = true;
+    super.dispose();
+  }
+
   final DateTime Function() _clock;
   final Random _random;
   FirstMeetingState _state = FirstMeetingState();
@@ -75,23 +92,47 @@ class FirstMeetingController extends ChangeNotifier {
 
   Future<void> _run(Future<void> Function() action) {
     final result = _tail.then((_) async {
+      if (_disposed) return;
       _isBusy = true;
       _error = null;
+      profileError = null;
       notifyListeners();
       try {
         await action();
+      } on ProfileException catch (error) {
+        if (_disposed) return;
+        profileError = error.code;
+        if (error.code.startsWith('invalid') ||
+            error.code == 'idempotencyConflict') {
+          _pendingMutation = null;
+          await _save(_state);
+        }
+        if (error.code == 'staleRevision' || error.code == 'alreadyExists') {
+          _pendingMutation = null;
+          try {
+            final latest = await profileRepository!.getProfile();
+            if (!_disposed && latest != null) _applyProfile(latest);
+            if (!_disposed) await _save(_state);
+          } on Exception {
+            profileError = 'refreshRequired';
+          }
+        }
       } catch (_) {
         _error = FirstMeetingError.storage;
       } finally {
         _isBusy = false;
-        notifyListeners();
+        if (!_disposed) notifyListeners();
       }
     });
-    _tail = result;
-    return result;
+    _tail = result.catchError((Object _) {
+      _error = FirstMeetingError.storage;
+      if (!_disposed) notifyListeners();
+    });
+    return _tail;
   }
 
   bool _canEdit() {
+    if (_pendingMutation != null) return false;
     if (_corrupt) {
       _error = FirstMeetingError.corruption;
       return false;
@@ -103,20 +144,43 @@ class FirstMeetingController extends ChangeNotifier {
   bool _at(FirstMeetingStep step) => _canEdit() && _state.step == step;
 
   Future<void> _save(FirstMeetingState next) async {
-    await storage.write(jsonEncode(next.toJson()));
-    _state = next;
+    if (_disposed) return;
+    await storage.write(
+      jsonEncode({...next.toJson(), 'pendingMutation': _pendingMutation}),
+    );
+    if (!_disposed) _state = next;
+  }
+
+  void _applyProfile(ProfileView value) {
+    profile = value;
+    _state = FirstMeetingState(
+      step: FirstMeetingStep.home,
+      candidateBreedId: value.breedId,
+      candidateOrigin: CandidateOrigin.catalog,
+      name: value.name,
+      sex: DogSex.values.byName(value.sex),
+      goal: value.dailyGoal,
+      goalInput: '${value.dailyGoal}',
+      firstMetAtUTC: value.firstMetAt.toUtc(),
+      isComplete: true,
+    );
   }
 
   Future<void> restore() => _run(() async {
+    final server = profileRepository;
+    final latest = server == null ? null : await server.getProfile();
+    if (_disposed) return;
     final payload = await storage.read();
+    if (_disposed) return;
     if (payload == null) {
       _state = FirstMeetingState();
+      _pendingMutation = null;
       _corrupt = false;
     } else {
       try {
-        final restored = FirstMeetingState.fromJson(
-          jsonDecode(payload) as Map<String, dynamic>,
-        );
+        final json = jsonDecode(payload) as Map<String, dynamic>;
+        _pendingMutation = json['pendingMutation'] as Map<String, dynamic>?;
+        final restored = FirstMeetingState.fromJson(json);
         if ([
               FirstMeetingStep.goal,
               FirstMeetingStep.home,
@@ -131,6 +195,23 @@ class FirstMeetingController extends ChangeNotifier {
         _corrupt = true;
         _error = FirstMeetingError.corruption;
       }
+    }
+    if (latest != null) {
+      _applyProfile(latest);
+      _corrupt = false;
+      _error = null;
+    } else if (server != null && _state.isComplete) {
+      _state = FirstMeetingState(step: FirstMeetingStep.method);
+    }
+    if (server != null && _corrupt) {
+      // A broken local draft cannot override or prevent a server profile lookup.
+      _state = FirstMeetingState(step: FirstMeetingStep.method);
+      _pendingMutation = null;
+      _corrupt = false;
+      _error = null;
+    }
+    if (server != null && _state.step == FirstMeetingStep.login) {
+      _state = _state.copyWith(step: FirstMeetingStep.method);
     }
     _restored = true;
   });
@@ -293,6 +374,15 @@ class FirstMeetingController extends ChangeNotifier {
       _error = FirstMeetingError.validation;
       return;
     }
+    if (profileRepository != null) {
+      await _mutate('create', {
+        'breedId': _state.candidateBreedId!,
+        'name': _state.name,
+        'sex': _state.sex!.name,
+        'goal': goal,
+      });
+      return;
+    }
     _pendingFirstMet ??= _clock().toUtc();
     await _save(
       _state.copyWith(
@@ -304,11 +394,93 @@ class FirstMeetingController extends ChangeNotifier {
     );
   });
 
+  Future<void> renameDog(String input) => _run(() async {
+    if (!isValidName(input)) {
+      _error = FirstMeetingError.validation;
+      return;
+    }
+    if (profile == null) return;
+    await _mutate('rename', {'name': normalizeName(input)});
+  });
+
+  Future<void> changeGoal(String input) => _run(() async {
+    final goal = parseGoal(input);
+    if (goal == null) {
+      _error = FirstMeetingError.validation;
+      return;
+    }
+    if (profile == null) return;
+    await _mutate('goal', {'goal': goal});
+  });
+
+  Future<void> retryMutation() => _run(() async {
+    if (_pendingMutation != null) {
+      await _save(_state);
+      if (!_disposed) await _sendMutation();
+    }
+  });
+
+  bool get hasPendingMutation => _pendingMutation != null;
+
+  Future<void> _mutate(String method, Map<String, dynamic> payload) async {
+    // An uncertain write must resolve with its exact original payload first.
+    _pendingMutation ??= {
+      'method': method,
+      'payload': payload,
+      'revision': profile?.revision,
+      'requestId':
+          'profile-${DateTime.now().microsecondsSinceEpoch}-${_random.nextInt(1 << 32)}',
+    };
+    await _save(_state);
+    if (!_disposed) await _sendMutation();
+  }
+
+  Future<void> _sendMutation() async {
+    final pending = _pendingMutation!;
+    final payload = pending['payload'] as Map<String, dynamic>;
+    final id = pending['requestId'] as String;
+    final repository = profileRepository!;
+    final response = switch (pending['method']) {
+      'create' => await repository.createProfile(
+        ProfileInput(
+          breedId: payload['breedId'] as String,
+          name: payload['name'] as String,
+          sex: payload['sex'] as String,
+          dailyGoal: payload['goal'] as int,
+        ),
+        id,
+      ),
+      'rename' => await repository.renameDog(
+        payload['name'] as String,
+        id,
+        pending['revision'] as int,
+      ),
+      'goal' => await repository.updateGoal(
+        payload['goal'] as int,
+        id,
+        pending['revision'] as int,
+      ),
+      _ => throw const FormatException('Unknown profile mutation'),
+    };
+    if (response.revision < 1) throw StateError('Invalid server revision');
+    if (_disposed) return;
+    // Replayed responses may be older than the current server revision.
+    final latest = await repository.getProfile();
+    if (_disposed) return;
+    if (latest == null) throw StateError('Saved profile missing from server');
+    _applyProfile(latest);
+    _pendingMutation = null;
+    await _save(_state);
+  }
+
   Future<void> back() => _run(() async {
     if (!_canEdit()) return;
     final step = switch (_state.step) {
       FirstMeetingStep.login || FirstMeetingStep.home => _state.step,
-      FirstMeetingStep.method => FirstMeetingStep.login,
+      FirstMeetingStep.method =>
+        profileRepository == null
+            ? FirstMeetingStep.login
+            : FirstMeetingStep.method,
       FirstMeetingStep.catalog ||
       FirstMeetingStep.results => FirstMeetingStep.method,
       FirstMeetingStep.confirm =>
@@ -336,6 +508,7 @@ class FirstMeetingController extends ChangeNotifier {
 
   /// The caller must obtain explicit UI confirmation before invoking this.
   Future<void> resetLocalAfterConfirmation() => _run(() async {
+    if (profileRepository != null) return;
     await storage.delete();
     _state = FirstMeetingState();
     _corrupt = false;

@@ -4,6 +4,7 @@ import 'dart:io';
 
 import 'package:balmatchum_app/features/auth/auth_adapters.dart';
 import 'package:balmatchum_app/features/auth/kakao_auth_service.dart';
+import 'package:balmatchum_app/features/first_meeting/domain/first_meeting.dart';
 import 'package:balmatchum_app/features/watch_sync/watch_bridge.dart';
 import 'package:balmatchum_app/features/watch_sync/watch_contract.dart'
     as watch;
@@ -13,6 +14,10 @@ import 'package:balmatchum_client/balmatchum_client.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:serverpod_auth_core_flutter/serverpod_auth_core_flutter.dart';
+
+import '../first_meeting/domain/authenticated_profile_test.dart'
+    show Profiles, view;
+import '../first_meeting/domain/first_meeting_test.dart' show MemoryStorage;
 
 const _methods = MethodChannel('com.beomq.balmatchum/watch');
 const _events = MethodChannel('com.beomq.balmatchum/watch/events');
@@ -173,6 +178,138 @@ void main() {
       expect(service.isActive, isFalse);
     },
   );
+
+  test(
+    'server profile restoration and rename publish stable owner identity',
+    () async {
+      native.records = [];
+      await service.initialize();
+      final profiles = Profiles()..current = view();
+      final controller = FirstMeetingController(
+        storage: MemoryStorage(),
+        profileRepository: profiles,
+      );
+      final stop = service.observeProfile('account-a', controller);
+      addTearDown(() {
+        stop();
+        controller.dispose();
+      });
+      await controller.initialize();
+      // A server profile is display data, not permission to activate or upload.
+      await service.requestDailySteps();
+      expect(native.named('publishDisplaySnapshot'), isEmpty);
+      expect(server.validations, 0);
+      expect(server.inputs, isEmpty);
+      await service.resumeAndSync();
+      Map dog() =>
+          (jsonDecode(
+                native.named('publishDisplaySnapshot').last.arguments as String,
+              ) as Map)['selectedDog']
+              as Map;
+      expect(dog(), {
+        'dogId': 'owner:account-a',
+        'displayName': '보리',
+        'assetKey': 'dog.preview.pug',
+      });
+      await controller.renameDog('새이름');
+      await service.requestDailySteps();
+      expect(dog()['displayName'], '새이름');
+      expect(dog()['dogId'], 'owner:account-a');
+      profiles.current = view(name: '오래된이름', revision: 1);
+      await controller.restore();
+      await service.requestDailySteps();
+      expect(dog()['displayName'], '새이름');
+    },
+  );
+
+  test(
+    'switch and logout clear dogs and reject late old epoch profiles',
+    () async {
+      native.records = [];
+      await service.resumeAndSync();
+      final profiles = Profiles()..current = view();
+      final old = FirstMeetingController(
+        storage: MemoryStorage(),
+        profileRepository: profiles,
+      );
+      final stopOld = service.observeProfile('account-a', old);
+      addTearDown(() {
+        stopOld();
+        old.dispose();
+      });
+      await old.initialize();
+      await service.requestDailySteps();
+      profiles.reading = Completer<ProfileView?>();
+      // Drain the controller queue until the exact request is in flight.
+      final reached = Completer<void>();
+      old.addListener(() {
+        if (old.isBusy && !reached.isCompleted) reached.complete();
+      });
+      final restoring = old.restore();
+      await reached.future.timeout(const Duration(seconds: 2));
+      final clear = service.clearContext();
+      server.accountId = 'account-b';
+      await clear;
+      await service.resumeAndSync();
+      Map snapshot() => jsonDecode(
+        native.named('publishDisplaySnapshot').last.arguments as String,
+      ) as Map;
+      expect(snapshot()['selectedDog'], isNull);
+      final bProfiles = Profiles()..current = view(name: '다른계정');
+      final b = FirstMeetingController(
+        storage: MemoryStorage(),
+        profileRepository: bProfiles,
+      );
+      final stopB = service.observeProfile('account-b', b);
+      addTearDown(() {
+        stopB();
+        b.dispose();
+      });
+      await b.initialize();
+      await service.requestDailySteps();
+      expect((snapshot()['selectedDog'] as Map)['dogId'], 'owner:account-b');
+      profiles.reading!.complete(view(name: '늦은응답', revision: 9));
+      await restoring;
+      await service.requestDailySteps();
+      expect((snapshot()['selectedDog'] as Map)['displayName'], '다른계정');
+      await service.clearContext();
+      server.accountId = 'account-a';
+      await service.resumeAndSync();
+      await old.restore();
+      await service.requestDailySteps();
+      expect(snapshot()['selectedDog'], isNull);
+      await service.logoutSession(() async {
+        server.accountId = null;
+        return const SessionLogoutOutcome(
+          serverRevoked: true,
+          localCleared: true,
+        );
+      });
+      expect(service.isActive, isFalse);
+      expect(native.calls.last.method, 'clearContext');
+    },
+  );
+
+  test('every approved breed resolves to its own shipped Watch sprite', () {
+    expect(FirstMeetingCatalog.breeds, hasLength(30));
+    for (final breed in FirstMeetingCatalog.breeds) {
+      expect(watchDogAssetKey(breed.id), 'dog.preview.${breed.id}');
+      final asset =
+          'SelectedDog${breed.id.split('-').map((part) => '${part[0].toUpperCase()}${part.substring(1)}').join()}';
+      final directory = 'ios/Watch/Assets.xcassets/$asset.imageset';
+      final contents = jsonDecode(
+        File('$directory/Contents.json').readAsStringSync(),
+      ) as Map;
+      expect((contents['images'] as List).single['filename'], 'dog.png');
+      expect(
+        File('$directory/dog.png').readAsBytesSync(),
+        File(breed.spritePath).readAsBytesSync(),
+      );
+    }
+    expect(watchDogAssetKey('unknown'), 'dog.unsupported');
+    expect(watchDogAssetKey(''), 'dog.unsupported');
+    expect(watchDogAssetKey('../pug'), 'dog.unsupported');
+  });
 
   test('explicit resume maps original IDs and ordered points then validates receipt', () async {
     await service.resumeAndSync();
