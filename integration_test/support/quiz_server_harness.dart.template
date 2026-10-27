@@ -1,0 +1,82 @@
+// Local QA only. Run with the server package configuration in test mode.
+import 'dart:convert';
+import 'dart:io';
+
+import 'package:balmatchum_server/src/ads/ad_config.dart';
+import 'package:balmatchum_server/src/ads/ad_setup.dart';
+import 'package:balmatchum_server/src/ads/ad_verifier.dart';
+import 'package:balmatchum_server/src/auth/auth_setup.dart';
+import 'package:balmatchum_server/src/generated/serverpod.dart';
+import 'package:balmatchum_server/src/quiz/quiz_bank.dart';
+import 'package:serverpod_auth_core_server/serverpod_auth_core_server.dart';
+
+import 'ad_test_keys.dart';
+import 'quiz_fixture.dart';
+
+Future<void> main() async {
+  final directory = await Directory.systemTemp.createTemp('quiz-db-');
+  final pod = Serverpod(['--mode=test', '--apply-migrations'],
+    configOverride: (c) => c.copyWith(
+      apiServer: ServerConfig(port: 18100, publicHost: 'localhost',
+        publicPort: 18100, publicScheme: 'http'),
+      database: PostgresDatabaseConfig(host: '127.0.0.1', port: 0,
+        user: 'postgres', password: 'local-disposable-test-only',
+        dataPath: '${directory.path}/pgdata', name: 'quiz_native_test'),
+    ),
+  );
+  configureAuth(pod, sessionPepper: 'public-disposable-quiz-harness');
+  await pod.start(runInGuardedZone: false);
+  final admin = await pod.createSession(enableLogging: false);
+  final user = await AuthServices.instance.authUsers.create(admin);
+  final auth = await AuthServices.instance.tokenManager.issueToken(admin,
+    authUserId: user.id, method: 'quiz-native-test');
+  // Deliberately start with an empty test bank, never an invented reviewed pack.
+  await configureQuizBank(pod, bank: fixtureBank(0));
+  final ssv = (await configureAdMob(pod,
+    config: AdConfig({'extraQuiz': const AdPlacement('local-quiz-unit', 'quiz', '1')}, 0),
+    verifier: AdVerifier(loadKeys: () async => adKeys()),
+  ))!;
+  final seam = await HttpServer.bind(InternetAddress.loopbackIPv4, 18101);
+  seam.listen((request) async {
+    try {
+      if (request.uri.path == '/session') {
+        request.response.headers.contentType = ContentType.json;
+        request.response.write(jsonEncode({'auth': auth.toJson()}));
+      } else if (request.uri.path == '/bank') {
+        await configureQuizBank(pod, bank: fixtureBank(2));
+      } else if (request.uri.path == '/exhausted') {
+        // Both issued IDs stay seen. A pack containing only the seen free ID
+        // exposes exhausted without changing time or manufacturing new content.
+        await configureQuizBank(pod, bank: fixtureBank(1));
+      } else if (request.uri.path == '/ssv') {
+        final nonce = request.uri.queryParameters['nonce']!;
+        final owner = request.uri.queryParameters['owner']!;
+        final query = signAd('ad_network=123&ad_unit=local-quiz-unit&custom_data=$nonce'
+          '&reward_amount=1&reward_item=quiz&timestamp=${DateTime.now().millisecondsSinceEpoch}'
+          '&transaction_id=${utf8.encode(nonce).map((v) => v.toRadixString(16).padLeft(2, '0')).join()}&user_id=$owner');
+        final socket = await Socket.connect('127.0.0.1', ssv.port);
+        final response = socket.cast<List<int>>().transform(utf8.decoder).join();
+        socket.write('GET /admob/ssv?$query HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n');
+        await socket.flush();
+        final text = await response.timeout(const Duration(seconds: 10));
+        socket.destroy();
+        request.response.statusCode = int.parse(text.split(' ')[1]);
+      } else if (request.method == 'POST' && request.uri.path == '/capture') {
+        final name = request.uri.queryParameters['name']!;
+        if (!RegExp(r'^quiz-[a-z-]+$').hasMatch(name)) throw const FormatException('capture name');
+        final file = File('${Directory.systemTemp.path}/$name.png').openWrite();
+        await file.addStream(request);
+        await file.close();
+      } else {
+        request.response.statusCode = 404;
+      }
+    } catch (error, stack) {
+      stderr.writeln('$error\n$stack');
+      request.response.statusCode = 500;
+    } finally {
+      await request.response.close();
+    }
+  });
+  await admin.close();
+  stdout.writeln('QUIZ_HARNESS_READY');
+}
