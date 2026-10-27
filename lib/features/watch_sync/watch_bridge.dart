@@ -21,6 +21,8 @@ enum DailyStepsStatus {
   available,
   capabilityUnavailable,
   unavailable,
+  providerUpdateRequired,
+  permissionDenied,
   empty,
   error,
 }

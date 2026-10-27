@@ -4,13 +4,13 @@ import 'package:flutter/material.dart';
 import 'package:social_signin_kit/social_signin_kit.dart';
 
 import '../daily_activity/daily_steps_controller.dart';
+import '../daily_activity/daily_steps_readout.dart';
 import '../daily_activity/product_controller.dart';
 import '../daily_activity/record_mapping.dart';
 import '../daily_activity/reward_panel.dart';
 import '../daily_activity/product_repository.dart';
 import '../auth/kakao_auth_service.dart';
 import '../wardrobe/dog_sprite.dart';
-import '../watch_sync/watch_bridge.dart';
 import 'domain/first_meeting.dart';
 import 'meeting_theme.dart';
 import 'meeting_widgets.dart';
@@ -847,29 +847,7 @@ class _FirstMeetingScreenState extends State<FirstMeetingScreen> {
                 children: [
                   Text('오늘 걸음 · 목표 ${s.goal}'),
                   const SizedBox(height: 12),
-                  Text(
-                    '${widget.dailySteps?.count ?? '—'} 걸음',
-                    style: Theme.of(context).textTheme.headlineSmall,
-                  ),
-                  Text(switch (widget.dailySteps?.result?.status) {
-                    DailyStepsStatus.available =>
-                      '${widget.dailySteps!.date} · 한국 기준',
-                    DailyStepsStatus.capabilityUnavailable =>
-                      '이 기기에서는 걸음 조회를 지원하지 않아요.',
-                    DailyStepsStatus.empty => '아직 확인할 걸음 자료가 없어요.',
-                    DailyStepsStatus.unavailable => '걸음 자료를 확인할 수 없어요.',
-                    DailyStepsStatus.error => '걸음을 불러오지 못했어요. 다시 시도해 주세요.',
-                    null => '걸음 정보를 아직 조회하지 않았어요.',
-                  }),
-                  if (widget.dailySteps != null)
-                    TextButton(
-                      onPressed: widget.dailySteps!.isLoading
-                          ? null
-                          : widget.dailySteps!.refresh,
-                      child: Text(
-                        widget.dailySteps!.isLoading ? '조회 중' : '걸음 새로고침',
-                      ),
-                    ),
+                  DailyStepsReadout(controller: widget.dailySteps),
                   if (widget.product case final product?) ...[
                     TextButton(
                       onPressed: product.busy
