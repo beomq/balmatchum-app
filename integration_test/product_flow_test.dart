@@ -32,22 +32,6 @@ Future<void> changedTo(
   }
 }
 
-/// Renders real frames until [finder] matches. The home screen re-reads disk
-/// storage asynchronously, which pumpAndSettle does not wait for.
-Future<void> pumpUntilFound(
-  WidgetTester tester,
-  Finder finder, {
-  Duration timeout = const Duration(seconds: 20),
-}) async {
-  final elapsed = Stopwatch()..start();
-  while (finder.evaluate().isEmpty) {
-    if (elapsed.elapsed > timeout) {
-      throw TimeoutException('Not found: $finder', timeout);
-    }
-    await tester.pump();
-  }
-}
-
 void main() {
   final binding = IntegrationTestWidgetsFlutterBinding.ensureInitialized();
   testWidgets('dev user sync claim purchase equip and disk restore', (
@@ -71,6 +55,28 @@ void main() {
       ],
     );
     var container = createContainer();
+    Future<void> mountHome() async {
+      final meeting = container.read(firstMeetingControllerProvider);
+      var loadingStarted = false;
+      // Subscribe before mounting: the screen starts a fresh disk restore,
+      // even if this controller was already initialized by the fixture.
+      await changedTo(
+        meeting,
+        () {
+          loadingStarted = loadingStarted || meeting.isBusy;
+          return loadingStarted && !meeting.isBusy;
+        },
+        () => tester.pumpWidget(
+          UncontrolledProviderScope(
+            container: container,
+            child: const AppBootstrap(),
+          ),
+        ),
+      );
+      expect(meeting.error, isNull);
+      await tester.pumpAndSettle();
+    }
+
     final meeting = container.read(firstMeetingControllerProvider);
     await meeting.initialize();
     if (!meeting.state.isComplete) {
@@ -84,16 +90,10 @@ void main() {
       await meeting.commit();
     }
     expect(meeting.state.isComplete, isTrue);
-    await tester.pumpWidget(
-      UncontrolledProviderScope(
-        container: container,
-        child: const AppBootstrap(),
-      ),
-    );
-    await tester.pumpAndSettle();
+    await mountHome();
     Future<void> tapText(String text) async {
       final finder = find.text(text);
-      await pumpUntilFound(tester, finder);
+      expect(finder, findsOneWidget);
       await tester.ensureVisible(finder);
       await tester.tap(finder);
       await tester.pump();
@@ -126,7 +126,13 @@ void main() {
     await tester.tapAt(const Offset(20, 20));
     await tester.pumpAndSettle();
     expect(find.text('오늘 포인트'), findsNothing);
-    await tapText('꾸미기');
+    final previousStore = product.store;
+    // loadWardrobe publishes a new server response through this notifier.
+    await changedTo(
+      product,
+      () => !identical(product.store, previousStore),
+      () => tapText('꾸미기'),
+    );
     await tester.pumpAndSettle();
     await tapText('상점');
     await tester.pumpAndSettle();
@@ -135,7 +141,7 @@ void main() {
     await tester.tap(cloudy);
     await tester.pumpAndSettle();
     final themeAction = find.byKey(const ValueKey('wardrobe_action'));
-    await pumpUntilFound(tester, themeAction);
+    expect(themeAction, findsOneWidget);
     await tester.ensureVisible(themeAction);
     await tester.tap(themeAction);
     await tester.pump();
@@ -158,13 +164,7 @@ void main() {
     container.dispose();
     container = createContainer();
     await container.read(firstMeetingControllerProvider).initialize();
-    await tester.pumpWidget(
-      UncontrolledProviderScope(
-        container: container,
-        child: const AppBootstrap(),
-      ),
-    );
-    await tester.pumpAndSettle();
+    await mountHome();
     final restored = container.read(productControllerProvider);
     await changedTo(
       restored,
