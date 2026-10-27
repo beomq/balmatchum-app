@@ -353,6 +353,10 @@ void main() {
     }
   });
 
+  test('Apple sign-in requests the email scope but never the name', () {
+    expect(appleSignInScopes, [AppleIDAuthorizationScopes.email]);
+  });
+
   test('platform and configuration matrix fails closed', () {
     for (final platform in TargetPlatform.values) {
       final config = SocialAuthConfiguration(

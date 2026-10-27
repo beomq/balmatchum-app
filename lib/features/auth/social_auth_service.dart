@@ -8,17 +8,10 @@ import 'kakao_auth_service.dart';
 import 'sign_in_starter.dart';
 
 final class SocialCredential {
-  const SocialCredential({
-    required this.idToken,
-    this.authorizationCode,
-    this.firstName,
-    this.lastName,
-  });
+  const SocialCredential({required this.idToken, this.authorizationCode});
 
   final String idToken;
   final String? authorizationCode;
-  final String? firstName;
-  final String? lastName;
 }
 
 final class SocialLoginFailure implements Exception {
