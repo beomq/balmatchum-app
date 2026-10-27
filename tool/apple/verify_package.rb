@@ -19,7 +19,6 @@ module ApplePackage
     ios = plist(File.join(app, 'Info.plist'))
     purpose = ios['NSHealthShareUsageDescription']
     raise 'Missing HealthKit purpose: NSHealthShareUsageDescription' unless purpose.is_a?(String) && !purpose.strip.empty?
-    raise 'Unexpected HealthKit write purpose' if ios.key?('NSHealthUpdateUsageDescription')
     raise 'HealthKit capability not verified' unless ios['BalmatchumHealthKitCapabilityVerified'] == true
     watch_path = File.join(app, 'Watch/BalmatchumWatch.app')
     watch = plist(File.join(watch_path, 'Info.plist'))
@@ -37,6 +36,11 @@ module ApplePackage
         [plist(profile_path).fetch('Entitlements'), plist(entitlements_path)].each do |entitlements|
           raise 'Signing entitlement mismatch' unless entitlements['application-identifier'] == "Q4E6NKD9VN.#{expected}" && entitlements['com.apple.developer.team-identifier'] == 'Q4E6NKD9VN' && entitlements['get-task-allow'] == false
           raise 'Missing HealthKit entitlement' if path == app && entitlements['com.apple.developer.healthkit'] != true
+          if entitlements['com.apple.developer.healthkit'] == true
+            # ITMS-90683 requires this string even when authorization shares no types.
+            update = info['NSHealthUpdateUsageDescription']
+            raise 'Missing HealthKit purpose: NSHealthUpdateUsageDescription' unless update.is_a?(String) && !update.strip.empty?
+          end
         end
       end
     end

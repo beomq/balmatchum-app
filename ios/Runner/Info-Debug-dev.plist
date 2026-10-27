@@ -16,6 +16,7 @@
 <key>CFBundleVersion</key><string>$(FLUTTER_BUILD_NUMBER)</string>
 <key>LSRequiresIPhoneOS</key><true/>
 <key>NSHealthShareUsageDescription</key><string>건강 앱에 기록된 오늘의 걸음 수를 읽어 발맞춤의 오늘 걸음과 목표 달성 현황을 표시합니다.</string>
+<key>NSHealthUpdateUsageDescription</key><string>발맞춤은 건강 앱에 데이터를 기록하거나 수정하지 않으며, 걸음 수 읽기 권한만 요청합니다.</string>
 <key>BalmatchumHealthKitCapabilityVerified</key><true/>
 <key>UIApplicationSceneManifest</key><dict>
 <key>UIApplicationSupportsMultipleScenes</key><false/>
