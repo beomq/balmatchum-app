@@ -1,4 +1,5 @@
 import 'package:balmatchum_client/balmatchum_client.dart';
+import 'package:flutter/foundation.dart';
 import 'package:serverpod_auth_core_flutter/serverpod_auth_core_flutter.dart';
 
 import 'ads_controller.dart';
@@ -50,7 +51,18 @@ class _SessionAdsServer implements AdsServer {
   @override
   Future<AdIntent> create(String purpose, String date, int revision) {
     if (!isCurrent) throw StateError('Ad account changed');
-    return client.ads.createIntent(purpose, date, revision);
+    // The server returns the ad unit for this platform; other platforms have none.
+    final platform = switch (defaultTargetPlatform) {
+      TargetPlatform.iOS => AdPlatform.ios,
+      TargetPlatform.android => AdPlatform.android,
+      TargetPlatform.fuchsia ||
+      TargetPlatform.linux ||
+      TargetPlatform.macOS ||
+      TargetPlatform.windows => throw UnsupportedError(
+        'Ads are unsupported on $defaultTargetPlatform',
+      ),
+    };
+    return client.ads.createIntent(purpose, date, revision, platform);
   }
 
   @override

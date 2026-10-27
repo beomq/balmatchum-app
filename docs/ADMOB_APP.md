@@ -13,6 +13,9 @@ Fastlane에 전달한다. Archive 전 형식과 비샘플 ID를 검사하므로 
 
 `lib/features/ads/ads_session.dart`의 `createAdsController(Client)`는 현재 인증 객체와
 인증 헤더를 한 번 캡처합니다. 생성 Client와 `ads.createIntent`/`ads.getIntent`만 사용합니다.
+`ads.createIntent`의 마지막 필수 인자 `AdPlatform platform`은 `defaultTargetPlatform`에서
+정합니다(iOS → `ios`, Android → `android`). 서버는 그 플랫폼의 adUnit을 반환합니다.
+그 밖의 플랫폼은 광고 미지원이므로 createIntent를 호출하지 않고 failed로 끝납니다.
 요청 중 계정이 바뀌면 controller를 취소하고, 캡처한 헤더를 새 계정 헤더로 교체하지 않습니다.
 동일 계정의 인증 객체 교체도 안전하게 취소합니다. 닫은 뒤 새 controller를 만드세요.
 
@@ -39,8 +42,8 @@ try {
 시트가 닫히기 전 controller listener에서 `status == AdsStatus.verified`와 `intent.id`를
 읽되, **실제 자격/보상 소비는 경제 서버 트랜잭션의 다음 증분**에서 처리해야 합니다.
 
-흐름: native metadata 확인 → UMP 갱신/필수 양식/광고 허용 확인 → SDK init → 서버 create
-→ 반환 adUnit load → 반환 userId/customData 그대로 SSV 설정 완료 → show → dismiss/dispose
+흐름: native metadata 확인 → UMP 갱신/필수 양식/광고 허용 확인 → SDK init → 서버 create(실행 플랫폼)
+→ 반환된 플랫폼별 adUnit load → 반환 userId/customData 그대로 SSV 설정 완료 → show → dismiss/dispose
 → 서버 상태 조회 한 번. 클라이언트 reward callback은 `clientRewardObserved`만 바꾸며
 verified/포인트/entitlement를 만들지 않습니다. verified도 혜택 지급 완료라는 뜻은 아닙니다.
 
@@ -112,7 +115,7 @@ metadata 채널을 빈 값으로 주입합니다. 실제 SDK 테스트는 별도
 `fvm dart analyze --format machine`과 언어 서버 진단을 사용했습니다. 경고를 suppress하지 않습니다.
 기존 local `pubspec_overrides.yaml` 서버 client path는 보존했습니다. 이 파일로 설치한 lock은
 path override 상태이므로 부모가 최종 Git client ref/path/lock 재설치를 확인해야 합니다.
-pubspec과 lock의 승인 서버 ref는 2b8c418994524746c5c25d3f795d965c2ea22aca(`source: git`)입니다. pubspec과 lock은 머지된 서버 develop 커밋을 Git 소스로 고정하며 `pubspec_overrides.yaml`은 커밋하지 않습니다.
+pubspec과 lock의 승인 서버 ref는 af08b3fb034a541693ae6b93e9e1187b05aa6b32(`source: git`)입니다. pubspec과 lock은 머지된 서버 develop 커밋을 Git 소스로 고정하며 `pubspec_overrides.yaml`은 커밋하지 않습니다.
 
 장애 확인 순서: native 실제 AppID → dev/test 모드 일치 → UMP 실패/허용 상태 → create의
 configurationMissing → 반환 adUnit/SSV 메타데이터 → load/show 실패 → 서버 pending과 SSV
