@@ -87,8 +87,9 @@ platform :ios do
       next if mode == 'verify'
       ipa = File.join(export, 'balmatchum_app.ipa')
       AppleDeliveryValidation.with_key(key_id: key_id, key_path: key_path) do
-        sh('xcrun', 'altool', '--validate-app', '-f', ipa, '-t', 'ios',
-          '--apiKey', key_id, '--apiIssuer', issuer)
+        UI.message('APPLE_VALIDATION_STARTED timeout_seconds=900')
+        AppleDeliveryValidation.run!(['xcrun', 'altool', '--validate-app', '-f', ipa, '-t', 'ios',
+          '--apiKey', key_id, '--apiIssuer', issuer])
       end
       current = fetcher.call(builds_path).map { |build| build.fetch('attributes').fetch('version') }
       UI.user_error!('ASC build history changed; rebuild required') unless current.all? { |v| AppleBuildNumber.ordinal(v) < AppleBuildNumber.ordinal(number) }

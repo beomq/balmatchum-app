@@ -90,6 +90,9 @@ jobs:
           FASTLANE_SKIP_UPDATE_CHECK: '1'
           FASTLANE_HIDE_CHANGELOG: '1'
         run: ruby tool/apple/run_delivery.rb
+      - name: Remove temporary App Store Connect validation keys
+        if: always()
+        run: rm -f "$HOME"/.appstoreconnect/private_keys/AuthKey_*.p8
       - name: Retain signed package and identity evidence
         uses: actions/upload-artifact@v4
         with:
