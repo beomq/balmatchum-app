@@ -112,7 +112,7 @@ metadata 채널을 빈 값으로 주입합니다. 실제 SDK 테스트는 별도
 `fvm dart analyze --format machine`과 언어 서버 진단을 사용했습니다. 경고를 suppress하지 않습니다.
 기존 local `pubspec_overrides.yaml` 서버 client path는 보존했습니다. 이 파일로 설치한 lock은
 path override 상태이므로 부모가 최종 Git client ref/path/lock 재설치를 확인해야 합니다.
-pubspec과 lock의 승인 서버 ref는 e963a108c99030cb7897d794a7b0336a75af79cc(`source: git`)입니다.
+pubspec과 lock의 승인 서버 ref는 2b8c418994524746c5c25d3f795d965c2ea22aca(`source: git`)입니다. pubspec과 lock은 머지된 서버 develop 커밋을 Git 소스로 고정하며 `pubspec_overrides.yaml`은 커밋하지 않습니다.
 
 장애 확인 순서: native 실제 AppID → dev/test 모드 일치 → UMP 실패/허용 상태 → create의
 configurationMissing → 반환 adUnit/SSV 메타데이터 → load/show 실패 → 서버 pending과 SSV
