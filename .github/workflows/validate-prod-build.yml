@@ -73,7 +73,7 @@ jobs:
           ANDROID_STORE_PASSWORD: ${{ secrets[matrix.store_password] }}
           ANDROID_KEY_PASSWORD: ${{ secrets[matrix.key_password] }}
           ANDROID_STORE_FILE: ${{ runner.temp }}/android-upload.p12
-          ADMOB_ANDROID_APP_ID: ${{ matrix.flavor == 'dev' && vars.ADMOB_ANDROID_APP_ID_DEV || vars.ADMOB_ANDROID_APP_ID_PROD }}
+          ADMOB_ANDROID_APP_ID: ${{ vars[matrix.flavor == 'dev' && 'ADMOB_ANDROID_APP_ID_DEV' || 'ADMOB_ANDROID_APP_ID_PROD'] }}
           SERVER_URL: ${{ vars.SERVER_URL_PROD }}
           KAKAO_NATIVE_APP_KEY: ${{ vars.KAKAO_NATIVE_APP_KEY_PROD }}
           GOOGLE_SERVER_CLIENT_ID: ${{ vars.GOOGLE_SERVER_CLIENT_ID_PROD }}
