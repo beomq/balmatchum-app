@@ -69,6 +69,8 @@ jobs:
           ruby tool/apple/build_number_test.rb
           ruby tool/apple/delivery_target_test.rb
           ruby tool/apple/verify_package_test.rb
+          ruby tool/apple/app_config_test.rb
+          bash tool/test_release_app_config.sh
       - name: Readonly signing and delivery
         env:
           MATCH_PASSWORD: ${{ secrets.MATCH_PASSWORD }}
@@ -77,6 +79,10 @@ jobs:
           ASC_KEY_ID: ${{ vars.ASC_KEY_ID }}
           ASC_ISSUER_ID: ${{ vars.ASC_ISSUER_ID }}
           ADMOB_IOS_APP_ID: ${{ vars.ADMOB_IOS_APP_ID }}
+          SERVER_URL: ${{ vars.SERVER_URL_PROD }}
+          KAKAO_NATIVE_APP_KEY: ${{ vars.KAKAO_NATIVE_APP_KEY_PROD }}
+          GOOGLE_SERVER_CLIENT_ID: ${{ vars.GOOGLE_SERVER_CLIENT_ID_PROD }}
+          GOOGLE_IOS_CLIENT_ID: ${{ vars.GOOGLE_IOS_CLIENT_ID_PROD }}
           FASTLANE_SKIP_UPDATE_CHECK: '1'
           FASTLANE_HIDE_CHANGELOG: '1'
         run: ruby tool/apple/run_delivery.rb

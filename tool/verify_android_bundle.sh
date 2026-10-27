@@ -28,7 +28,7 @@ trap 'rm -rf "$work"' EXIT
 
 java -jar "$BUNDLETOOL_JAR" validate --bundle="$bundle"
 java -jar "$BUNDLETOOL_JAR" dump manifest --bundle="$bundle" --module=base > "$work/manifest.xml"
-python3 - "$work/manifest.xml" "$package" <<'PY'
+python3 - "$work/manifest.xml" "$package" "$FLAVOR" <<'PY'
 import re
 import sys
 import xml.etree.ElementTree as ET
@@ -43,6 +43,12 @@ ads = [m.attrib.get(ns + 'value', '') for m in root.iter('meta-data')
 assert len(ads) == 1 and re.fullmatch(r'ca-app-pub-[0-9]{16}~[0-9]{10}', ads[0]), 'Missing or malformed AdMob app ID'
 assert not ads[0].startswith('ca-app-pub-3940256099942544~'), 'Google sample AdMob app ID'
 print('AdMob app ID:', ads[0])
+if sys.argv[3] == 'prod':
+    kakao = [d.attrib.get(ns + 'scheme', '') for a in root.iter('activity')
+             if a.attrib.get(ns + 'name') == 'com.kakao.sdk.flutter.auth.AuthCodeHandlerActivity'
+             for d in a.iter('data') if d.attrib.get(ns + 'host') == 'oauth']
+    assert len(kakao) == 1 and re.fullmatch(r'kakao[0-9a-f]{32}', kakao[0]), 'Missing or malformed Kakao login redirect scheme'
+    print('Kakao redirect scheme:', kakao[0])
 PY
 jarsigner -verify "$bundle"
 keytool -J-Duser.language=en -printcert -jarfile "$bundle" > "$work/certificate.txt"

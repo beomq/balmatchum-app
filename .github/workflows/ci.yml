@@ -16,6 +16,8 @@ jobs:
       - uses: actions/checkout@v4
       - name: Test Play draft upload contract
         run: bash tool/test_upload_play.sh
+      - name: Test release app config contract
+        run: bash tool/test_release_app_config.sh
       - uses: actions/setup-java@v4
         with:
           distribution: temurin

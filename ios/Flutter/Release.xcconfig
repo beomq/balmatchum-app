@@ -1,2 +1,5 @@
 #include "Generated.xcconfig"
 COMPANION_BUNDLE_IDENTIFIER = $(PRODUCT_BUNDLE_IDENTIFIER)
+// Unconfigured placeholders; prod archives override them (tool/apple/app_config.rb).
+KAKAO_URL_SCHEME = $(PRODUCT_BUNDLE_IDENTIFIER).kakao-unconfigured
+GOOGLE_REVERSED_CLIENT_ID = $(PRODUCT_BUNDLE_IDENTIFIER).google-unconfigured

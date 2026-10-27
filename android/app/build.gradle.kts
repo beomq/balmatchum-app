@@ -1,8 +1,18 @@
+import java.util.Base64
+
 plugins {
     id("com.android.application")
     // The Flutter Gradle Plugin must be applied after the Android and Kotlin Gradle plugins.
     id("dev.flutter.flutter-gradle-plugin")
 }
+
+// Flutter passes --dart-define values as base64 "KEY=VALUE" items; native config reads the same values.
+val dartDefines: Map<String, String> = providers.gradleProperty("dart-defines").orNull.orEmpty()
+    .split(',')
+    .filter { it.isNotBlank() }
+    .map { String(Base64.getDecoder().decode(it), Charsets.UTF_8) }
+    .associate { it.substringBefore('=') to it.substringAfter('=', "") }
+val kakaoNativeAppKey = dartDefines["KAKAO_NATIVE_APP_KEY"].orEmpty()
 
 android {
     namespace = "com.beomq.balmatchum"
@@ -33,6 +43,8 @@ android {
         versionCode = flutter.versionCode
         versionName = flutter.versionName
         manifestPlaceholders["admobAppId"] = providers.environmentVariable("ADMOB_ANDROID_APP_ID").orNull ?: ""
+        manifestPlaceholders["kakaoScheme"] =
+            if (kakaoNativeAppKey.isEmpty()) "com.beomq.balmatchum.kakao-unconfigured" else "kakao$kakaoNativeAppKey"
     }
 
     signingConfigs {
@@ -107,6 +119,26 @@ val validateProdSigning by tasks.registering {
 
 tasks.matching { it.name == "preProdReleaseBuild" }.configureEach {
     dependsOn(validateProdSigning)
+}
+
+val validateProdReleaseAppConfig by tasks.registering {
+    val defines = dartDefines
+    doLast {
+        val rules = mapOf(
+            "SERVER_URL" to Regex("^https://[A-Za-z0-9.-]+(:[0-9]{1,5})?(/[A-Za-z0-9._~-]+)*/$"),
+            "KAKAO_NATIVE_APP_KEY" to Regex("^[0-9a-f]{32}$"),
+            "GOOGLE_SERVER_CLIENT_ID" to Regex("^[0-9]+-[a-z0-9]+\\.apps\\.googleusercontent\\.com$"),
+        )
+        val invalid = rules.filterNot { (name, rule) -> rule.matches(defines[name].orEmpty()) }.keys
+        check(invalid.isEmpty()) {
+            "Prod release requires --dart-define-from-file from tool/release_app_config.sh; " +
+                "missing or malformed: ${invalid.joinToString()}."
+        }
+    }
+}
+
+tasks.matching { it.name == "preProdReleaseBuild" }.configureEach {
+    dependsOn(validateProdReleaseAppConfig)
 }
 
 // Release variants must carry a real AdMob app ID; debug builds keep the empty default.
