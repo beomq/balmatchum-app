@@ -51,6 +51,9 @@ jobs:
         with:
           distribution: temurin
           java-version: '17'
+      - uses: android-actions/setup-android@v3
+        with:
+          packages: platform-tools
       - name: Read pinned Flutter version
         id: sdk
         run: echo "version=$(jq -r .flutter .fvmrc)" >> "$GITHUB_OUTPUT"
@@ -71,6 +74,14 @@ jobs:
         run: fvm flutter analyze
       - name: Test
         run: fvm flutter test
+      - name: Prepare bundle verifier
+        shell: bash
+        run: |
+          curl --fail --location --silent --show-error \
+            https://github.com/google/bundletool/releases/download/1.18.3/bundletool-all-1.18.3.jar \
+            -o "$RUNNER_TEMP/bundletool.jar"
+          echo "a099cfa1543f55593bc2ed16a70a7c67fe54b1747bb7301f37fdfd6d91028e29  $RUNNER_TEMP/bundletool.jar" | sha256sum --check
+          sdkmanager 'build-tools;36.0.0' 'ndk;28.2.13676358'
       - name: Authenticate to read Play versions
         id: versions-auth
         uses: google-github-actions/auth@v3
@@ -108,7 +119,15 @@ jobs:
           printf '%s' "$KEYSTORE_BASE64" | base64 --decode > "$BALMATCHUM_PROD_STORE_FILE"
           fvm flutter build appbundle --flavor prod --release --build-number="$VERSION_CODE" \
             --dart-define-from-file="$RUNNER_TEMP/app-config.json"
-          jarsigner -verify build/app/outputs/bundle/prodRelease/app-prod-release.aab
+          # Play locks the first upload's signer as the upload key: pin it before any upload.
+          export BUNDLETOOL_JAR="$RUNNER_TEMP/bundletool.jar"
+          export LLVM_READELF="$ANDROID_HOME/ndk/28.2.13676358/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-readelf"
+          export ZIPALIGN="$ANDROID_HOME/build-tools/36.0.0/zipalign"
+          export APKSIGNER="$ANDROID_HOME/build-tools/36.0.0/apksigner"
+          ANDROID_STORE_FILE="$BALMATCHUM_PROD_STORE_FILE" \
+            ANDROID_STORE_PASSWORD="$BALMATCHUM_PROD_STORE_PASSWORD" \
+            ANDROID_KEY_PASSWORD="$BALMATCHUM_PROD_KEY_PASSWORD" \
+            bash tool/verify_android_bundle.sh build/app/outputs/bundle/prodRelease/app-prod-release.aab
       - name: Keep signed bundle
         uses: actions/upload-artifact@v4
         with:
