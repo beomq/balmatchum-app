@@ -121,7 +121,14 @@ class ProductController extends ChangeNotifier {
     _checkAccount();
     final balance = await repository.wallet();
     _checkAccount();
-    final themes = await repository.themes();
+    var themes = store;
+    try {
+      themes = await repository.themes();
+    } catch (_) {
+      // A real account's theme is decoration; keep the last known store
+      // so steps, points and records still refresh.
+      if (account == null) rethrow;
+    }
     _checkAccount();
     if (account == null) {
       final question = await repository.quiz(ProductRepository.today);

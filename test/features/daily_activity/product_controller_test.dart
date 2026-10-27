@@ -58,6 +58,7 @@ class AccountRepository extends ProductRepository {
   AccountRepository() : super(Client('http://localhost/'));
   Completer<DailyRecord>? pending;
   bool failRead = false;
+  bool failThemes = false;
   ThemeStore store = themeStore();
   final calls = <String>[];
   @override
@@ -111,6 +112,7 @@ class AccountRepository extends ProductRepository {
   @override
   Future<ThemeStore> themes() async {
     calls.add('themes');
+    if (failThemes) throw Exception('Themes offline');
     return store;
   }
 
@@ -252,6 +254,37 @@ void main() {
     );
     expect(bought.balance, 39);
     expect(repository.calls, ['themes', 'purchase:cloudy', 'themes']);
+  });
+
+  test('theme failure keeps last theme and still refreshes records', () async {
+    final repository = AccountRepository();
+    final steps = DailyStepsController(
+      readSteps: () async =>
+          const DailyStepsResult(DailyStepsStatus.empty, null),
+    );
+    final controller = ProductController(repository, steps, null, account: 'A');
+    addTearDown(() {
+      controller.dispose();
+      steps.dispose();
+      repository.client.close();
+    });
+    await controller.connect();
+    final previous = controller.store;
+    repository.failThemes = true;
+    await controller.sync();
+    expect(controller.error, isNull);
+    expect(controller.connected, isTrue);
+    expect(controller.today, isNotNull);
+    expect(controller.wallet!.balance, 42);
+    expect(controller.store, same(previous));
+    expect(repository.calls, [
+      'day',
+      'wallet',
+      'themes',
+      'day',
+      'wallet',
+      'themes',
+    ]);
   });
 
   test('confirmed delete succeeds even when refresh fails', () async {
