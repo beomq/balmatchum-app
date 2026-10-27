@@ -93,6 +93,7 @@ jobs:
           BALMATCHUM_DEV_STORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
           BALMATCHUM_DEV_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
           BALMATCHUM_DEV_STORE_FILE: ${{ runner.temp }}/balmatchum-dev-upload.p12
+          ADMOB_ANDROID_APP_ID: ${{ vars.ADMOB_ANDROID_APP_ID_DEV }}
         run: |
           set +x
           : "${KEYSTORE_BASE64:?Missing Dev keystore}"
