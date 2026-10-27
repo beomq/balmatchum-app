@@ -32,6 +32,22 @@ Future<void> changedTo(
   }
 }
 
+/// Renders real frames until [finder] matches. The home screen re-reads disk
+/// storage asynchronously, which pumpAndSettle does not wait for.
+Future<void> pumpUntilFound(
+  WidgetTester tester,
+  Finder finder, {
+  Duration timeout = const Duration(seconds: 20),
+}) async {
+  final elapsed = Stopwatch()..start();
+  while (finder.evaluate().isEmpty) {
+    if (elapsed.elapsed > timeout) {
+      throw TimeoutException('Not found: $finder', timeout);
+    }
+    await tester.pump();
+  }
+}
+
 void main() {
   final binding = IntegrationTestWidgetsFlutterBinding.ensureInitialized();
   testWidgets('dev user sync claim purchase equip and disk restore', (
@@ -77,6 +93,7 @@ void main() {
     await tester.pumpAndSettle();
     Future<void> tapText(String text) async {
       final finder = find.text(text);
+      await pumpUntilFound(tester, finder);
       await tester.ensureVisible(finder);
       await tester.tap(finder);
       await tester.pump();
@@ -89,6 +106,8 @@ void main() {
       () => tapText('개발 테스트 사용자 연결'),
     );
     expect(product.connected, isTrue, reason: product.error);
+    expect(product.store?.balance, 10);
+    expect(product.wallet?.balance, 0);
     await tester.pumpAndSettle();
     await changedTo(product, () => !product.busy, () => tapText('서버 동기화'));
     expect(product.error, isNull);
@@ -96,12 +115,17 @@ void main() {
     await tester.pumpAndSettle();
     await tapText('포인트 받기');
     await tester.pumpAndSettle();
+    // steps-v1-20261019: 5,000 steps = 50 base points, free claim only.
     await changedTo(
       product,
-      () => product.store?.balance == 5,
-      () => tapText('기본 포인트 받기'),
+      () => product.wallet?.balance == 50,
+      () => tapText('무료 50 P 받기'),
     );
     await tester.pumpAndSettle();
+    // The reward sheet stays open after a claim; dismiss it via its barrier.
+    await tester.tapAt(const Offset(20, 20));
+    await tester.pumpAndSettle();
+    expect(find.text('오늘 포인트'), findsNothing);
     await tapText('꾸미기');
     await tester.pumpAndSettle();
     await tapText('상점');
@@ -110,11 +134,15 @@ void main() {
     await tester.ensureVisible(cloudy);
     await tester.tap(cloudy);
     await tester.pumpAndSettle();
-    await tapText('구매하기');
+    final themeAction = find.byKey(const ValueKey('wardrobe_action'));
+    await pumpUntilFound(tester, themeAction);
+    await tester.ensureVisible(themeAction);
+    await tester.tap(themeAction);
+    await tester.pump();
     await tester.pumpAndSettle();
     await changedTo(
       product,
-      () => product.store?.balance == 2,
+      () => product.store?.balance == 7,
       () => tapText('구매 확인'),
     );
     await tester.pumpAndSettle();
@@ -145,7 +173,7 @@ void main() {
     );
     expect(restored.connected, isTrue, reason: restored.error);
     expect(restored.store?.equippedTheme, 'cloudy');
-    expect(restored.store?.balance, 2);
+    expect(restored.store?.balance, 7);
     await tester.pumpAndSettle();
     await binding.takeScreenshot('product-restored-native');
     expect(tester.takeException(), isNull);

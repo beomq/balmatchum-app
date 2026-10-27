@@ -10,16 +10,15 @@
    `dev-test-session.json` 이름으로 복사한다. 파일 권한은 0600으로 유지한다.
 3. 다음 명령을 순서대로 실행한다. 각 테스트는 별도 앱 프로세스로 실행된다.
 
-```sh
-fvm flutter test integration_test/product_flow_test.dart --no-uninstall --flavor dev -d <simulator-id> --dart-define=SERVER_URL=http://127.0.0.1:18080/
-fvm flutter test integration_test/product_restore_test.dart --no-uninstall --flavor dev -d <simulator-id> --dart-define=SERVER_URL=http://127.0.0.1:18080/
-```
+하네스 버전과 재현 명령은 [통합 테스트 지원 문서](../integration_test/support/README.md)를
+따른다.
 
 첫 테스트는 새로운 서버 DB가 필요하다. 센서 입력만 5,000걸음으로 주입하고,
 `--no-uninstall`로 테스트 종료 시 앱과 저장 데이터 삭제를 막는다.
-실제 인증·HTTP·기기 저장·라우터·화면 버튼을 사용한다. 개발 수치 기준 5P를
-수령하고 cloudy 배경을 3P에 구매·적용한다. 두 번째 테스트는 세션 가져오기
-파일이 없어도 보안 저장소의 인증과 서버의 잔액 2P·적용 배경을 복원하는지 검사한다.
+실제 인증·HTTP·기기 저장·라우터·화면 버튼을 사용한다. 5,000걸음의 무료 보상
+50P는 운영 보상 원장에 수령하고, 별도 fixture 시작 잔액 10P로 cloudy 배경을
+3P에 구매·적용한다. 두 번째 테스트는 세션 가져오기 파일이 없어도 보안 저장소의
+인증과 서버의 fixture 잔액 7P·운영 잔액 50P·적용 배경을 복원하는지 검사한다.
 기존 Dev 온보딩이 있으면 유지하고, 없으면 테스트 친구를 생성한다.
 
 실제 HealthKit 측정, 물리 Watch, 운영 경제 정책은 이 테스트의 검증 대상이 아니다.
