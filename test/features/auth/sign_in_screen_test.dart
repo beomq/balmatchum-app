@@ -6,6 +6,7 @@ import 'package:balmatchum_app/features/auth/sign_in_starter.dart';
 import 'package:balmatchum_app/features/bootstrap/presentation/bootstrap_screen.dart';
 import 'package:balmatchum_app/main.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:social_signin_kit/social_signin_kit.dart';
@@ -19,20 +20,139 @@ class _Starter implements SignInStarter {
   Future<SignInOutcome> start(SignInProvider provider) => callback(provider);
 }
 
+// Provider buttons only; the privacy link is also a TextButton.
+final _social = find.descendant(
+  of: find.byType(SocialButtonList),
+  matching: find.byType(TextButton),
+);
+final _age = find.byKey(const ValueKey('sign_in_age_confirmation'));
+const _ageRequired = '만 14세 이상인지 확인해 주세요.';
+const _policy = 'https://beomq.github.io/balmatchum-legal/privacy-policy.html';
+const _policyFailure = '개인정보처리방침을 열지 못했어요. 잠시 후 다시 시도해 주세요.';
+
 void main() {
   Future<void> mount(
     WidgetTester tester,
     SignInStarter starter, {
     TargetPlatform platform = TargetPlatform.iOS,
+    bool confirmAge = true,
+    Future<bool> Function(Uri url)? openUrl,
   }) async {
     await tester.pumpWidget(
       MaterialApp(
         theme: ThemeData(platform: platform),
-        home: SignInScreen(starter: starter),
+        home: openUrl == null
+            ? SignInScreen(starter: starter)
+            : SignInScreen(starter: starter, openUrl: openUrl),
       ),
     );
     await tester.pumpAndSettle();
+    // Remounting in a loop keeps the state, so only tap an unchecked box.
+    if (confirmAge && !tester.widget<CheckboxListTile>(_age).value!) {
+      await tester.tap(_age);
+      await tester.pumpAndSettle();
+    }
   }
+
+  for (final provider in SignInProvider.values) {
+    testWidgets('${provider.name} tap before age confirmation starts nothing', (
+      tester,
+    ) async {
+      final calls = <SignInProvider>[];
+      await mount(
+        tester,
+        _Starter((value) async {
+          calls.add(value);
+          return SignInOutcome.notConnected;
+        }),
+        confirmAge: false,
+      );
+      await tester.tap(_social.at(provider.index));
+      await tester.pumpAndSettle();
+      expect(calls, isEmpty);
+      expect(find.text(_ageRequired), findsOneWidget);
+      // Brand guidelines: the official buttons stay enabled, never greyed.
+      expect(
+        tester
+            .widgetList<SocialButton>(find.byType(SocialButton))
+            .every((button) => button.onPressed != null),
+        isTrue,
+      );
+    });
+
+    testWidgets('${provider.name} tap after age confirmation starts sign-in', (
+      tester,
+    ) async {
+      final calls = <SignInProvider>[];
+      await mount(
+        tester,
+        _Starter((value) async {
+          calls.add(value);
+          return SignInOutcome.notConnected;
+        }),
+        confirmAge: false,
+      );
+      await tester.tap(_social.at(provider.index));
+      await tester.pumpAndSettle();
+      await tester.tap(_age);
+      await tester.pumpAndSettle();
+      expect(find.text(_ageRequired), findsNothing);
+      await tester.tap(_social.at(provider.index));
+      await tester.pumpAndSettle();
+      expect(calls, [provider]);
+    });
+  }
+
+  testWidgets('age confirmation is required again after unchecking', (
+    tester,
+  ) async {
+    final calls = <SignInProvider>[];
+    await mount(
+      tester,
+      _Starter((value) async {
+        calls.add(value);
+        return SignInOutcome.notConnected;
+      }),
+    );
+    await tester.tap(_age);
+    await tester.pumpAndSettle();
+    await tester.tap(_social.first);
+    await tester.pumpAndSettle();
+    expect(calls, isEmpty);
+    expect(find.text(_ageRequired), findsOneWidget);
+  });
+
+  testWidgets('privacy policy link opens the published policy URL', (
+    tester,
+  ) async {
+    final opened = <Uri>[];
+    await mount(
+      tester,
+      const NotConnectedSignInStarter(),
+      confirmAge: false,
+      openUrl: (url) async {
+        opened.add(url);
+        return true;
+      },
+    );
+    await tester.tap(find.byKey(const ValueKey('sign_in_privacy_policy')));
+    await tester.pumpAndSettle();
+    expect(opened, [Uri.parse(_policy)]);
+    expect(find.text(_policyFailure), findsNothing);
+  });
+
+  testWidgets('privacy policy link reports a launcher failure', (tester) async {
+    await mount(
+      tester,
+      const NotConnectedSignInStarter(),
+      confirmAge: false,
+      openUrl: (_) async => throw PlatformException(code: 'ACTIVITY_NOT_FOUND'),
+    );
+    await tester.tap(find.byKey(const ValueKey('sign_in_privacy_policy')));
+    await tester.pumpAndSettle();
+    expect(find.text(_policyFailure), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
 
   testWidgets('Android hides the unsupported Apple button', (tester) async {
     await mount(
@@ -46,14 +166,14 @@ void main() {
       Social.kakao,
       Social.naver,
     ]);
-    expect(find.byType(TextButton), findsNWidgets(3));
+    expect(_social, findsNWidgets(3));
   });
 
   testWidgets('iOS keeps the Apple button', (tester) async {
     await mount(tester, const NotConnectedSignInStarter());
     final list = tester.widget<SocialButtonList>(find.byType(SocialButtonList));
     expect(list.items.map((item) => item.social), contains(Social.apple));
-    expect(find.byType(TextButton), findsNWidgets(4));
+    expect(_social, findsNWidgets(4));
   });
 
   testWidgets('completed Kakao outcomes expose status without leaving login', (
@@ -111,17 +231,13 @@ void main() {
       SocialButtonAppearance.providerDefault,
       SocialButtonAppearance.light,
     ]);
-    final sizes = find
-        .byType(TextButton)
-        .evaluate()
-        .map((element) => tester.getSize(find.byWidget(element.widget)));
+    final sizes = _social.evaluate().map(
+      (element) => tester.getSize(find.byWidget(element.widget)),
+    );
     expect(sizes.toSet(), hasLength(1));
     expect(sizes.first.height, 56);
     final kakao = tester.widget<TextButton>(
-      find.descendant(
-        of: find.byWidget(list.items[2]),
-        matching: find.byType(TextButton),
-      ),
+      find.descendant(of: find.byWidget(list.items[2]), matching: _social),
     );
     expect(kakao.style!.backgroundColor!.resolve({}), const Color(0xFFFEE500));
     expect(kakao.style!.foregroundColor!.resolve({}), const Color(0xD9000000));
@@ -142,7 +258,7 @@ void main() {
           }),
         );
         expect(calls, isEmpty);
-        await tester.tap(find.byType(TextButton).at(provider.index));
+        await tester.tap(_social.at(provider.index));
         await tester.pump();
         expect(calls, [provider]);
         expect(
@@ -151,7 +267,7 @@ void main() {
               .every((button) => button.onPressed == null),
           isTrue,
         );
-        await tester.tap(find.byType(TextButton).first);
+        await tester.tap(_social.first);
         expect(calls, [provider]);
         response.complete(SignInOutcome.notConnected);
         await tester.pumpAndSettle();
@@ -192,10 +308,10 @@ void main() {
         return response.future;
       }),
     );
-    await tester.tap(find.byType(TextButton).first);
+    await tester.tap(_social.first);
     await tester.pumpAndSettle();
     expect(find.byKey(const ValueKey('sign_in_error')), findsOneWidget);
-    await tester.tap(find.byType(TextButton).first);
+    await tester.tap(_social.first);
     await tester.pump();
     expect(calls, 2);
     await tester.pumpWidget(const SizedBox.shrink());
@@ -227,7 +343,9 @@ void main() {
     );
     await tester.pumpAndSettle();
     expect(find.byType(SignInScreen), findsOneWidget);
-    await tester.tap(find.byType(TextButton).last);
+    await tester.tap(_age);
+    await tester.pumpAndSettle();
+    await tester.tap(_social.last);
     await tester.pumpAndSettle();
     expect(calls, [SignInProvider.naver]);
     container.read(routerProvider).go('/greeting');
@@ -252,7 +370,7 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
-    await tester.ensureVisible(find.byType(TextButton).last);
+    await tester.ensureVisible(_social.last);
     expect(tester.takeException(), isNull);
   });
 }
