@@ -10,6 +10,8 @@ public enum DailyStepsQueryOutcome: Equatable, Sendable {
 
     public init(count: Double?, error: (any Error)?) {
         if let error {
+            // The package supports iOS 13, where HealthKit has no errorNoData.
+            guard #available(iOS 14.0, *) else { self = .error; return }
             self = (error as? HKError)?.code == .errorNoData ? .empty : .error
             return
         }
