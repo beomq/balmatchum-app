@@ -32,19 +32,37 @@ Native validation is not independent proof of a server transaction.
 
 Health statuses are `available`, `capabilityUnavailable`, `unavailable`, `empty`,
 and `error`. Only `available` carries steps; a real integrated zero remains zero.
-No empty/denied result becomes zero. The query is cumulativeSum from Seoul midnight
+No empty/denied result becomes zero. HealthKit's `errorNoData` or a nil sum is
+`empty` (`DailyStepsQueryOutcome`); other query errors stay `error`. The query is cumulativeSum from Seoul midnight
 to query initiation. A boundary change during permission/query completion discards
 the result. `NSHealthShareUsageDescription` must exist before authorization.
 
-**Capability is unavailable by default.** iOS SDK does not expose macOS
+**Phone configurations enable read-only HealthKit.** iOS SDK does not expose macOS
 `SecTaskCreateFromSelf`/`SecTaskCopyValueForEntitlement`. No private-symbol workaround
 is used. The app owner may set the Info.plist Boolean
 `BalmatchumHealthKitCapabilityVerified` to true only in a configuration whose
 actual signed `com.apple.developer.healthkit` entitlement and provisioning profile
-have been verified. The flag does not inspect or grant an entitlement. Current
-distribution entitlement is absent and development profile is not installed per
-the lead's read-only inspection; leave the flag absent/false. Never enable it just
-to show a permission dialog. Parent owns plist, entitlements and profiles.
+have been verified. The flag does not inspect or grant an entitlement.
+All six Runner configurations use `Runner/Runner.entitlements` with HealthKit.
+Debug-dev uses `Runner/Info-Debug-dev.plist`; the other five use
+`Runner/Info.plist`. Both plists enable the gate and describe step reading.
+This change must not merge or ship until the owner enables HealthKit on phone
+App IDs `com.beomq.balmatchum.dev` and `com.beomq.balmatchum` and regenerates
+their development/distribution profiles. Unsigned compilation and simulator
+authorization do not verify device provisioning. For a configuration without
+HealthKit, omit/set false the gate to retain `capabilityUnavailable`.
+
+The request shares no types (`toShare: []`), so no
+`NSHealthUpdateUsageDescription` is needed. Step count needs only
+`com.apple.developer.healthkit`, not the additional clinical-record access
+entitlement. Watch currently exchanges display snapshots and GPS envelopes via
+WatchConnectivity; it does not read HealthKit and its targets are unchanged.
+
+Apple references:
+- [HealthKit entitlement](https://developer.apple.com/documentation/bundleresources/entitlements/com.apple.developer.healthkit)
+- [Additional health data access](https://developer.apple.com/documentation/bundleresources/entitlements/com.apple.developer.healthkit.access)
+- [Read versus write purpose strings](https://developer.apple.com/documentation/healthkit/protecting-user-privacy)
+- [App ID changes require regenerated profiles](https://developer.apple.com/help/account/identifiers/enable-app-capabilities/)
 
 ## Persistence and failures
 

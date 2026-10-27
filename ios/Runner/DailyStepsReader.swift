@@ -1,5 +1,6 @@
 import Foundation
 import HealthKit
+import PhoneWatchBridge
 
 final class DailyStepsReader {
     private let store = HKHealthStore()
@@ -12,7 +13,7 @@ final class DailyStepsReader {
         }
         // iOS does not expose macOS SecTask entitlement inspection. The app owner
         // may enable this only after verifying the signed target/profile entitlement.
-        // Missing configuration (the current release profiles) must never call HK.
+        // Missing configuration must never call HK; device profiles are a release gate.
         guard Bundle.main.object(forInfoDictionaryKey: "BalmatchumHealthKitCapabilityVerified") as? Bool == true,
               let description = Bundle.main.object(forInfoDictionaryKey: "NSHealthShareUsageDescription") as? String,
               !description.isEmpty else {
@@ -33,17 +34,20 @@ final class DailyStepsReader {
             let predicate = HKQuery.predicateForSamples(withStart: start, end: now, options: .strictStartDate)
             let query = HKStatisticsQuery(quantityType: type, quantitySamplePredicate: predicate,
                                           options: .cumulativeSum) { _, statistics, error in
-                guard error == nil else { finish("error"); return }
-                guard let quantity = statistics?.sumQuantity() else { finish("empty"); return }
-                let count = quantity.doubleValue(for: .count())
-                guard count.isFinite, count >= 0, count < Double(Int.max) else { finish("error"); return }
+                let sum = statistics?.sumQuantity()?.doubleValue(for: .count())
+                let count: Int
+                switch DailyStepsQueryOutcome(count: sum, error: error) {
+                case .empty: finish("empty"); return
+                case .error: finish("error"); return
+                case .available(let value): count = value
+                }
                 let date = DateFormatter()
                 date.locale = Locale(identifier: "en_US_POSIX")
                 date.calendar = calendar
                 date.timeZone = calendar.timeZone
                 date.dateFormat = "yyyy-MM-dd"
                 finish("available", ["date": date.string(from: now), "timeZone": "Asia/Seoul",
-                                     "count": Int(count), "observedAt": ISO8601DateFormatter().string(from: now)])
+                                     "count": count, "observedAt": ISO8601DateFormatter().string(from: now)])
             }
             store.execute(query)
         }
