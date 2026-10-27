@@ -1,8 +1,10 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:social_signin_kit/social_signin_kit.dart';
 
+import '../../app/dependencies.dart';
 import '../daily_activity/daily_steps_controller.dart';
 import '../daily_activity/daily_steps_readout.dart';
 import '../daily_activity/product_controller.dart';
@@ -28,6 +30,7 @@ class FirstMeetingScreen extends StatefulWidget {
     this.product,
     this.onLogout,
     this.onDeleteAccount,
+    this.openUrl = openExternalUrl,
     super.key,
   });
   final FirstMeetingController controller;
@@ -40,6 +43,7 @@ class FirstMeetingScreen extends StatefulWidget {
   final ProductController? product;
   final Future<LogoutOutcome> Function()? onLogout;
   final Future<void> Function()? onDeleteAccount;
+  final Future<bool> Function(Uri url) openUrl;
   @override
   State<FirstMeetingScreen> createState() => _FirstMeetingScreenState();
 }
@@ -176,6 +180,11 @@ class _FirstMeetingScreenState extends State<FirstMeetingScreen> {
                           },
                     child: const Text('로그아웃'),
                   ),
+                  TextButton(
+                    key: const ValueKey('settings_privacy_policy'),
+                    onPressed: openPrivacyPolicy,
+                    child: const Text('개인정보처리방침'),
+                  ),
                   if (widget.onDeleteAccount != null)
                     TextButton(
                       onPressed: c.isBusy ? null : deleteAccount,
@@ -193,6 +202,20 @@ class _FirstMeetingScreenState extends State<FirstMeetingScreen> {
       settingsName.dispose();
       settingsGoal.dispose();
     });
+  }
+
+  Future<void> openPrivacyPolicy() async {
+    bool opened;
+    try {
+      opened = await widget.openUrl(Uri.parse(privacyPolicyUrl));
+    } on PlatformException {
+      opened = false;
+    }
+    if (!opened && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('개인정보처리방침을 열지 못했어요. 잠시 후 다시 시도해 주세요.')),
+      );
+    }
   }
 
   Future<void> deleteAccount() async {

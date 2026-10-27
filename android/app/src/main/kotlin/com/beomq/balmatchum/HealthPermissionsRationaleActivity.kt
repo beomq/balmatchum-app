@@ -1,10 +1,19 @@
 package com.beomq.balmatchum
 
 import android.app.Activity
+import android.content.ActivityNotFoundException
+import android.content.Intent
+import android.net.Uri
 import android.os.Bundle
+import android.widget.Button
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
+import android.widget.Toast
+
+// Same published policy as privacyPolicyUrl in lib/app/dependencies.dart.
+private const val PRIVACY_POLICY_URL =
+    "https://beomq.github.io/balmatchum-legal/privacy-policy.html"
 
 /** Opened by Health Connect's privacy/rationale link, never requests permission itself. */
 class HealthPermissionsRationaleActivity : Activity() {
@@ -29,7 +38,23 @@ class HealthPermissionsRationaleActivity : Activity() {
                 걸음 데이터는 광고 타기팅에 사용하지 않습니다. Health Connect에 데이터를 쓰거나 백그라운드에서 읽지 않습니다.
 
                 권한을 거부해도 앱의 다른 기능은 이용할 수 있습니다. Android 설정의 Health Connect → 앱 권한 → 발맞춤에서 언제든 걸음 권한을 해제할 수 있습니다.
+
+                개인정보처리방침: $PRIVACY_POLICY_URL
             """.trimIndent()
+        })
+        content.addView(Button(this).apply {
+            text = "개인정보처리방침 보기"
+            setOnClickListener {
+                try {
+                    startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(PRIVACY_POLICY_URL)))
+                } catch (missingBrowser: ActivityNotFoundException) {
+                    Toast.makeText(
+                        this@HealthPermissionsRationaleActivity,
+                        "브라우저를 열지 못했어요. 위 주소를 직접 열어 주세요.",
+                        Toast.LENGTH_LONG,
+                    ).show()
+                }
+            }
         })
         setContentView(ScrollView(this).apply { addView(content) })
     }
