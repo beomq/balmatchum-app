@@ -1,8 +1,9 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../app/dependencies.dart';
-import '../location_experiment/location_experiment_screen.dart';
 import 'watch_bridge.dart';
 
 class WatchDiagnosticsScreen extends ConsumerStatefulWidget {
@@ -33,7 +34,7 @@ class _WatchDiagnosticsState extends ConsumerState<WatchDiagnosticsScreen> {
 
   @override
   Widget build(BuildContext context) {
-    if (!phoneLocationExperimentEnabled) return const SizedBox.shrink();
+    if (!(kDebugMode && appFlavor == 'dev')) return const SizedBox.shrink();
     final service = ref.watch(watchSyncServiceProvider);
     return Scaffold(
       appBar: AppBar(title: const Text('개발 Watch 진단')),
