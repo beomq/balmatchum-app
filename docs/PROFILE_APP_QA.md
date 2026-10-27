@@ -14,16 +14,13 @@ staleRevision은 최신 값을 표시하고 자동 덮어쓰기 없이 사용자
 보상/가격 fixture를 연결하지 않았다. 기존 auth adapter의 logout 결과 중 localCleared를
 기준으로 종료하며, 서버 revoke와 SDK logout의 성공은 별개다.
 
-## 로컬 생성 클라이언트 차단 요인
+## 서버 client 핀
 
-검증 client: 서버 `2af799131d67b4cf1f88a8ca940f6b4497990259`, 경로 `client/`.
-아직 원격에 없는 커밋이므로 pubspec의 공개 Git 핀은 변경하지 않았다.
-untracked `pubspec_overrides.yaml`만 해당 sibling client로 연결한다. 이 override 및
-path source로 해석된 lockfile은 커밋하면 안 된다. 서버 커밋 푸시 후 승인된 ref/path로
-pubspec과 lockfile을 함께 갱신하고 clean checkout에서 pub get/검증해야 한다.
-현재 공개 핀만으로 새 profile 타입을 컴파일할 수 없으며 릴리스 준비 완료가 아니다.
-검증으로 생긴 path lock 변경은 원래 Git 잠금으로 복원했다. 로컬 pub get 재실행은
-다시 path 잠금을 만들므로 해당 diff를 게시하지 않아야 한다.
+검증 client: 서버 develop 병합 커밋 `e963a108c99030cb7897d794a7b0336a75af79cc`, 경로 `client/`.
+pubspec의 공개 Git 핀과 `pubspec.lock`(`source: git`, 같은 `resolved-ref`)을 이 커밋으로
+함께 갱신했고, override 없는 clean checkout에서 `pub get --enforce-lockfile`과 테스트를 확인했다.
+로컬 전용 `pubspec_overrides.yaml`(gitignore)로 sibling client를 연결하면 lockfile이
+path source로 바뀌므로, 그 lock diff는 커밋하거나 게시하지 않는다.
 
 ## 재현 명령
 
