@@ -10,6 +10,7 @@ import '../daily_activity/record_mapping.dart';
 import '../daily_activity/reward_panel.dart';
 import '../daily_activity/product_repository.dart';
 import '../auth/kakao_auth_service.dart';
+import '../auth/account_deletion_dialog.dart';
 import '../wardrobe/dog_sprite.dart';
 import 'domain/first_meeting.dart';
 import 'meeting_theme.dart';
@@ -198,22 +199,7 @@ class _FirstMeetingScreenState extends State<FirstMeetingScreen> {
     if (deletingAccount.value) return;
     final confirmed = await showDialog<bool>(
       context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('계정을 삭제할까요?'),
-        content: const Text(
-          '친구, 산책 기록과 보유 포인트가 삭제되며 복구할 수 없어요. 소셜 계정 자체는 삭제되지 않아요.',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: const Text('취소'),
-          ),
-          TextButton(
-            onPressed: () => Navigator.pop(context, true),
-            child: const Text('계정 영구 삭제'),
-          ),
-        ],
-      ),
+      builder: (context) => const AccountDeletionDialog(),
     );
     if (confirmed != true || !mounted) return;
     deletingAccount.value = true;

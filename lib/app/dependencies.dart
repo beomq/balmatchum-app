@@ -10,6 +10,7 @@ import 'package:serverpod_auth_core_flutter/serverpod_auth_core_flutter.dart';
 
 import '../features/auth/auth_adapters.dart';
 import '../features/auth/account_deletion.dart';
+import '../features/auth/account_provider_revocation.dart';
 import '../features/first_meeting/data/first_meeting_file_storage.dart';
 import '../features/auth/kakao_auth_service.dart';
 import '../features/auth/naver_auth_service.dart';
@@ -90,14 +91,20 @@ final kakaoAuthServiceProvider = Provider<KakaoAuthService?>((ref) {
   );
 });
 
+final nativeSocialLoginSdkProvider = Provider<NativeSocialLoginSdk>(
+  (ref) => NativeSocialLoginSdk(
+    configuration: SocialAuthConfiguration(
+      serverUrl: serverUrl,
+      platform: defaultTargetPlatform,
+      isWeb: kIsWeb,
+    ),
+  ),
+);
+
 final socialAuthServiceProvider = Provider<SignInStarter>((ref) {
-  final configuration = SocialAuthConfiguration(
-    serverUrl: serverUrl,
-    platform: defaultTargetPlatform,
-    isWeb: kIsWeb,
-  );
   // A disconnected app never constructs a client or invokes a native SDK.
   if (serverUrl.isEmpty) return const UnconfiguredSocialSignInStarter();
+  final sdk = ref.watch(nativeSocialLoginSdkProvider);
   final client = ref.watch(clientProvider);
   var alive = true;
   var authenticationEpoch = 0;
@@ -112,10 +119,15 @@ final socialAuthServiceProvider = Provider<SignInStarter>((ref) {
     watchSync: ref.watch(watchSyncServiceProvider),
   );
   return SocialAuthService(
-    isConfigured: configuration.isConfigured,
-    sdk: NativeSocialLoginSdk(configuration: configuration),
+    isConfigured: sdk.configuration.isConfigured,
+    sdk: sdk,
     server: ServerpodSocialLoginServer(client, platform: defaultTargetPlatform),
     session: session,
+    onGoogleSignedIn: (authUserId) async {
+      final file = await _googleSignInMarker(authUserId.toString());
+      await file.parent.create(recursive: true);
+      await file.writeAsString('google', flush: true);
+    },
     kakao: ref.watch(kakaoAuthServiceProvider),
     naver:
         !kIsWeb &&
@@ -162,12 +174,26 @@ final greetingCheckProvider = Provider<GreetingCheck?>((ref) {
   return ref.watch(clientProvider).greeting.hello;
 });
 
+/// Written after a saved Google sign-in; the session itself has no provider.
+Future<File> _googleSignInMarker(String account) async {
+  final directory = await getApplicationSupportDirectory();
+  return File('${directory.path}/google-signin-$account');
+}
+
 final accountDeletionProvider = Provider<AccountDeletion?>((ref) {
   final account = ref.watch(authenticatedAccountProvider);
   if (account == null) return null;
   final client = ref.watch(clientProvider);
   final logout = ref.watch(logoutProvider)!;
   final notice = ref.watch(accountNoticeProvider);
+  // Same instance as login: Android can revoke only its in-process account.
+  final google = ref.watch(nativeSocialLoginSdkProvider);
+  final providers = AccountProviderRevocation(
+    unlinkKakao: kakaoNativeAppKey.isEmpty ? null : KakaoSdkLogin().unlink,
+    disconnectGoogle: () async => google.disconnectGoogle(
+      signedInWithGoogle: await (await _googleSignInMarker(account)).exists(),
+    ),
+  );
   Future<File> marker() async {
     final directory = await getApplicationSupportDirectory();
     return File('${directory.path}/deletion-$account');
@@ -201,8 +227,17 @@ final accountDeletionProvider = Provider<AccountDeletion?>((ref) {
         rethrow;
       }
     },
+    revokeProviders: () async {
+      if (!await providers.revoke()) {
+        notice.value =
+            '계정이 삭제되었습니다. 일부 소셜 연결을 해제하지 못했어요. '
+            '카카오계정·Google 계정의 연결된 앱 설정에서 직접 해제해 주세요.';
+      }
+    },
     clearLocal: () async {
       await FirstMeetingFileStorage.forAccount(account).delete();
+      final googleMarker = await _googleSignInMarker(account);
+      if (await googleMarker.exists()) await googleMarker.delete();
       final directory = await getApplicationSupportDirectory();
       for (final suffix in ['', '.tmp']) {
         final file = File('${directory.path}/steps-$account.json$suffix');

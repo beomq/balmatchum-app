@@ -381,4 +381,42 @@ void main() {
     expect(web.isConfigured(SignInProvider.google), isFalse);
     expect(web.isConfigured(SignInProvider.apple), isFalse);
   });
+
+  test('only a saved Google sign-in records Google for deletion', () async {
+    // Given
+    final recorded = <UuidValue>[];
+    final recording = SocialAuthService(
+      isConfigured: (_) => true,
+      sdk: sdk,
+      server: server,
+      session: ServerpodAuthSession(manager),
+      onGoogleSignedIn: (id) async => recorded.add(id),
+    );
+
+    // When
+    await recording.start(SignInProvider.apple);
+    await recording.start(SignInProvider.google);
+    storage.fail = true;
+    await recording.start(SignInProvider.google);
+
+    // Then
+    expect(recorded, [_auth.authUserId]);
+  });
+
+  test('Google record failure does not fail a saved sign-in', () async {
+    // Given
+    final recording = SocialAuthService(
+      isConfigured: (_) => true,
+      sdk: sdk,
+      server: server,
+      session: ServerpodAuthSession(manager),
+      onGoogleSignedIn: (_) async => throw Exception('disk'),
+    );
+
+    // When
+    final outcome = await recording.start(SignInProvider.google);
+
+    // Then
+    expect(outcome, SignInOutcome.signedIn);
+  });
 }

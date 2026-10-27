@@ -54,11 +54,17 @@ class SocialAuthConfiguration {
   }
 }
 
+final class GoogleDisconnectUnavailable implements Exception {
+  const GoogleDisconnectUnavailable();
+}
+
 class NativeSocialLoginSdk implements SocialLoginSdk {
   NativeSocialLoginSdk({
     required this.configuration,
     Future<void> Function()? initializeGoogle,
     Future<String?> Function()? authenticateGoogle,
+    Future<void> Function()? restoreGoogle,
+    Future<void> Function()? disconnectGoogle,
     Future<bool> Function()? googleCallbackConfigured,
     Future<AuthorizationCredentialAppleID> Function()? authenticateApple,
   }) : _initializeGoogle =
@@ -74,6 +80,12 @@ class NativeSocialLoginSdk implements SocialLoginSdk {
            (() async => (await GoogleSignIn.instance.authenticate())
                .authentication
                .idToken),
+       _restoreGoogle =
+           restoreGoogle ??
+           (() async {
+             await GoogleSignIn.instance.attemptLightweightAuthentication();
+           }),
+       _disconnectGoogle = disconnectGoogle ?? GoogleSignIn.instance.disconnect,
        _googleCallbackConfigured =
            googleCallbackConfigured ??
            (() async =>
@@ -101,9 +113,40 @@ class NativeSocialLoginSdk implements SocialLoginSdk {
   final SocialAuthConfiguration configuration;
   final Future<void> Function() _initializeGoogle;
   final Future<String?> Function() _authenticateGoogle;
+  final Future<void> Function() _restoreGoogle;
+  final Future<void> Function() _disconnectGoogle;
   final Future<bool> Function() _googleCallbackConfigured;
   final Future<AuthorizationCredentialAppleID> Function() _authenticateApple;
   Future<void>? _googleInitialization;
+  // Android revokes only accounts its plugin cached during this process.
+  bool _googleAuthenticated = false;
+
+  Future<void> _ensureGoogleInitialized() async {
+    try {
+      await (_googleInitialization ??= _initializeGoogle());
+    } on Exception {
+      _googleInitialization = null;
+      rethrow;
+    }
+  }
+
+  Future<void> disconnectGoogle({required bool signedInWithGoogle}) async {
+    if (!signedInWithGoogle ||
+        !configuration.isConfigured(SignInProvider.google)) {
+      return;
+    }
+    // Android's lightweight restore falls back to an account chooser when no
+    // hostedDomain is set, so deletion never restores there.
+    final android = configuration.platform == TargetPlatform.android;
+    if (android && !_googleAuthenticated) {
+      throw const GoogleDisconnectUnavailable();
+    }
+    await _ensureGoogleInitialized();
+    // iOS restores from the keychain without UI; no Serverpod session is made.
+    if (!android) await _restoreGoogle();
+    await _disconnectGoogle();
+    _googleAuthenticated = false;
+  }
 
   @override
   Future<SocialCredential> authenticate(SignInProvider provider) async {
@@ -118,13 +161,10 @@ class NativeSocialLoginSdk implements SocialLoginSdk {
         }
         // Memoize the in-flight future, not an unawaited controller flag.
         // No event subscription or lightweight authentication can sign in.
-        try {
-          await (_googleInitialization ??= _initializeGoogle());
-        } on Exception {
-          _googleInitialization = null;
-          rethrow;
-        }
-        return SocialCredential(idToken: await _authenticateGoogle() ?? '');
+        await _ensureGoogleInitialized();
+        final idToken = await _authenticateGoogle();
+        _googleAuthenticated = idToken != null;
+        return SocialCredential(idToken: idToken ?? '');
       }
       final credential = await _authenticateApple();
       return SocialCredential(

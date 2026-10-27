@@ -49,6 +49,7 @@ class SocialAuthService implements SignInStarter {
     required this.session,
     this.kakao,
     this.naver,
+    this.onGoogleSignedIn,
   });
 
   final bool Function(SignInProvider) isConfigured;
@@ -57,6 +58,7 @@ class SocialAuthService implements SignInStarter {
   final AuthSession session;
   final SignInStarter? kakao;
   final SignInStarter? naver;
+  final Future<void> Function(UuidValue authUserId)? onGoogleSignedIn;
   bool _starting = false;
 
   @override
@@ -136,6 +138,14 @@ class SocialAuthService implements SignInStarter {
         await session.save(auth);
       } on Exception {
         return const SignInOutcome.failed('sessionStorageError');
+      }
+      if (provider == SignInProvider.google) {
+        try {
+          await onGoogleSignedIn?.call(auth.authUserId);
+        } on Exception {
+          // The record only enables Google revoke at deletion; a saved
+          // sign-in must not fail because of it.
+        }
       }
       return SignInOutcome.signedIn;
     } finally {

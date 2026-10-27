@@ -11,6 +11,7 @@ class AccountDeletion {
     required this.clearPending,
     required this.wasRemoteDeleted,
     required this.markRemoteDeleted,
+    required this.revokeProviders,
   });
 
   final Future<void> Function() deleteRemote;
@@ -20,6 +21,7 @@ class AccountDeletion {
   final Future<void> Function() clearPending;
   final Future<bool> Function() wasRemoteDeleted;
   final Future<void> Function() markRemoteDeleted;
+  final Future<void> Function() revokeProviders;
   bool _remoteDeleted = false;
   bool _busy = false;
 
@@ -43,9 +45,15 @@ class AccountDeletion {
         _remoteDeleted = true;
         await markRemoteDeleted();
       }
-      await clearLocal();
-      await signOut();
-      await clearPending();
+      try {
+        await revokeProviders();
+      } finally {
+        // The account no longer exists remotely; never leave this device
+        // signed in because a provider SDK threw.
+        await clearLocal();
+        await signOut();
+        await clearPending();
+      }
     } finally {
       _busy = false;
     }

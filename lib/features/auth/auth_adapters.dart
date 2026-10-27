@@ -73,6 +73,8 @@ class KakaoSdkLogin implements KakaoLoginSdk {
     Future<OAuthToken> Function(String)? talkLogin,
     Future<OAuthToken> Function(String)? accountLogin,
     Future<void> Function()? sdkLogout,
+    Future<void> Function()? sdkUnlink,
+    Future<bool> Function()? hasToken,
   }) : isTalkInstalled = isTalkInstalled ?? isKakaoTalkInstalled,
        talkLogin =
            talkLogin ??
@@ -84,12 +86,20 @@ class KakaoSdkLogin implements KakaoLoginSdk {
            sdkLogout ??
            (() async {
              await UserApi.instance.logout();
-           });
+           }),
+       sdkUnlink =
+           sdkUnlink ??
+           (() async {
+             await UserApi.instance.unlink();
+           }),
+       hasToken = hasToken ?? (() => AuthApi.instance.hasToken());
 
   final Future<bool> Function() isTalkInstalled;
   final Future<OAuthToken> Function(String) talkLogin;
   final Future<OAuthToken> Function(String) accountLogin;
   final Future<void> Function() sdkLogout;
+  final Future<void> Function() sdkUnlink;
+  final Future<bool> Function() hasToken;
 
   @override
   Future<String?> login(String nonce) async {
@@ -121,4 +131,8 @@ class KakaoSdkLogin implements KakaoLoginSdk {
 
   @override
   Future<void> logout() => sdkLogout();
+
+  Future<void> unlink() async {
+    if (await hasToken()) await sdkUnlink();
+  }
 }
