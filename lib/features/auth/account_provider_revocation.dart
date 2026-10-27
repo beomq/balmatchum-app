@@ -16,9 +16,10 @@ class AccountProviderRevocation {
       if (revoke == null) continue;
       try {
         await revoke().timeout(timeout);
-      } on Exception {
-        // An external provider must not prevent committed account deletion.
-        // Report incomplete disconnection without exposing SDK/token errors.
+      } on Object {
+        // An external provider must not prevent committed account deletion,
+        // including SDK Errors. Report incomplete disconnection without
+        // exposing SDK/token details.
         complete = false;
       }
     }

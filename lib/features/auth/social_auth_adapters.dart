@@ -54,6 +54,10 @@ class SocialAuthConfiguration {
   }
 }
 
+final class GoogleDisconnectUnavailable implements Exception {
+  const GoogleDisconnectUnavailable();
+}
+
 class NativeSocialLoginSdk implements SocialLoginSdk {
   NativeSocialLoginSdk({
     required this.configuration,
@@ -114,6 +118,8 @@ class NativeSocialLoginSdk implements SocialLoginSdk {
   final Future<bool> Function() _googleCallbackConfigured;
   final Future<AuthorizationCredentialAppleID> Function() _authenticateApple;
   Future<void>? _googleInitialization;
+  // Android revokes only accounts its plugin cached during this process.
+  bool _googleAuthenticated = false;
 
   Future<void> _ensureGoogleInitialized() async {
     try {
@@ -124,13 +130,22 @@ class NativeSocialLoginSdk implements SocialLoginSdk {
     }
   }
 
-  Future<void> disconnectGoogle() async {
-    if (!configuration.isConfigured(SignInProvider.google)) return;
+  Future<void> disconnectGoogle({required bool signedInWithGoogle}) async {
+    if (!signedInWithGoogle ||
+        !configuration.isConfigured(SignInProvider.google)) {
+      return;
+    }
+    // Android's lightweight restore falls back to an account chooser when no
+    // hostedDomain is set, so deletion never restores there.
+    final android = configuration.platform == TargetPlatform.android;
+    if (android && !_googleAuthenticated) {
+      throw const GoogleDisconnectUnavailable();
+    }
     await _ensureGoogleInitialized();
-    // Android's revoke cache is process-local; restore it after app restart.
-    // This does not save or create a Serverpod session.
-    await _restoreGoogle();
+    // iOS restores from the keychain without UI; no Serverpod session is made.
+    if (!android) await _restoreGoogle();
     await _disconnectGoogle();
+    _googleAuthenticated = false;
   }
 
   @override
@@ -147,7 +162,9 @@ class NativeSocialLoginSdk implements SocialLoginSdk {
         // Memoize the in-flight future, not an unawaited controller flag.
         // No event subscription or lightweight authentication can sign in.
         await _ensureGoogleInitialized();
-        return SocialCredential(idToken: await _authenticateGoogle() ?? '');
+        final idToken = await _authenticateGoogle();
+        _googleAuthenticated = idToken != null;
+        return SocialCredential(idToken: idToken ?? '');
       }
       final credential = await _authenticateApple();
       return SocialCredential(

@@ -123,6 +123,11 @@ final socialAuthServiceProvider = Provider<SignInStarter>((ref) {
     sdk: sdk,
     server: ServerpodSocialLoginServer(client, platform: defaultTargetPlatform),
     session: session,
+    onGoogleSignedIn: (authUserId) async {
+      final file = await _googleSignInMarker(authUserId.toString());
+      await file.parent.create(recursive: true);
+      await file.writeAsString('google', flush: true);
+    },
     kakao: ref.watch(kakaoAuthServiceProvider),
     naver:
         !kIsWeb &&
@@ -169,15 +174,25 @@ final greetingCheckProvider = Provider<GreetingCheck?>((ref) {
   return ref.watch(clientProvider).greeting.hello;
 });
 
+/// Written after a saved Google sign-in; the session itself has no provider.
+Future<File> _googleSignInMarker(String account) async {
+  final directory = await getApplicationSupportDirectory();
+  return File('${directory.path}/google-signin-$account');
+}
+
 final accountDeletionProvider = Provider<AccountDeletion?>((ref) {
   final account = ref.watch(authenticatedAccountProvider);
   if (account == null) return null;
   final client = ref.watch(clientProvider);
   final logout = ref.watch(logoutProvider)!;
   final notice = ref.watch(accountNoticeProvider);
+  // Same instance as login: Android can revoke only its in-process account.
+  final google = ref.watch(nativeSocialLoginSdkProvider);
   final providers = AccountProviderRevocation(
     unlinkKakao: kakaoNativeAppKey.isEmpty ? null : KakaoSdkLogin().unlink,
-    disconnectGoogle: ref.watch(nativeSocialLoginSdkProvider).disconnectGoogle,
+    disconnectGoogle: () async => google.disconnectGoogle(
+      signedInWithGoogle: await (await _googleSignInMarker(account)).exists(),
+    ),
   );
   Future<File> marker() async {
     final directory = await getApplicationSupportDirectory();
@@ -221,6 +236,8 @@ final accountDeletionProvider = Provider<AccountDeletion?>((ref) {
     },
     clearLocal: () async {
       await FirstMeetingFileStorage.forAccount(account).delete();
+      final googleMarker = await _googleSignInMarker(account);
+      if (await googleMarker.exists()) await googleMarker.delete();
       final directory = await getApplicationSupportDirectory();
       for (final suffix in ['', '.tmp']) {
         final file = File('${directory.path}/steps-$account.json$suffix');

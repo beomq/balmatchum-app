@@ -94,6 +94,25 @@ void main() {
     });
   }
 
+  test('provider Error does not stop the next provider', () async {
+    // Given
+    final events = <String>[];
+    final providers = AccountProviderRevocation(
+      unlinkKakao: () async {
+        events.add('kakao');
+        throw StateError('sdk bug');
+      },
+      disconnectGoogle: () async => events.add('google'),
+    );
+
+    // When
+    final revoked = await providers.revoke();
+
+    // Then
+    expect(events, ['kakao', 'google']);
+    expect(revoked, isFalse);
+  });
+
   test('unconfigured providers never invoke native SDKs', () async {
     // Given
     final providers = AccountProviderRevocation();

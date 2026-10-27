@@ -45,10 +45,15 @@ class AccountDeletion {
         _remoteDeleted = true;
         await markRemoteDeleted();
       }
-      await revokeProviders();
-      await clearLocal();
-      await signOut();
-      await clearPending();
+      try {
+        await revokeProviders();
+      } finally {
+        // The account no longer exists remotely; never leave this device
+        // signed in because a provider SDK threw.
+        await clearLocal();
+        await signOut();
+        await clearPending();
+      }
     } finally {
       _busy = false;
     }

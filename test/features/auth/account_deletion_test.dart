@@ -24,6 +24,28 @@ void main() {
     expect(events, ['remote', 'persist', 'revoke', 'clear', 'logout']);
   });
 
+  test('revocation Error still clears device and signs out', () async {
+    // Given
+    final events = <String>[];
+    final deletion = AccountDeletion(
+      markPending: () async {},
+      clearPending: () async => events.add('done'),
+      wasRemoteDeleted: () async => false,
+      markRemoteDeleted: () async {},
+      deleteRemote: () async => events.add('remote'),
+      revokeProviders: () async => throw StateError('sdk bug'),
+      clearLocal: () async => events.add('clear'),
+      signOut: () async => events.add('logout'),
+    );
+
+    // When
+    final result = deletion.delete();
+
+    // Then
+    await expectLater(result, throwsStateError);
+    expect(events, ['remote', 'clear', 'logout', 'done']);
+  });
+
   test(
     'resumed deletion revokes providers without another server call',
     () async {
