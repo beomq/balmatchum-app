@@ -1,10 +1,17 @@
 import 'package:flutter/material.dart';
 
+import '../../app/dependencies.dart';
 import 'billing_controller.dart';
+import 'billing_disclosure.dart';
 
 class BillingScreen extends StatelessWidget {
-  const BillingScreen({required this.controller, super.key});
+  const BillingScreen({
+    required this.controller,
+    this.openUrl = openExternalUrl,
+    super.key,
+  });
   final BillingController? controller;
+  final Future<bool> Function(Uri url) openUrl;
 
   @override
   Widget build(BuildContext context) {
@@ -32,9 +39,7 @@ class BillingScreen extends StatelessWidget {
                           style: Theme.of(context).textTheme.headlineSmall,
                         ),
                         const SizedBox(height: 12),
-                        const Text(
-                          '유효한 구매 확인 후 보상과 추가 퀴즈에서 광고 대신 유료 혜택을 직접 선택할 수 있어요. 월별 선물은 아직 제공하지 않아요.',
-                        ),
+                        const Text(billingBenefit),
                         const SizedBox(height: 24),
                         Semantics(
                           liveRegion: true,
@@ -59,6 +64,20 @@ class BillingScreen extends StatelessWidget {
                             style: Theme.of(context).textTheme.titleLarge,
                           ),
                           const SizedBox(height: 8),
+                          Text(
+                            billingTerms(
+                              subscription:
+                                  c.configuration!.products
+                                      .firstWhere(
+                                        (p) => p.productId == product.id,
+                                      )
+                                      .kind ==
+                                  'subscription',
+                              price: product.price,
+                            ),
+                            key: ValueKey('billing_terms_${product.id}'),
+                          ),
+                          const SizedBox(height: 8),
                           Text(product.description),
                           const SizedBox(height: 12),
                           OutlinedButton(
@@ -75,6 +94,10 @@ class BillingScreen extends StatelessWidget {
                               '구매 가능한 상품을 불러오지 못했어요. 가격은 스토어 연결 후 표시됩니다.',
                             ),
                           ),
+                        Text(billingRefund),
+                        const SizedBox(height: 8),
+                        BillingLinks(openUrl: openUrl),
+                        const SizedBox(height: 16),
                         FilledButton(
                           key: const ValueKey('billing_retry'),
                           onPressed: c.busy ? null : c.retry,

@@ -33,7 +33,7 @@ void main() {
             home: BillingScreen(controller: c),
           ),
         );
-        expect(find.textContaining('€12,34'), findsOneWidget);
+        expect(find.text('€12,34 · 스토어에서 구매'), findsOneWidget);
         await tester.tap(
           find.byKey(const ValueKey('billing_buy_test.lifetime')),
         );
