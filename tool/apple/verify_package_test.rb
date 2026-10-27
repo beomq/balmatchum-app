@@ -36,6 +36,26 @@ class ApplePackageTest < Minitest::Test
     end
   end
 
+  def test_package_accepts_watch_profile_healthkit_without_signed_healthkit_or_update_purpose
+    # Given: the Watch profile allows HealthKit, but its signature does not use it.
+    with_package(watch_healthkit: { profile: true }) do |app|
+      # When / Then: the Watch bundle needs no update purpose to pass verification.
+      assert ApplePackage.verify_app(app, 'com.beomq.balmatchum.dev', '1.0.8')
+    end
+  end
+
+  def test_package_rejects_watch_signed_healthkit_without_update_purpose
+    # Given: the Watch signature uses HealthKit without an update purpose.
+    with_package(watch_healthkit: { profile: true, signed: true }) do |app|
+      # When: the package is verified.
+      error = assert_raises(RuntimeError) do
+        ApplePackage.verify_app(app, 'com.beomq.balmatchum.dev', '1.0.8')
+      end
+      # Then: the signed Watch capability requires its own purpose string.
+      assert_equal 'Missing HealthKit purpose: NSHealthUpdateUsageDescription', error.message
+    end
+  end
+
   def test_package_rejects_missing_blank_or_non_string_read_purpose
     [nil, '', '  ', false, 42].each do |invalid|
       # Given: an otherwise valid package with an invalid read purpose.
@@ -114,7 +134,7 @@ class ApplePackageTest < Minitest::Test
     list.to_str(CFPropertyList::List::FORMAT_XML)
   end
 
-  def with_package(info_changes: {}, profile_healthkit: true, signed_healthkit: true)
+  def with_package(info_changes: {}, profile_healthkit: true, signed_healthkit: true, watch_healthkit: {})
     Dir.mktmpdir('apple-package-test-') do |temp|
       app = File.join(temp, 'Runner.app')
       watch = File.join(app, 'Watch/BalmatchumWatch.app')
@@ -144,7 +164,8 @@ class ApplePackageTest < Minitest::Test
                            'com.apple.developer.team-identifier' => 'Q4E6NKD9VN',
                            'get-task-allow' => false }
           healthkit = args.first == 'security' ? profile_healthkit : signed_healthkit
-          entitlements['com.apple.developer.healthkit'] = healthkit if bundle.end_with?('.dev') && !healthkit.nil?
+          healthkit = watch_healthkit[args.first == 'security' ? :profile : :signed] if bundle.end_with?('.watchkitapp')
+          entitlements['com.apple.developer.healthkit'] = healthkit unless healthkit.nil?
           plist_xml(args.first == 'security' ? { 'Entitlements' => entitlements } : entitlements)
         else
           real_command.call(*args)
