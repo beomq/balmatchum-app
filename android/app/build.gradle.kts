@@ -31,6 +31,7 @@ android {
         // flag during build.
         versionCode = flutter.versionCode
         versionName = flutter.versionName
+        manifestPlaceholders["admobAppId"] = providers.environmentVariable("ADMOB_ANDROID_APP_ID").orNull ?: ""
     }
 
     signingConfigs {
@@ -55,6 +56,9 @@ android {
         create("dev") {
             dimension = "environment"
             applicationIdSuffix = ".dev"
+            if (providers.environmentVariable("ADMOB_TEST_ADS").orNull == "true") {
+                manifestPlaceholders["admobAppId"] = "ca-app-pub-3940256099942544~3347511713"
+            }
             resValue("string", "app_name", "발맞춤 Dev")
             signingConfig = signingConfigs.getByName("devUpload")
         }

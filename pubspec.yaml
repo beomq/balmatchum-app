@@ -15,6 +15,9 @@ dependencies:
   flutter:
     sdk: flutter
   flutter_riverpod: ^3.4.3
+  flutter_naver_map: 1.4.4
+  flutter_web_auth_2: 5.1.0
+  crypto: 3.0.7
   geolocator: 14.1.1
   battery_plus: 7.1.2
   path_provider: 2.1.6
@@ -24,6 +27,15 @@ dependencies:
   go_router: ^18.0.1
   kakao_flutter_sdk_user: 2.0.1
   serverpod_auth_core_flutter: 4.0.3
+  serverpod_auth_idp_flutter: 4.0.3
+  serverpod_auth_idp_client: 4.0.3
+  google_sign_in: 7.2.0
+  google_mobile_ads: 9.1.0
+  in_app_purchase: 3.3.1
+  in_app_purchase_android: 0.5.4
+  in_app_purchase_storekit: 0.4.14
+  in_app_purchase_platform_interface: 1.4.0
+  sign_in_with_apple: 8.2.0
   social_signin_kit: ^0.1.2
   world_holidays: ^2.1.2
 

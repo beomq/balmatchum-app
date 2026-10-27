@@ -31,6 +31,7 @@ jobs:
       APP_SCHEME: ${{ matrix.scheme }}
       APP_CONFIGURATION: ${{ matrix.configuration }}
       APP_BUNDLE: ${{ matrix.bundle }}
+      ADMOB_IOS_APP_ID: ${{ matrix.environment == 'dev' && vars.ADMOB_IOS_APP_ID_DEV || vars.ADMOB_IOS_APP_ID_PROD }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -73,8 +74,13 @@ jobs:
           fi
       - name: Compile iOS and embedded watch without signing
         run: |
+          if ! printf '%s' "$ADMOB_IOS_APP_ID" | grep -Eq '^ca-app-pub-[0-9]{16}~[0-9]{10}$'; then
+            echo 'Configure ADMOB_IOS_APP_ID_DEV and ADMOB_IOS_APP_ID_PROD repository variables.'
+            exit 1
+          fi
           xcodebuild -workspace ios/Runner.xcworkspace \
             -scheme "$APP_SCHEME" -configuration "$APP_CONFIGURATION" \
+            ADMOB_IOS_APP_ID="$ADMOB_IOS_APP_ID" \
             -destination 'generic/platform=iOS' \
             -derivedDataPath "$RUNNER_TEMP/apple-build" \
             CODE_SIGNING_ALLOWED=NO build

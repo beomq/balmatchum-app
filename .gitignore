@@ -29,3 +29,7 @@ local.properties
 
 # Local QA artifacts
 .qa/
+
+# Local Xcode indexing and dependency overrides
+ios/Runner.xcodeproj/-Xcc/
+pubspec_overrides.yaml
