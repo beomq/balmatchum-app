@@ -9,6 +9,7 @@ import '../daily_activity/record_mapping.dart';
 import '../daily_activity/reward_panel.dart';
 import '../daily_activity/product_repository.dart';
 import '../auth/kakao_auth_service.dart';
+import '../wardrobe/dog_sprite.dart';
 import '../watch_sync/watch_bridge.dart';
 import 'domain/first_meeting.dart';
 import 'meeting_theme.dart';
@@ -819,10 +820,12 @@ class _FirstMeetingScreenState extends State<FirstMeetingScreen> {
                           const SizedBox(height: 8),
                           Expanded(
                             child: Center(
-                              child: Image.asset(
-                                s.candidate!.spritePath,
-                                fit: BoxFit.contain,
-                                filterQuality: FilterQuality.none,
+                              child: DogSprite(
+                                asset: s.candidate!.spritePath,
+                                layer: widget.product?.wornLayer(
+                                  s.candidate!.id,
+                                ),
+                                layerKey: const ValueKey('home_dog_outfit'),
                               ),
                             ),
                           ),

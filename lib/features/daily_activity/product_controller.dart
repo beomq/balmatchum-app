@@ -61,6 +61,7 @@ class ProductController extends ChangeNotifier {
   api.WalletView? wallet;
   bool get isActive => _active;
   api.ThemeStore? store;
+  api.OutfitStore? outfits;
   api.DailyQuiz? quiz;
   final _requests = <String, String>{};
 
@@ -86,6 +87,7 @@ class ProductController extends ChangeNotifier {
     today = null;
     wallet = null;
     store = null;
+    outfits = null;
     quiz = null;
   }
 
@@ -130,12 +132,21 @@ class ProductController extends ChangeNotifier {
       if (account == null) rethrow;
     }
     _checkAccount();
+    var worn = outfits;
+    try {
+      worn = await repository.outfits();
+    } catch (_) {
+      // Outfits are decoration too: keep the last known state.
+      if (account == null) rethrow;
+    }
+    _checkAccount();
     if (account == null) {
       final question = await repository.quiz(ProductRepository.today);
       _checkAccount();
       quiz = question;
     }
     store = themes;
+    outfits = worn;
     today = day;
     wallet = balance;
     notifyListeners();
@@ -328,10 +339,16 @@ class ProductController extends ChangeNotifier {
     return quizView(quiz!);
   });
 
-  WardrobeSnapshot wardrobe(api.ThemeStore value) => WardrobeSnapshot(
+  /// [balance] overrides the theme store's when [outfitStore] was read later.
+  WardrobeSnapshot wardrobe(
+    api.ThemeStore value, {
+    api.OutfitStore? outfitStore,
+    int? balance,
+  }) => WardrobeSnapshot(
     equippedThemeId: value.equippedTheme,
-    balance: value.balance,
+    balance: balance ?? value.balance,
     fixtureLabel: value.fixtureLabel,
+    outfits: outfitStore == null ? null : outfitView(outfitStore),
     themes: [
       for (final item in value.items)
         WardrobeTheme(
@@ -347,13 +364,43 @@ class ProductController extends ChangeNotifier {
     ],
   );
 
+  WardrobeOutfits outfitView(api.OutfitStore value) => WardrobeOutfits(
+    equippedId: value.equippedOutfit,
+    items: [
+      for (final item in value.items)
+        WardrobeOutfit(
+          id: item.outfitId,
+          name: item.name,
+          price: item.price,
+          owned: item.owned,
+          // Without a server profile there is no breed to fit.
+          compatible: item.compatible && value.breedId != null,
+        ),
+    ],
+  );
+
+  /// The layer to draw over the [breedId] sprite from the last confirmed
+  /// server outfit state, or null.
+  String? wornLayer(String breedId) {
+    final value = outfits;
+    return value == null ? null : outfitView(value).wornLayer(breedId);
+  }
+
   Future<WardrobeSnapshot> loadWardrobe() async {
     _checkAccount();
     final value = await repository.themes();
     _checkAccount();
+    api.OutfitStore? worn;
+    try {
+      worn = await repository.outfits();
+    } catch (_) {
+      // The outfit shelf shows its own reload; themes stay usable.
+    }
+    _checkAccount();
     store = value;
+    if (worn != null) outfits = worn;
     notifyListeners();
-    return wardrobe(value);
+    return wardrobe(value, outfitStore: worn, balance: worn?.balance);
   }
 
   Future<WardrobeSnapshot> themeAction(
@@ -379,13 +426,59 @@ class ProductController extends ChangeNotifier {
         );
       }
       notifyListeners();
-      return wardrobe(store!);
+      return wardrobe(store!, outfitStore: outfits);
     } on api.ProductException catch (e) {
+      _requests.remove(key);
       throw WardrobeActionException(
         e.code == 'insufficientPoints'
             ? WardrobeFailureReason.insufficientPoints
             : WardrobeFailureReason.unavailable,
       );
     }
+  });
+
+  Future<WardrobeSnapshot> outfitAction(
+    WardrobeOutfit outfit,
+    OutfitChange change,
+  ) => _mutate(() async {
+    final key = 'outfit:${change.name}:${outfit.id}';
+    try {
+      final requestId = request(key);
+      await switch (change) {
+        OutfitChange.purchase => repository.purchaseOutfit(
+          outfit.id,
+          requestId,
+        ),
+        OutfitChange.wear => repository.equipOutfit(outfit.id, requestId),
+        OutfitChange.remove => repository.unequipOutfit(requestId),
+      };
+    } on api.ProductException catch (e) {
+      _requests.remove(key);
+      throw WardrobeActionException(switch (e.code) {
+        'insufficientPoints' => WardrobeFailureReason.insufficientPoints,
+        'outfitIncompatible' => WardrobeFailureReason.incompatible,
+        _ => WardrobeFailureReason.unavailable,
+      });
+    }
+    _requests.remove(key);
+    _checkAccount();
+    api.OutfitStore? worn;
+    try {
+      // A replayed answer can be stale; show what the server holds now.
+      worn = await repository.outfits();
+    } catch (_) {
+      error = '작업은 완료됐지만 현재 적용 상태를 확인하지 못했어요. 다시 조회해 주세요.';
+    }
+    _checkAccount();
+    outfits = worn;
+    final themes = store;
+    return themes == null
+        // The theme state is unknown as well; the screen asks for a reload.
+        ? WardrobeSnapshot(
+            themes: const [],
+            equippedThemeId: null,
+            balance: worn?.balance,
+          )
+        : wardrobe(themes, outfitStore: worn, balance: worn?.balance);
   });
 }

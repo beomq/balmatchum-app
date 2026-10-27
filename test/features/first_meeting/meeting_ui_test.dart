@@ -1,8 +1,14 @@
+import 'package:balmatchum_app/features/daily_activity/daily_steps_controller.dart';
+import 'package:balmatchum_app/features/daily_activity/product_controller.dart';
 import 'package:balmatchum_app/features/first_meeting/domain/first_meeting.dart';
 import 'package:balmatchum_app/features/first_meeting/first_meeting_screen.dart';
 import 'package:balmatchum_app/features/first_meeting/meeting_theme.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:balmatchum_app/features/watch_sync/watch_bridge.dart';
+
+import '../daily_activity/product_controller_test.dart'
+    show AccountRepository, outfitStore;
 
 class MemoryStore implements FirstMeetingStorage {
   String? value;
@@ -288,4 +294,51 @@ void main() {
       });
     }
   }
+
+  testWidgets('home draws the worn vest over the unchanged companion', (
+    tester,
+  ) async {
+    final c = FirstMeetingController(storage: MemoryStore());
+    await c.initialize();
+    await c.enter();
+    await c.chooseMethod(FirstMeetingMethod.catalog);
+    await c.selectBreed('shih-tzu');
+    await c.confirmCandidate();
+    await c.updateName('몽글');
+    await c.updateSex(DogSex.female);
+    await c.submitName();
+    await c.complete();
+    final repository = AccountRepository()
+      ..wardrobeOutfits = outfitStore(owned: true, equipped: 'vest-low-v');
+    final steps = DailyStepsController(
+      readSteps: () async =>
+          const DailyStepsResult(DailyStepsStatus.empty, null),
+    );
+    final product = ProductController(repository, steps, null, account: 'A');
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: meetingTheme(),
+        home: FirstMeetingScreen(controller: c, product: product),
+      ),
+    );
+    await tester.pumpAndSettle();
+    const base = AssetImage('assets/first_meeting/dogs/shih-tzu.png');
+    final layer = find.byKey(const ValueKey('home_dog_outfit'));
+    expect(find.image(base), findsOneWidget);
+    expect(
+      tester.widget<Image>(layer).image,
+      const AssetImage('assets/wardrobe/vest/shih-tzu.png'),
+    );
+    expect(tester.getRect(layer), tester.getRect(find.image(base)));
+    repository.wardrobeOutfits = outfitStore(owned: true);
+    await product.refresh();
+    await tester.pump();
+    expect(layer, findsNothing);
+    expect(find.image(base), findsOneWidget);
+    await tester.pumpWidget(const SizedBox.shrink());
+    product.dispose();
+    steps.dispose();
+    c.dispose();
+    repository.client.close();
+  });
 }

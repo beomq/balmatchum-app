@@ -2,31 +2,40 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
+import '../first_meeting/domain/dog_catalog.dart';
 import '../first_meeting/meeting_theme.dart';
 import '../records/product_page.dart';
+import 'dog_sprite.dart';
+import 'outfit_shelf.dart';
 import 'wardrobe_models.dart';
 
 enum WardrobeScope { owned, store }
 
-/// Background theme wardrobe. Selecting a tile only previews; purchase and
-/// equip are separate, server-confirmed actions. Only themes are offered:
-/// no fitted accessory composites are produced for the supplied dog.
+/// The shelf whose action produced the current message.
+enum _Shelf { theme, outfit }
+
+/// Background themes and the approved outfit. Selecting a theme tile only
+/// previews; purchase, equip and outfit changes are separate,
+/// server-confirmed actions. An outfit is drawn only when the server says it
+/// is worn and the app ships a layer on this dog's own sprite canvas.
 class WardrobeScreen extends StatefulWidget {
   const WardrobeScreen({
-    required this.dogAsset,
+    required this.dog,
     required this.loadWardrobe,
     required this.purchaseTheme,
     required this.equipTheme,
+    required this.changeOutfit,
     required this.onBack,
     required this.onHome,
     super.key,
   });
 
-  /// The selected companion's approved sprite path.
-  final String dogAsset;
+  /// The selected companion; its approved sprite is never altered.
+  final DogBreed dog;
   final LoadWardrobe loadWardrobe;
   final WardrobeThemeAction purchaseTheme;
   final WardrobeThemeAction equipTheme;
+  final WardrobeOutfitAction changeOutfit;
   final VoidCallback onBack;
 
   /// Also used by the insufficient-points path to reach today's reward.
@@ -42,6 +51,7 @@ class _WardrobeScreenState extends State<WardrobeScreen> {
   String? selectedId;
   WardrobeScope scope = WardrobeScope.owned;
   bool busy = false;
+  _Shelf shelf = _Shelf.theme;
   String? actionError;
   bool insufficient = false;
 
@@ -82,14 +92,18 @@ class _WardrobeScreenState extends State<WardrobeScreen> {
     return null;
   }
 
-  Future<void> run(WardrobeThemeAction action, WardrobeTheme theme) async {
+  Future<void> run(
+    _Shelf from,
+    Future<WardrobeSnapshot> Function() action,
+  ) async {
     setState(() {
       busy = true;
+      shelf = from;
       actionError = null;
       insufficient = false;
     });
     try {
-      final value = await action(theme);
+      final value = await action();
       if (!mounted) return;
       setState(() {
         snapshot = value;
@@ -102,7 +116,11 @@ class _WardrobeScreenState extends State<WardrobeScreen> {
         insufficient = e.reason == WardrobeFailureReason.insufficientPoints;
         actionError = switch (e.reason) {
           WardrobeFailureReason.insufficientPoints => '포인트가 부족해요.',
-          WardrobeFailureReason.unavailable => '지금은 이 배경을 사용할 수 없어요.',
+          WardrobeFailureReason.incompatible => '이 강아지는 아직 입을 수 없어요',
+          WardrobeFailureReason.unavailable => switch (from) {
+            _Shelf.theme => '지금은 이 배경을 사용할 수 없어요.',
+            _Shelf.outfit => '지금은 이 의상을 사용할 수 없어요.',
+          },
           WardrobeFailureReason.other => '처리하지 못했어요. 다시 시도해 주세요.',
         };
       });
@@ -128,29 +146,46 @@ class _WardrobeScreenState extends State<WardrobeScreen> {
     }
   }
 
-  Future<void> confirmPurchase(WardrobeTheme theme) async {
-    final ok = await showDialog<bool>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: Text('${theme.name} 배경을 구매할까요?'),
-        content: Text(
-          '${formatCount(theme.price!)}포인트가 사용돼요. 구매 후 착용은 따로 선택해요.',
+  Future<bool> confirmSpend(String title, int price) async =>
+      await showDialog<bool>(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: Text(title),
+          content: Text('${formatCount(price)}포인트가 사용돼요. 구매 후 착용은 따로 선택해요.'),
+          actions: [
+            TextButton(
+              key: const ValueKey('wardrobe_purchase_cancel'),
+              onPressed: () => Navigator.pop(context, false),
+              child: const Text('취소'),
+            ),
+            TextButton(
+              key: const ValueKey('wardrobe_purchase_confirm'),
+              onPressed: () => Navigator.pop(context, true),
+              child: const Text('구매 확인'),
+            ),
+          ],
         ),
-        actions: [
-          TextButton(
-            key: const ValueKey('wardrobe_purchase_cancel'),
-            onPressed: () => Navigator.pop(context, false),
-            child: const Text('취소'),
-          ),
-          TextButton(
-            key: const ValueKey('wardrobe_purchase_confirm'),
-            onPressed: () => Navigator.pop(context, true),
-            child: const Text('구매 확인'),
-          ),
-        ],
+      ) ==
+      true;
+
+  Future<void> confirmPurchase(WardrobeTheme theme) async {
+    final ok = await confirmSpend('${theme.name} 배경을 구매할까요?', theme.price!);
+    if (ok && mounted) {
+      await run(_Shelf.theme, () => widget.purchaseTheme(theme));
+    }
+  }
+
+  Future<void> changeOutfit(WardrobeOutfit outfit, OutfitChange change) async {
+    final ok = switch (change) {
+      OutfitChange.purchase => await confirmSpend(
+        '${outfit.name} 의상을 구매할까요?',
+        outfit.price,
       ),
-    );
-    if (ok == true && mounted) await run(widget.purchaseTheme, theme);
+      OutfitChange.wear || OutfitChange.remove => true,
+    };
+    if (ok && mounted) {
+      await run(_Shelf.outfit, () => widget.changeOutfit(outfit, change));
+    }
   }
 
   void select(WardrobeTheme theme) => setState(() {
@@ -209,7 +244,8 @@ class _WardrobeScreenState extends State<WardrobeScreen> {
             );
           }
           final preview = _Preview(
-            dogAsset: widget.dogAsset,
+            dogAsset: widget.dog.spritePath,
+            outfitLayer: s.outfits?.wornLayer(widget.dog.id),
             theme: selected,
             equipped: selected != null && selected!.id == s.equippedThemeId,
             compact: !split && bounds.maxHeight < 600,
@@ -228,10 +264,21 @@ class _WardrobeScreenState extends State<WardrobeScreen> {
             equippedId: s.equippedThemeId,
             balance: s.balance,
             busy: busy,
-            error: actionError,
-            insufficient: insufficient,
+            error: shelf == _Shelf.theme ? actionError : null,
+            insufficient: shelf == _Shelf.theme && insufficient,
             onPurchase: confirmPurchase,
-            onEquip: (t) => run(widget.equipTheme, t),
+            onEquip: (t) => run(_Shelf.theme, () => widget.equipTheme(t)),
+            onEarnPoints: widget.onHome,
+          );
+          final outfitShelf = OutfitShelf(
+            outfits: s.outfits,
+            breedId: widget.dog.id,
+            balance: s.balance,
+            busy: busy,
+            error: shelf == _Shelf.outfit ? actionError : null,
+            insufficient: shelf == _Shelf.outfit && insufficient,
+            onChange: changeOutfit,
+            onReload: load,
             onEarnPoints: widget.onHome,
           );
           final body = split
@@ -252,7 +299,19 @@ class _WardrobeScreenState extends State<WardrobeScreen> {
                       ),
                     ),
                     const SizedBox(width: Space.s6),
-                    Expanded(child: SingleChildScrollView(child: list)),
+                    Expanded(
+                      child: SingleChildScrollView(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            list,
+                            const SizedBox(height: Space.s6),
+                            outfitShelf,
+                            const SizedBox(height: Space.s3),
+                          ],
+                        ),
+                      ),
+                    ),
                   ],
                 )
               : null;
@@ -276,6 +335,8 @@ class _WardrobeScreenState extends State<WardrobeScreen> {
                                 preview,
                                 const SizedBox(height: Space.s3),
                                 list,
+                                const SizedBox(height: Space.s6),
+                                outfitShelf,
                                 const SizedBox(height: Space.s3),
                                 if (!pinned) ...[
                                   action,
@@ -309,11 +370,15 @@ class _WardrobeScreenState extends State<WardrobeScreen> {
 class _Preview extends StatelessWidget {
   const _Preview({
     required this.dogAsset,
+    required this.outfitLayer,
     required this.theme,
     required this.equipped,
     required this.compact,
   });
   final String dogAsset;
+
+  /// Server-confirmed worn layer on the [dogAsset] canvas; never a try-on.
+  final String? outfitLayer;
   final WardrobeTheme? theme;
   final bool equipped;
   final bool compact;
@@ -354,11 +419,11 @@ class _Preview extends StatelessWidget {
                 Space.s8,
                 Space.s2,
               ),
-              child: Image.asset(
-                dogAsset,
-                key: const ValueKey('wardrobe_preview_dog'),
-                fit: BoxFit.contain,
-                filterQuality: FilterQuality.none,
+              child: DogSprite(
+                asset: dogAsset,
+                layer: outfitLayer,
+                spriteKey: const ValueKey('wardrobe_preview_dog'),
+                layerKey: const ValueKey('wardrobe_preview_outfit'),
               ),
             ),
             Positioned(
