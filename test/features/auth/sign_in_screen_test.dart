@@ -20,10 +20,41 @@ class _Starter implements SignInStarter {
 }
 
 void main() {
-  Future<void> mount(WidgetTester tester, SignInStarter starter) async {
-    await tester.pumpWidget(MaterialApp(home: SignInScreen(starter: starter)));
+  Future<void> mount(
+    WidgetTester tester,
+    SignInStarter starter, {
+    TargetPlatform platform = TargetPlatform.iOS,
+  }) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: ThemeData(platform: platform),
+        home: SignInScreen(starter: starter),
+      ),
+    );
     await tester.pumpAndSettle();
   }
+
+  testWidgets('Android hides the unsupported Apple button', (tester) async {
+    await mount(
+      tester,
+      const NotConnectedSignInStarter(),
+      platform: TargetPlatform.android,
+    );
+    final list = tester.widget<SocialButtonList>(find.byType(SocialButtonList));
+    expect(list.items.map((item) => item.social), [
+      Social.google,
+      Social.kakao,
+      Social.naver,
+    ]);
+    expect(find.byType(TextButton), findsNWidgets(3));
+  });
+
+  testWidgets('iOS keeps the Apple button', (tester) async {
+    await mount(tester, const NotConnectedSignInStarter());
+    final list = tester.widget<SocialButtonList>(find.byType(SocialButtonList));
+    expect(list.items.map((item) => item.social), contains(Social.apple));
+    expect(find.byType(TextButton), findsNWidgets(4));
+  });
 
   testWidgets('completed Kakao outcomes expose status without leaving login', (
     tester,

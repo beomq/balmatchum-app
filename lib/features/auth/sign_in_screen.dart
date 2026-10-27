@@ -48,7 +48,11 @@ class _SignInScreenState extends State<SignInScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final textTheme = Theme.of(context).textTheme;
+    final theme = Theme.of(context);
+    final textTheme = theme.textTheme;
+    // The server has no Apple Android/web callback route, so Apple login is
+    // native-only; ThemeData.platform keeps this injectable for tests.
+    final showApple = theme.platform != TargetPlatform.android;
     return Scaffold(
       body: SafeArea(
         child: Center(
@@ -80,14 +84,15 @@ class _SignInScreenState extends State<SignInScreen> {
                             ? null
                             : () => _start(SignInProvider.google),
                       ),
-                      SocialButton(
-                        social: Social.apple,
-                        logo: 'assets/social/apple.png',
-                        appearance: SocialButtonAppearance.providerDefault,
-                        onPressed: _starting
-                            ? null
-                            : () => _start(SignInProvider.apple),
-                      ),
+                      if (showApple)
+                        SocialButton(
+                          social: Social.apple,
+                          logo: 'assets/social/apple.png',
+                          appearance: SocialButtonAppearance.providerDefault,
+                          onPressed: _starting
+                              ? null
+                              : () => _start(SignInProvider.apple),
+                        ),
                       SocialButton(
                         social: Social.kakao,
                         logo: 'assets/social/kakao.png',
