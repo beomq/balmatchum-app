@@ -52,8 +52,12 @@ their development/distribution profiles. Unsigned compilation and simulator
 authorization do not verify device provisioning. For a configuration without
 HealthKit, omit/set false the gate to retain `capabilityUnavailable`.
 
-The request shares no types (`toShare: []`), so no
-`NSHealthUpdateUsageDescription` is needed. Step count needs only
+The request shares no types (`toShare: []`) and remains read-only.
+Apple validation nevertheless requires a non-empty `NSHealthUpdateUsageDescription`
+for this HealthKit-entitled binary (ITMS-90683). Both phone plists explain that
+the app never writes or modifies health data; this string grants no write access.
+`tool/apple/verify_package_test.rb` checks the native authorization share arguments
+remain empty separately from the required purpose strings. Step count needs only
 `com.apple.developer.healthkit`, not the additional clinical-record access
 entitlement. Watch currently exchanges display snapshots and GPS envelopes via
 WatchConnectivity; it does not read HealthKit and its targets are unchanged.

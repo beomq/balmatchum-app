@@ -2,6 +2,7 @@ require 'net/http'
 require 'json'
 require 'jwt'
 require 'openssl'
+require 'timeout'
 
 module ApplePreflight
   ORIGIN = 'https://api.appstoreconnect.apple.com'.freeze
@@ -49,5 +50,27 @@ module ApplePreflight
     attributes = group['attributes']
     attributes.is_a?(Hash) && attributes['isInternalGroup'] == true &&
       attributes['publicLinkEnabled'] != true
+  end
+
+  def self.verify_upload!(app_id:, number:, fetcher:)
+    # Transport success is not ASC registration. Bound HTTP, pagination and waits.
+    Timeout.timeout(600) do
+      loop do
+        builds = fetcher.call("/v1/builds?filter%5Bapp%5D=#{app_id}&filter%5Bversion%5D=#{number}&limit=200")
+        build = builds.find { |row| row.fetch('attributes').fetch('version') == number }
+        if build
+          state = build.fetch('attributes').fetch('processingState')
+          case state
+          when 'PROCESSING', 'VALID'
+            return build
+          else
+            raise "ASC build #{number} registration failed: #{state}"
+          end
+        end
+        sleep 15
+      end
+    end
+  rescue Timeout::Error
+    raise "ASC build #{number} not registered within 600 seconds"
   end
 end

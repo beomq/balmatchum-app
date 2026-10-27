@@ -7,14 +7,25 @@ class ApplePackageTest < Minitest::Test
     # Given / When: the production and debug Runner configuration files are read.
     %w[Info.plist Info-Debug-dev.plist].each do |name|
       info = ApplePackage.plist(File.expand_path("../../ios/Runner/#{name}", __dir__))
-      # Then: only reading is declared, with the verified capability gate.
+      # Then: both required purpose strings exist, with the verified capability gate.
       assert_kind_of String, info['NSHealthShareUsageDescription'], name
       refute_empty info['NSHealthShareUsageDescription'].strip, name
-      refute info.key?('NSHealthUpdateUsageDescription'), name
+      assert_kind_of String, info['NSHealthUpdateUsageDescription'], name
+      refute_empty info['NSHealthUpdateUsageDescription'].strip, name
       assert_equal true, info['BalmatchumHealthKitCapabilityVerified'], name
     end
     entitlements = ApplePackage.plist(File.expand_path('../../ios/Runner/Runner.entitlements', __dir__))
     assert_equal true, entitlements['com.apple.developer.healthkit']
+  end
+
+  def test_native_reader_requests_no_write_authorization
+    # Given: the native HealthKit reader, not a purpose-string proxy.
+    source = File.read(File.expand_path('../../ios/Runner/DailyStepsReader.swift', __dir__))
+    # When: all HealthKit authorization share arguments are inspected.
+    share_types = source.scan(/requestAuthorization\s*\(\s*toShare:\s*([^,]+),/)
+    # Then: the reader requests reading, never a share/write type.
+    refute_empty share_types
+    assert share_types.all? { |argument| argument.first.strip == '[]' }
   end
 
   def test_package_accepts_read_only_healthkit_without_watch_healthkit
@@ -39,16 +50,16 @@ class ApplePackageTest < Minitest::Test
     end
   end
 
-  def test_package_rejects_any_write_purpose_key
-    ['write steps', '', false].each do |invalid|
-      # Given: the write-purpose key is present, regardless of its value.
+  def test_package_rejects_missing_blank_or_non_string_update_purpose
+    [nil, '', '  ', false, 42].each do |invalid|
+      # Given: HealthKit is entitled but its required update purpose is invalid.
       with_package(info_changes: { 'NSHealthUpdateUsageDescription' => invalid }) do |app|
         # When: the package is verified.
         error = assert_raises(RuntimeError) do
           ApplePackage.verify_app(app, 'com.beomq.balmatchum.dev', '1.0.8')
         end
-        # Then: a read-only package must not declare writing.
-        assert_equal 'Unexpected HealthKit write purpose', error.message
+        # Then: the package fails locally instead of receiving ITMS-90683.
+        assert_equal 'Missing HealthKit purpose: NSHealthUpdateUsageDescription', error.message
       end
     end
   end
@@ -109,6 +120,7 @@ class ApplePackageTest < Minitest::Test
       watch = File.join(app, 'Watch/BalmatchumWatch.app')
       FileUtils.mkdir_p(watch)
       info = { 'NSHealthShareUsageDescription' => 'read steps',
+               'NSHealthUpdateUsageDescription' => 'no health data is written',
                'BalmatchumHealthKitCapabilityVerified' => true,
                'CFBundleIdentifier' => 'com.beomq.balmatchum.dev',
                'CFBundleShortVersionString' => '1.0.0', 'CFBundleVersion' => '1.0.8' }
