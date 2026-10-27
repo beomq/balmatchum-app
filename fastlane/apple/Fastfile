@@ -2,6 +2,7 @@ require_relative 'asc_preflight'
 require_relative '../../tool/apple/build_number'
 require_relative '../../tool/apple/verify_package'
 require_relative '../../tool/apple/delivery_target'
+require_relative '../../tool/apple/app_config'
 
 default_platform(:ios)
 
@@ -30,6 +31,12 @@ platform :ios do
     end
     root = File.expand_path('../..', __dir__)
     output = File.expand_path(ENV.fetch('APPLE_OUTPUT_DIR'))
+    app_config_path = File.join(output, 'app-config.json')
+    if target == 'prod'
+      sh('bash', File.join(root, 'tool/release_app_config.sh'), 'ios', app_config_path)
+      app_config = AppleAppConfig.load(app_config_path)
+      app_settings = AppleAppConfig.build_settings(app_config)
+    end
     key_path = ENV.fetch('ASC_KEY_PATH')
     key_id = ENV.fetch('ASC_KEY_ID')
     issuer = ENV.fetch('ASC_ISSUER_ID')
@@ -53,7 +60,9 @@ platform :ios do
       sh('fvm', 'flutter', 'pub', 'get', '--enforce-lockfile')
       args = ['fvm', 'flutter', 'build', 'ios', '--release', '--config-only', '--no-codesign', '--no-pub', "--build-number=#{number}"]
       args += ['--flavor', 'dev'] if target == 'dev'
+      args << "--dart-define-from-file=#{app_config_path}" if app_config
       sh(*args)
+      AppleAppConfig.verify_dart_defines!(File.join(root, 'ios/Flutter/Generated.xcconfig'), app_config) if app_config
       profiles.each do |name, profile|
         update_code_signing_settings(path: File.join(root, 'ios/Runner.xcodeproj'),
           use_automatic_signing: false, team_id: 'Q4E6NKD9VN', targets: [name],
@@ -65,10 +74,14 @@ platform :ios do
       sh('xcodebuild', '-workspace', 'ios/Runner.xcworkspace', '-scheme', scheme,
         '-configuration', configuration, '-destination', 'generic/platform=iOS',
         '-archivePath', archive, '-xcconfig', "ios/Signing/#{config}Archive.xcconfig",
-        "ADMOB_IOS_APP_ID=#{admob_app_id}", 'archive')
+        "ADMOB_IOS_APP_ID=#{admob_app_id}", *(app_settings || {}).map { |key, value| "#{key}=#{value}" }, 'archive')
       sh('xcodebuild', '-exportArchive', '-archivePath', archive, '-exportPath', export,
         '-exportOptionsPlist', "ios/Signing/ExportOptions-#{config}.plist")
       ApplePackage.verify!(archive: archive, ipa: File.join(export, 'balmatchum_app.ipa'), bundle: bundle, number: number)
+      if app_settings
+        info = ApplePackage.plist(File.join(archive, 'Products/Applications/Runner.app/Info.plist'))
+        AppleAppConfig.verify_url_schemes!(info, app_settings)
+      end
       ApplePreflight.verify!(bundle: bundle, app_id: app_id, fetcher: fetcher)
       next if mode == 'verify'
       current = fetcher.call(builds_path).map { |build| build.fetch('attributes').fetch('version') }

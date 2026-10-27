@@ -74,9 +74,17 @@ jobs:
           ANDROID_KEY_PASSWORD: ${{ secrets[matrix.key_password] }}
           ANDROID_STORE_FILE: ${{ runner.temp }}/android-upload.p12
           ADMOB_ANDROID_APP_ID: ${{ matrix.flavor == 'dev' && vars.ADMOB_ANDROID_APP_ID_DEV || vars.ADMOB_ANDROID_APP_ID_PROD }}
+          SERVER_URL: ${{ vars.SERVER_URL_PROD }}
+          KAKAO_NATIVE_APP_KEY: ${{ vars.KAKAO_NATIVE_APP_KEY_PROD }}
+          GOOGLE_SERVER_CLIENT_ID: ${{ vars.GOOGLE_SERVER_CLIENT_ID_PROD }}
         run: |
           set +x
           bash tool/verify_android_bundle.sh preflight
+          app_config=()
+          if [[ "$FLAVOR" == prod ]]; then
+            bash tool/release_app_config.sh android "$RUNNER_TEMP/app-config.json"
+            app_config=(--dart-define-from-file="$RUNNER_TEMP/app-config.json")
+          fi
           umask 077
           trap 'rm -f "$ANDROID_STORE_FILE"' EXIT
           printf '%s' "$KEYSTORE_BASE64" | base64 --decode > "$ANDROID_STORE_FILE"
@@ -90,7 +98,7 @@ jobs:
             export BALMATCHUM_PROD_STORE_PASSWORD="$ANDROID_STORE_PASSWORD"
             export BALMATCHUM_PROD_KEY_PASSWORD="$ANDROID_KEY_PASSWORD"
           fi
-          fvm flutter build appbundle --release --flavor "$FLAVOR"
+          fvm flutter build appbundle --release --flavor "$FLAVOR" "${app_config[@]}"
           export BUNDLETOOL_JAR="$RUNNER_TEMP/bundletool.jar"
           export LLVM_READELF="$ANDROID_HOME/ndk/28.2.13676358/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-readelf"
           export ZIPALIGN="$ANDROID_HOME/build-tools/36.0.0/zipalign"

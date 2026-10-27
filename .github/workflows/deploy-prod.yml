@@ -94,15 +94,20 @@ jobs:
           BALMATCHUM_PROD_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
           BALMATCHUM_PROD_STORE_FILE: ${{ runner.temp }}/balmatchum-prod-upload.p12
           ADMOB_ANDROID_APP_ID: ${{ vars.ADMOB_ANDROID_APP_ID_PROD }}
+          SERVER_URL: ${{ vars.SERVER_URL_PROD }}
+          KAKAO_NATIVE_APP_KEY: ${{ vars.KAKAO_NATIVE_APP_KEY_PROD }}
+          GOOGLE_SERVER_CLIENT_ID: ${{ vars.GOOGLE_SERVER_CLIENT_ID_PROD }}
         run: |
           set +x
+          bash tool/release_app_config.sh android "$RUNNER_TEMP/app-config.json"
           : "${KEYSTORE_BASE64:?Missing Prod keystore}"
           : "${BALMATCHUM_PROD_STORE_PASSWORD:?Missing store password}"
           : "${BALMATCHUM_PROD_KEY_PASSWORD:?Missing key password}"
           umask 077
           trap 'rm -f "$BALMATCHUM_PROD_STORE_FILE"' EXIT
           printf '%s' "$KEYSTORE_BASE64" | base64 --decode > "$BALMATCHUM_PROD_STORE_FILE"
-          fvm flutter build appbundle --flavor prod --release --build-number="$VERSION_CODE"
+          fvm flutter build appbundle --flavor prod --release --build-number="$VERSION_CODE" \
+            --dart-define-from-file="$RUNNER_TEMP/app-config.json"
           jarsigner -verify build/app/outputs/bundle/prodRelease/app-prod-release.aab
       - name: Keep signed bundle
         uses: actions/upload-artifact@v4

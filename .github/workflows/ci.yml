@@ -16,6 +16,10 @@ jobs:
       - uses: actions/checkout@v4
       - name: Test Play draft upload contract
         run: bash tool/test_upload_play.sh
+      - name: Test release app config contract
+        run: |
+          bash tool/test_release_app_config.sh
+          bash tool/test_verify_android_manifest.sh
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
@@ -42,3 +46,5 @@ jobs:
         run: fvm flutter test
       - name: Build Android debug APK
         run: fvm flutter build apk --debug --flavor dev
+      - name: Test Gradle release app config
+        run: bash tool/test_gradle_app_config.sh
