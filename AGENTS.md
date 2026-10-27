@@ -10,8 +10,9 @@
 - Riverpod는 조립과 상태 수명 관리, 생성자 DI는 객체 의존성 전달에 사용합니다.
   feature-first와 go_router를 유지하며 필요 없는 계층/use case는 만들지 않습니다.
 - 자체 백엔드는 서버 담당자가 생성하는 Serverpod 4.0.3 `balmatchum_client`만
-  사용합니다. 승인된 불변 ref는 `635c7e8b5ffd4373b0e10c98027fec39de1ddbd7`,
-  Git 패키지 경로는 `client/`입니다. 이후 변경도 리드의 새 승인에 따라 ref와 경로를
+  사용합니다. 승인된 불변 ref는 `2b8c418994524746c5c25d3f795d965c2ea22aca`
+  (pubspec.lock 기준)이며, pubspec과 lock은 머지된 서버 develop 커밋을 Git 소스로 고정하고
+  `pubspec_overrides.yaml`은 커밋하지 않습니다. Git 패키지 경로는 `client/`입니다. 이후 변경도 리드의 새 승인에 따라 ref와 경로를
   쌍으로 변경합니다. GitHub 원격 이름은 `balmatchum-app`을 유지합니다.
   DTO 수기 작성, 서버 계약 수정, Dio/Retrofit 도입을 하지 않습니다.
 - `com.beomq.balmatchum`은 미확정 로컬 식별자입니다. 외부 OAuth/스토어 등록과
