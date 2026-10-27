@@ -15,11 +15,8 @@ dependencies:
   flutter:
     sdk: flutter
   flutter_riverpod: ^3.4.3
-  flutter_naver_map: 1.4.4
   flutter_web_auth_2: 5.1.0
   crypto: 3.0.7
-  geolocator: 14.1.1
-  battery_plus: 7.1.2
   path_provider: 2.1.6
   image_picker: 1.2.4
   gal: 2.3.2

@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter/services.dart';
@@ -19,7 +20,6 @@ import '../features/first_meeting/first_meeting_screen.dart';
 import '../features/first_meeting/first_meeting_providers.dart';
 import '../features/auth/sign_in_starter.dart';
 import '../features/bootstrap/presentation/bootstrap_screen.dart';
-import '../features/location_experiment/location_experiment_screen.dart';
 import '../features/watch_sync/watch_diagnostics_screen.dart';
 import 'dependencies.dart';
 
@@ -163,15 +163,10 @@ final routerProvider = Provider<GoRouter>((ref) {
       return null;
     },
     routes: [
-      if (phoneLocationExperimentEnabled)
+      if (kDebugMode && appFlavor == 'dev')
         GoRoute(
           path: '/debug/watch',
           builder: (context, state) => const WatchDiagnosticsScreen(),
-        ),
-      if (phoneLocationExperimentEnabled)
-        GoRoute(
-          path: '/debug/location',
-          builder: (context, state) => const PhoneLocationExperimentScreen(),
         ),
       GoRoute(
         path: '/',
