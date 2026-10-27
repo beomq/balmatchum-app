@@ -10,6 +10,7 @@ import 'package:serverpod_auth_core_flutter/serverpod_auth_core_flutter.dart';
 
 import '../features/auth/auth_adapters.dart';
 import '../features/auth/account_deletion.dart';
+import '../features/auth/account_provider_revocation.dart';
 import '../features/first_meeting/data/first_meeting_file_storage.dart';
 import '../features/auth/kakao_auth_service.dart';
 import '../features/auth/naver_auth_service.dart';
@@ -90,14 +91,20 @@ final kakaoAuthServiceProvider = Provider<KakaoAuthService?>((ref) {
   );
 });
 
+final nativeSocialLoginSdkProvider = Provider<NativeSocialLoginSdk>(
+  (ref) => NativeSocialLoginSdk(
+    configuration: SocialAuthConfiguration(
+      serverUrl: serverUrl,
+      platform: defaultTargetPlatform,
+      isWeb: kIsWeb,
+    ),
+  ),
+);
+
 final socialAuthServiceProvider = Provider<SignInStarter>((ref) {
-  final configuration = SocialAuthConfiguration(
-    serverUrl: serverUrl,
-    platform: defaultTargetPlatform,
-    isWeb: kIsWeb,
-  );
   // A disconnected app never constructs a client or invokes a native SDK.
   if (serverUrl.isEmpty) return const UnconfiguredSocialSignInStarter();
+  final sdk = ref.watch(nativeSocialLoginSdkProvider);
   final client = ref.watch(clientProvider);
   var alive = true;
   var authenticationEpoch = 0;
@@ -112,8 +119,8 @@ final socialAuthServiceProvider = Provider<SignInStarter>((ref) {
     watchSync: ref.watch(watchSyncServiceProvider),
   );
   return SocialAuthService(
-    isConfigured: configuration.isConfigured,
-    sdk: NativeSocialLoginSdk(configuration: configuration),
+    isConfigured: sdk.configuration.isConfigured,
+    sdk: sdk,
     server: ServerpodSocialLoginServer(client, platform: defaultTargetPlatform),
     session: session,
     kakao: ref.watch(kakaoAuthServiceProvider),
@@ -168,6 +175,10 @@ final accountDeletionProvider = Provider<AccountDeletion?>((ref) {
   final client = ref.watch(clientProvider);
   final logout = ref.watch(logoutProvider)!;
   final notice = ref.watch(accountNoticeProvider);
+  final providers = AccountProviderRevocation(
+    unlinkKakao: kakaoNativeAppKey.isEmpty ? null : KakaoSdkLogin().unlink,
+    disconnectGoogle: ref.watch(nativeSocialLoginSdkProvider).disconnectGoogle,
+  );
   Future<File> marker() async {
     final directory = await getApplicationSupportDirectory();
     return File('${directory.path}/deletion-$account');
@@ -199,6 +210,13 @@ final accountDeletionProvider = Provider<AccountDeletion?>((ref) {
       } on ServerpodClientUnauthorized {
         notice.value = '인증이 만료되어 기기 정보를 정리했어요. 계정 삭제 여부는 다시 로그인해 확인해 주세요.';
         rethrow;
+      }
+    },
+    revokeProviders: () async {
+      if (!await providers.revoke()) {
+        notice.value =
+            '계정이 삭제되었습니다. 일부 소셜 연결을 해제하지 못했어요. '
+            '카카오계정·Google 계정의 연결된 앱 설정에서 직접 해제해 주세요.';
       }
     },
     clearLocal: () async {

@@ -3,6 +3,51 @@ import 'package:balmatchum_client/balmatchum_client.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
+  test('revokes providers after confirmed deletion before cleanup', () async {
+    // Given
+    final events = <String>[];
+    final deletion = AccountDeletion(
+      markPending: () async {},
+      clearPending: () async {},
+      wasRemoteDeleted: () async => false,
+      markRemoteDeleted: () async => events.add('persist'),
+      deleteRemote: () async => events.add('remote'),
+      revokeProviders: () async => events.add('revoke'),
+      clearLocal: () async => events.add('clear'),
+      signOut: () async => events.add('logout'),
+    );
+
+    // When
+    await deletion.delete();
+
+    // Then
+    expect(events, ['remote', 'persist', 'revoke', 'clear', 'logout']);
+  });
+
+  test(
+    'resumed deletion revokes providers without another server call',
+    () async {
+      // Given
+      final events = <String>[];
+      final deletion = AccountDeletion(
+        markPending: () async {},
+        clearPending: () async {},
+        wasRemoteDeleted: () async => true,
+        markRemoteDeleted: () async {},
+        deleteRemote: () async => events.add('remote'),
+        revokeProviders: () async => events.add('revoke'),
+        clearLocal: () async => events.add('clear'),
+        signOut: () async => events.add('logout'),
+      );
+
+      // When
+      await deletion.delete();
+
+      // Then
+      expect(events, ['revoke', 'clear', 'logout']);
+    },
+  );
+
   test(
     'new instance resumes persisted remote deletion before sign-out',
     () async {
@@ -17,6 +62,7 @@ void main() {
         wasRemoteDeleted: () async => deleted,
         markRemoteDeleted: () async => deleted = true,
         deleteRemote: () async => remoteCalls++,
+        revokeProviders: () async {},
         clearLocal: () async {
           if (fail) throw Exception('disk unavailable');
         },
@@ -43,6 +89,7 @@ void main() {
         wasRemoteDeleted: () async => false,
         markRemoteDeleted: () async {},
         deleteRemote: () async => throw ServerpodClientUnauthorized(),
+        revokeProviders: () async => events.add('revoke'),
         clearLocal: () async => events.add('clear'),
         signOut: () async => events.add('logout'),
       );
@@ -64,6 +111,7 @@ void main() {
         wasRemoteDeleted: () async => false,
         markRemoteDeleted: () async {},
         deleteRemote: () async => throw Exception('offline'),
+        revokeProviders: () async => events.add('revoke'),
         clearLocal: () async => events.add('clear'),
         signOut: () async => events.add('logout'),
       );
@@ -83,6 +131,7 @@ void main() {
         wasRemoteDeleted: () async => false,
         markRemoteDeleted: () async {},
         deleteRemote: () async => events.add('remote'),
+        revokeProviders: () async {},
         clearLocal: () async {
           if (fail) throw Exception('disk');
           events.add('clear');

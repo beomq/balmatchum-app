@@ -59,6 +59,8 @@ class NativeSocialLoginSdk implements SocialLoginSdk {
     required this.configuration,
     Future<void> Function()? initializeGoogle,
     Future<String?> Function()? authenticateGoogle,
+    Future<void> Function()? restoreGoogle,
+    Future<void> Function()? disconnectGoogle,
     Future<bool> Function()? googleCallbackConfigured,
     Future<AuthorizationCredentialAppleID> Function()? authenticateApple,
   }) : _initializeGoogle =
@@ -74,6 +76,12 @@ class NativeSocialLoginSdk implements SocialLoginSdk {
            (() async => (await GoogleSignIn.instance.authenticate())
                .authentication
                .idToken),
+       _restoreGoogle =
+           restoreGoogle ??
+           (() async {
+             await GoogleSignIn.instance.attemptLightweightAuthentication();
+           }),
+       _disconnectGoogle = disconnectGoogle ?? GoogleSignIn.instance.disconnect,
        _googleCallbackConfigured =
            googleCallbackConfigured ??
            (() async =>
@@ -101,9 +109,29 @@ class NativeSocialLoginSdk implements SocialLoginSdk {
   final SocialAuthConfiguration configuration;
   final Future<void> Function() _initializeGoogle;
   final Future<String?> Function() _authenticateGoogle;
+  final Future<void> Function() _restoreGoogle;
+  final Future<void> Function() _disconnectGoogle;
   final Future<bool> Function() _googleCallbackConfigured;
   final Future<AuthorizationCredentialAppleID> Function() _authenticateApple;
   Future<void>? _googleInitialization;
+
+  Future<void> _ensureGoogleInitialized() async {
+    try {
+      await (_googleInitialization ??= _initializeGoogle());
+    } on Exception {
+      _googleInitialization = null;
+      rethrow;
+    }
+  }
+
+  Future<void> disconnectGoogle() async {
+    if (!configuration.isConfigured(SignInProvider.google)) return;
+    await _ensureGoogleInitialized();
+    // Android's revoke cache is process-local; restore it after app restart.
+    // This does not save or create a Serverpod session.
+    await _restoreGoogle();
+    await _disconnectGoogle();
+  }
 
   @override
   Future<SocialCredential> authenticate(SignInProvider provider) async {
@@ -118,12 +146,7 @@ class NativeSocialLoginSdk implements SocialLoginSdk {
         }
         // Memoize the in-flight future, not an unawaited controller flag.
         // No event subscription or lightweight authentication can sign in.
-        try {
-          await (_googleInitialization ??= _initializeGoogle());
-        } on Exception {
-          _googleInitialization = null;
-          rethrow;
-        }
+        await _ensureGoogleInitialized();
         return SocialCredential(idToken: await _authenticateGoogle() ?? '');
       }
       final credential = await _authenticateApple();
