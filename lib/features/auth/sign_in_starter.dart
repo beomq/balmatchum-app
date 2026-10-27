@@ -37,7 +37,16 @@ class NotConnectedSignInStarter implements SignInStarter {
       SignInOutcome.notConnected;
 }
 
+class UnconfiguredSocialSignInStarter implements SignInStarter {
+  const UnconfiguredSocialSignInStarter();
+
+  @override
+  Future<SignInOutcome> start(SignInProvider provider) async =>
+      provider == SignInProvider.kakao
+      ? SignInOutcome.notConnected
+      : const SignInOutcome.failed('configurationMissing');
+}
+
 final signInStarterProvider = Provider<SignInStarter>(
-  (ref) =>
-      ref.watch(kakaoAuthServiceProvider) ?? const NotConnectedSignInStarter(),
+  (ref) => ref.watch(socialAuthServiceProvider),
 );

@@ -5,6 +5,26 @@ import 'package:flutter_test/flutter_test.dart';
 
 void main() {
   test(
+    'account profiles survive switching without leaking or cross deletion',
+    () async {
+      final dir = await Directory.systemTemp.createTemp('account_profiles');
+      addTearDown(() => dir.delete(recursive: true));
+      FirstMeetingFileStorage account(String id) =>
+          FirstMeetingFileStorage(directory: () async => dir, accountId: id);
+      final dev = FirstMeetingFileStorage(directory: () async => dir);
+      await dev.write('dev');
+      await account('owner-a').write('profile-a');
+      expect(await account('owner-b').read(), isNull);
+      await account('owner-b').write('profile-b');
+      expect(await account('owner-a').read(), 'profile-a');
+      await account('owner-a').delete();
+      expect(await account('owner-a').read(), isNull);
+      expect(await account('owner-b').read(), 'profile-b');
+      expect(await dev.read(), 'dev');
+    },
+  );
+
+  test(
     'file replacement and reset touch only separate dev namespace',
     () async {
       final dir = await Directory.systemTemp.createTemp('first_meeting_test');
