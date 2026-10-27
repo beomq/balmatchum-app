@@ -17,9 +17,10 @@ module ApplePackage
 
   def self.verify_app(app, bundle, number)
     ios = plist(File.join(app, 'Info.plist'))
-    %w[NSHealthShareUsageDescription NSHealthUpdateUsageDescription].each do |key|
-      raise "Missing HealthKit purpose: #{key}" unless ios[key].is_a?(String) && !ios[key].strip.empty?
-    end
+    purpose = ios['NSHealthShareUsageDescription']
+    raise 'Missing HealthKit purpose: NSHealthShareUsageDescription' unless purpose.is_a?(String) && !purpose.strip.empty?
+    raise 'Unexpected HealthKit write purpose' if ios.key?('NSHealthUpdateUsageDescription')
+    raise 'HealthKit capability not verified' unless ios['BalmatchumHealthKitCapabilityVerified'] == true
     watch_path = File.join(app, 'Watch/BalmatchumWatch.app')
     watch = plist(File.join(watch_path, 'Info.plist'))
     raise 'Companion mismatch' unless watch['WKCompanionAppBundleIdentifier'] == bundle
@@ -35,6 +36,7 @@ module ApplePackage
         File.write(entitlements_path, command('codesign', '-d', '--entitlements', ':-', path))
         [plist(profile_path).fetch('Entitlements'), plist(entitlements_path)].each do |entitlements|
           raise 'Signing entitlement mismatch' unless entitlements['application-identifier'] == "Q4E6NKD9VN.#{expected}" && entitlements['com.apple.developer.team-identifier'] == 'Q4E6NKD9VN' && entitlements['get-task-allow'] == false
+          raise 'Missing HealthKit entitlement' if path == app && entitlements['com.apple.developer.healthkit'] != true
         end
       end
     end
