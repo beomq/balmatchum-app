@@ -32,6 +32,28 @@ Future<void> changedTo(
   }
 }
 
+Future<void> mountHome(WidgetTester tester, ProviderContainer container) async {
+  final meeting = container.read(firstMeetingControllerProvider);
+  var loadingStarted = false;
+  // Subscribe before mounting: the screen starts a fresh disk restore,
+  // even if this controller was already initialized by the fixture.
+  await changedTo(
+    meeting,
+    () {
+      loadingStarted = loadingStarted || meeting.isBusy;
+      return loadingStarted && !meeting.isBusy;
+    },
+    () => tester.pumpWidget(
+      UncontrolledProviderScope(
+        container: container,
+        child: const AppBootstrap(),
+      ),
+    ),
+  );
+  expect(meeting.error, isNull);
+  await tester.pumpAndSettle();
+}
+
 void main() {
   final binding = IntegrationTestWidgetsFlutterBinding.ensureInitialized();
   testWidgets('dev user sync claim purchase equip and disk restore', (
@@ -55,28 +77,6 @@ void main() {
       ],
     );
     var container = createContainer();
-    Future<void> mountHome() async {
-      final meeting = container.read(firstMeetingControllerProvider);
-      var loadingStarted = false;
-      // Subscribe before mounting: the screen starts a fresh disk restore,
-      // even if this controller was already initialized by the fixture.
-      await changedTo(
-        meeting,
-        () {
-          loadingStarted = loadingStarted || meeting.isBusy;
-          return loadingStarted && !meeting.isBusy;
-        },
-        () => tester.pumpWidget(
-          UncontrolledProviderScope(
-            container: container,
-            child: const AppBootstrap(),
-          ),
-        ),
-      );
-      expect(meeting.error, isNull);
-      await tester.pumpAndSettle();
-    }
-
     final meeting = container.read(firstMeetingControllerProvider);
     await meeting.initialize();
     if (!meeting.state.isComplete) {
@@ -90,7 +90,7 @@ void main() {
       await meeting.commit();
     }
     expect(meeting.state.isComplete, isTrue);
-    await mountHome();
+    await mountHome(tester, container);
     Future<void> tapText(String text) async {
       final finder = find.text(text);
       expect(finder, findsOneWidget);
@@ -164,7 +164,7 @@ void main() {
     container.dispose();
     container = createContainer();
     await container.read(firstMeetingControllerProvider).initialize();
-    await mountHome();
+    await mountHome(tester, container);
     final restored = container.read(productControllerProvider);
     await changedTo(
       restored,
