@@ -24,11 +24,11 @@ jobs:
       fail-fast: false
       matrix:
         target: ${{ github.ref_name == 'chore/cicd-validation' && fromJSON('["dev","prod"]') || fromJSON('["selected"]') }}
-    runs-on: macos-15
+    runs-on: xcode-27
     environment: staging
     timeout-minutes: 60
     env:
-      DEVELOPER_DIR: /Applications/Xcode_26.3.app/Contents/Developer
+      DEVELOPER_DIR: /Applications/Xcode_27.1.app/Contents/Developer
       # Activation requires a separately verified hosted signed build first.
       # This is a rollout switch, not a per-run approval click.
       DELIVERY_MODE: ${{ github.event_name == 'push' && github.ref_name != 'chore/cicd-validation' && vars.APPLE_UPLOAD_ENABLED == 'true' && 'upload' || 'verify' }}
@@ -42,7 +42,9 @@ jobs:
           EXPECTED_SHA: ${{ github.sha }}
         run: |
           test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
-          test "$(xcodebuild -version | awk 'NR == 1 {print $2}')" = 26.3
+          test "$(xcodebuild -version | awk 'NR == 1 {print $2}')" = 27.1
+          test "$(xcrun --sdk iphoneos --show-sdk-version)" = 27.1
+          test "$(xcrun --sdk watchos --show-sdk-version)" = 27.0
           xcodebuild -showsdks
       - name: Read Flutter pin
         id: sdk
