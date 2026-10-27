@@ -26,7 +26,14 @@ void main() {
     expect(app.router, same(router));
     expect(router.routeInformationProvider.value.uri.path, '/');
     expect(find.byType(SignInScreen), findsOneWidget);
-    expect(find.byType(SafeArea), findsOneWidget);
+    // ListTile rows add their own SafeArea; check the screen body's one.
+    expect(
+      find.ancestor(
+        of: find.byType(SingleChildScrollView),
+        matching: find.byType(SafeArea),
+      ),
+      findsOneWidget,
+    );
     expect(tester.takeException(), isNull);
 
     await tester.pumpWidget(const SizedBox.shrink());

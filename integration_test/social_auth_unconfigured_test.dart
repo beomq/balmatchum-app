@@ -30,12 +30,21 @@ void main() {
       final context = tester.element(find.byType(SignInScreen));
       final container = ProviderScope.containerOf(context);
       expect(container.read(authenticatedAccountProvider), isNull);
+      await tester.tap(find.byKey(const ValueKey('sign_in_age_confirmation')));
+      await tester.pumpAndSettle();
       for (final provider in [
         SignInProvider.google,
         SignInProvider.apple,
         SignInProvider.naver,
       ]) {
-        await tester.tap(find.byType(TextButton).at(provider.index));
+        await tester.tap(
+          find
+              .descendant(
+                of: find.byType(SocialButtonList),
+                matching: find.byType(TextButton),
+              )
+              .at(provider.index),
+        );
         await tester.pumpAndSettle();
         expect(find.byKey(const ValueKey('sign_in_error')), findsOneWidget);
         expect(find.byType(SignInScreen), findsOneWidget);
@@ -48,7 +57,14 @@ void main() {
         );
         await binding.takeScreenshot('auth-${provider.name}-unconfigured');
       }
-      await tester.tap(find.byType(TextButton).at(SignInProvider.kakao.index));
+      await tester.tap(
+        find
+            .descendant(
+              of: find.byType(SocialButtonList),
+              matching: find.byType(TextButton),
+            )
+            .at(SignInProvider.kakao.index),
+      );
       await tester.pumpAndSettle();
       expect(find.byKey(const ValueKey('sign_in_status')), findsOneWidget);
       expect(tester.takeException(), isNull);

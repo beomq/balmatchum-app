@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:social_signin_kit/social_signin_kit.dart';
 
+import '../../app/dependencies.dart';
 import 'sign_in_starter.dart';
 
 // Extend the bootstrap screen's spacing and Material typography with the
@@ -15,10 +17,16 @@ abstract final class _SignInLayout {
 }
 
 class SignInScreen extends StatefulWidget {
-  const SignInScreen({required this.starter, this.notice, super.key});
+  const SignInScreen({
+    required this.starter,
+    this.notice,
+    this.openUrl = openExternalUrl,
+    super.key,
+  });
 
   final SignInStarter starter;
   final String? notice;
+  final Future<bool> Function(Uri url) openUrl;
 
   @override
   State<SignInScreen> createState() => _SignInScreenState();
@@ -28,9 +36,17 @@ class _SignInScreenState extends State<SignInScreen> {
   bool _starting = false;
   SignInOutcome? _outcome;
   bool _failed = false;
+  // Asked on every visit and never stored: only users aged 14+ may sign in.
+  bool _ageConfirmed = false;
+  bool _ageRequired = false;
 
   Future<void> _start(SignInProvider provider) async {
     if (_starting) return;
+    // Provider buttons stay enabled per brand guidelines; gate the tap here.
+    if (!_ageConfirmed) {
+      setState(() => _ageRequired = true);
+      return;
+    }
     setState(() {
       _starting = true;
       _outcome = null;
@@ -43,6 +59,20 @@ class _SignInScreenState extends State<SignInScreen> {
       if (mounted) setState(() => _failed = true);
     } finally {
       if (mounted) setState(() => _starting = false);
+    }
+  }
+
+  Future<void> _openPrivacyPolicy() async {
+    bool opened;
+    try {
+      opened = await widget.openUrl(Uri.parse(privacyPolicyUrl));
+    } on PlatformException {
+      opened = false;
+    }
+    if (!opened && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('개인정보처리방침을 열지 못했어요. 잠시 후 다시 시도해 주세요.')),
+      );
     }
   }
 
@@ -69,6 +99,20 @@ class _SignInScreenState extends State<SignInScreen> {
                   if (widget.notice != null)
                     Semantics(liveRegion: true, child: Text(widget.notice!)),
                   const SizedBox(height: _SignInLayout.sectionGap),
+                  CheckboxListTile(
+                    key: const ValueKey('sign_in_age_confirmation'),
+                    value: _ageConfirmed,
+                    onChanged: _starting
+                        ? null
+                        : (value) => setState(() {
+                            _ageConfirmed = value ?? false;
+                            _ageRequired = false;
+                          }),
+                    title: const Text('만 14세 이상입니다'),
+                    controlAffinity: ListTileControlAffinity.leading,
+                    contentPadding: EdgeInsets.zero,
+                  ),
+                  const SizedBox(height: _SignInLayout.buttonGap),
                   SocialButtonList.vertical(
                     shape: SocialButtonShape.rounded,
                     appearance: SocialButtonAppearance.light,
@@ -117,6 +161,8 @@ class _SignInScreenState extends State<SignInScreen> {
                     child: Text(
                       _starting
                           ? '로그인 연결 확인 중'
+                          : _ageRequired
+                          ? '만 14세 이상인지 확인해 주세요.'
                           : _failed
                           ? '로그인을 시작하지 못했습니다. 다시 시도해 주세요.'
                           : switch (_outcome?.status) {
@@ -141,13 +187,20 @@ class _SignInScreenState extends State<SignInScreen> {
                               },
                             },
                       key: ValueKey(
-                        _failed || _outcome?.status == SignInStatus.failed
+                        _ageRequired
+                            ? 'sign_in_age_required'
+                            : _failed || _outcome?.status == SignInStatus.failed
                             ? 'sign_in_error'
                             : 'sign_in_status',
                       ),
                       style: textTheme.bodyLarge,
                       textAlign: TextAlign.center,
                     ),
+                  ),
+                  TextButton(
+                    key: const ValueKey('sign_in_privacy_policy'),
+                    onPressed: _openPrivacyPolicy,
+                    child: const Text('개인정보처리방침'),
                   ),
                 ],
               ),
