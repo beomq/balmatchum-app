@@ -78,7 +78,9 @@ jobs:
           ASC_PRIVATE_KEY: ${{ secrets.ASC_PRIVATE_KEY }}
           ASC_KEY_ID: ${{ vars.ASC_KEY_ID }}
           ASC_ISSUER_ID: ${{ vars.ASC_ISSUER_ID }}
-          ADMOB_IOS_APP_ID: ${{ vars.ADMOB_IOS_APP_ID }}
+          # Index by name so an empty PROD value stays empty (Fastfile fails closed)
+          # instead of falling back to the DEV ID through `&& ||`.
+          ADMOB_IOS_APP_ID: ${{ vars[env.DELIVERY_TARGET == 'prod' && 'ADMOB_IOS_APP_ID_PROD' || 'ADMOB_IOS_APP_ID_DEV'] }}
           SERVER_URL: ${{ vars.SERVER_URL_PROD }}
           KAKAO_NATIVE_APP_KEY: ${{ vars.KAKAO_NATIVE_APP_KEY_PROD }}
           GOOGLE_SERVER_CLIENT_ID: ${{ vars.GOOGLE_SERVER_CLIENT_ID_PROD }}
