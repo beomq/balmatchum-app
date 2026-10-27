@@ -335,8 +335,7 @@ void main() {
     expect(input.source, 'watch');
     expect(input.schemaVersion, 1);
     expect(input.startedAt, DateTime.utc(2026, 10, 9, 1));
-    expect(input.routePoints.map((p) => p.latitude), [37.5, 37.6]);
-    expect(input.routePoints.map((p) => p.horizontalAccuracyMeters), [5, 6]);
+    expect(input.routePoints, isEmpty);
     expect(native.named('acknowledgeServerReceipt').single.arguments, {
       'contextId': 'context-a',
       'clientRecordId': _id,
@@ -624,6 +623,7 @@ void main() {
       await request.response.close();
       handled.complete();
       final receipt = await upload;
+      expect((body['input'] as Map)['routePoints'], isEmpty);
       expect(receipt.clientRecordId.toString(), _id);
       await handled.future;
       await expectLater(
