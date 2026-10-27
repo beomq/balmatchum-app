@@ -9,6 +9,17 @@ Fastlane에 전달한다. Archive 전 형식과 비샘플 ID를 검사하므로 
 서명·업로드 전에 실패한다. 변수 등록과 실제 CI 실행은 아직 수행하지 않았다.
 로컬 Fastlane Ruby 구문 검사만 통과했으며 원격 빌드 성공의 증거는 아니다.
 
+## Android CI 설정
+
+`deploy-dev.yml`과 `deploy-prod.yml`은 저장소 변수 `ADMOB_ANDROID_APP_ID_DEV`와
+`ADMOB_ANDROID_APP_ID_PROD`를 각 서명 번들 빌드의 `ADMOB_ANDROID_APP_ID`로 전달한다.
+`validate-prod-build.yml`은 matrix flavor에 맞는 변수를 같은 이름으로 전달한다.
+Gradle의 `validate<Variant>AdmobAppId`가 모든 release variant(로컬 포함)에서
+`ca-app-pub-<16자리>~<10자리>` 형식이 아니거나 Google 샘플 ID(`ADMOB_TEST_ADS=true` 포함)면
+서명·업로드 전에 실패시킨다. debug 빌드와 PR CI의 debug APK는 변수 없이 계속 빌드된다.
+`tool/verify_android_bundle.sh`는 빌드된 AAB 매니페스트의 AppID 형식과 비샘플 여부를 확인한다.
+변수 등록과 실제 CI 실행은 아직 수행하지 않았다.
+
 ## 호출 API와 소유권
 
 `lib/features/ads/ads_session.dart`의 `createAdsController(Client)`는 현재 인증 객체와
@@ -56,7 +67,8 @@ pending은 수동 확인 버튼이나 앱 resumed 이벤트에서 한 번 조회
 SDK는 `google_mobile_ads: 9.1.0`에 고정했습니다(2026-10-19 pub.dev 최신).
 App ID와 ad unit ID는 다른 값입니다. 가짜 운영 ID를 넣지 않았습니다.
 
-- Android: `ADMOB_ANDROID_APP_ID` 환경변수를 Gradle에 전달합니다. 기본 빈 문자열.
+- Android: `ADMOB_ANDROID_APP_ID` 환경변수를 Gradle에 전달합니다. debug 기본값은 빈 문자열이며
+  release variant는 실제 형식의 비샘플 ID가 없으면 빌드가 실패합니다.
   `MobileAdsInitProvider`를 manifest merge에서 제거하여 미설정 앱도 Dart까지 진입합니다.
   실제 metadata는 `balmatchum/ads_config` → `appId`로 읽습니다.
 - iOS: 외부 xcconfig/Xcode build setting `ADMOB_IOS_APP_ID`를 설정합니다.

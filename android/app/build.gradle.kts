@@ -109,6 +109,30 @@ tasks.matching { it.name == "preProdReleaseBuild" }.configureEach {
     dependsOn(validateProdSigning)
 }
 
+// Release variants must carry a real AdMob app ID; debug builds keep the empty default.
+androidComponents {
+    onVariants(selector().withBuildType("release")) { variant ->
+        val variantName = variant.name
+        val taskSuffix = variantName.replaceFirstChar { it.uppercase() }
+        val appId = variant.manifestPlaceholders.getting("admobAppId")
+        val validate = tasks.register("validate${taskSuffix}AdmobAppId") {
+            doLast {
+                val id = appId.orNull.orEmpty()
+                check(
+                    Regex("^ca-app-pub-[0-9]{16}~[0-9]{10}$").matches(id) &&
+                        !id.startsWith("ca-app-pub-3940256099942544~"),
+                ) {
+                    "$variantName requires a real ADMOB_ANDROID_APP_ID (ca-app-pub-<16 digits>~<10 digits>). " +
+                        "Missing values and the Google sample app ID (ADMOB_TEST_ADS=true) are rejected."
+                }
+            }
+        }
+        tasks.matching { it.name == "pre${taskSuffix}Build" }.configureEach {
+            dependsOn(validate)
+        }
+    }
+}
+
 kotlin {
     compilerOptions {
         jvmTarget = org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17

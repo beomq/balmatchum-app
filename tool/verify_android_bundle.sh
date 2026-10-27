@@ -29,6 +29,7 @@ trap 'rm -rf "$work"' EXIT
 java -jar "$BUNDLETOOL_JAR" validate --bundle="$bundle"
 java -jar "$BUNDLETOOL_JAR" dump manifest --bundle="$bundle" --module=base > "$work/manifest.xml"
 python3 - "$work/manifest.xml" "$package" <<'PY'
+import re
 import sys
 import xml.etree.ElementTree as ET
 root = ET.parse(sys.argv[1]).getroot()
@@ -37,6 +38,11 @@ assert root.attrib['package'] == sys.argv[2], 'Unexpected package'
 assert int(root.attrib[ns + 'versionCode']) > 0, 'Invalid versionCode'
 assert root.attrib[ns + 'versionName'], 'Missing versionName'
 print('Package/version:', root.attrib['package'], root.attrib[ns + 'versionName'], root.attrib[ns + 'versionCode'])
+ads = [m.attrib.get(ns + 'value', '') for m in root.iter('meta-data')
+       if m.attrib.get(ns + 'name') == 'com.google.android.gms.ads.APPLICATION_ID']
+assert len(ads) == 1 and re.fullmatch(r'ca-app-pub-[0-9]{16}~[0-9]{10}', ads[0]), 'Missing or malformed AdMob app ID'
+assert not ads[0].startswith('ca-app-pub-3940256099942544~'), 'Google sample AdMob app ID'
+print('AdMob app ID:', ads[0])
 PY
 jarsigner -verify "$bundle"
 keytool -J-Duser.language=en -printcert -jarfile "$bundle" > "$work/certificate.txt"

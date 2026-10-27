@@ -73,6 +73,7 @@ jobs:
           ANDROID_STORE_PASSWORD: ${{ secrets[matrix.store_password] }}
           ANDROID_KEY_PASSWORD: ${{ secrets[matrix.key_password] }}
           ANDROID_STORE_FILE: ${{ runner.temp }}/android-upload.p12
+          ADMOB_ANDROID_APP_ID: ${{ matrix.flavor == 'dev' && vars.ADMOB_ANDROID_APP_ID_DEV || vars.ADMOB_ANDROID_APP_ID_PROD }}
         run: |
           set +x
           bash tool/verify_android_bundle.sh preflight
