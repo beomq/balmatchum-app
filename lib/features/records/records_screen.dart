@@ -7,7 +7,6 @@ import '../first_meeting/meeting_theme.dart';
 import '../daily_activity/product_controller.dart';
 import '../daily_activity/reward_panel.dart';
 import 'product_page.dart';
-import 'record_map.dart';
 import 'records_models.dart';
 
 final _holidays = WorldHolidays();
@@ -27,15 +26,6 @@ String? koreanHolidayName(DateTime date) {
   if (hangul.hasMatch(next.name)) return next.name;
   final ko = next.descriptionKo;
   return ko != null && hangul.hasMatch(ko) ? ko : next.name;
-}
-
-/// KST has no daylight saving; UTC+9 is exact.
-DateTime toKst(DateTime instant) =>
-    instant.toUtc().add(const Duration(hours: 9));
-
-String _hm(DateTime instant) {
-  final k = toKst(instant);
-  return '${k.hour.toString().padLeft(2, '0')}:${k.minute.toString().padLeft(2, '0')}';
 }
 
 const _weekdays = ['월', '화', '수', '목', '금', '토', '일'];
@@ -239,7 +229,6 @@ class _DayCell extends StatelessWidget {
         // Compact so the label never ellipsizes; full value is in semantics.
         ? '${(s.steps! / 1000).toStringAsFixed(s.steps! >= 10000 ? 0 : 1)}k'
         : '${s.steps}';
-    final hasRoute = s != null && s.routes.isNotEmpty;
     final claimable =
         s?.rewardStatus == DayRewardStatus.claimable ||
         s?.rewardStatus == DayRewardStatus.adRequired;
@@ -247,7 +236,6 @@ class _DayCell extends StatelessWidget {
       '${date.month}월 ${date.day}일',
       if (holiday != null) holiday,
       if (s != null) _stepsPhrase(s),
-      if (hasRoute) 'GPS 경로 있음',
       if (claimable) '받을 포인트 있음',
     ].join(', ');
     return Semantics(
@@ -290,11 +278,10 @@ class _DayCell extends StatelessWidget {
                         fontWeight: FontWeight.w700,
                       ),
                     ),
-                  if (hasRoute || claimable)
+                  if (claimable)
                     Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        if (hasRoute) const _Dot(color: ProductColors.record),
                         if (claimable)
                           const _Dot(color: ProductColors.attention),
                       ],
@@ -334,7 +321,6 @@ class _Legend extends StatelessWidget {
     spacing: Space.s4,
     runSpacing: Space.s2,
     children: [
-      _LegendItem(_Dot(color: ProductColors.record), 'GPS 경로'),
       _LegendItem(_Dot(color: ProductColors.attention), '받을 포인트'),
       _LegendItem(Text('?'), '걸음 확인 불가'),
     ],
@@ -356,8 +342,7 @@ class _LegendItem extends StatelessWidget {
   );
 }
 
-/// One KST date. Steps, the day's reward and GPS routes are separate
-/// sections. Deletion always removes the entire day.
+/// One KST date with steps and rewards. Deletion removes the entire day.
 class RecordDayScreen extends StatefulWidget {
   const RecordDayScreen({
     required this.date,
@@ -429,8 +414,7 @@ class _RecordDayScreenState extends State<RecordDayScreen> {
       builder: (context) => AlertDialog(
         title: Text('${d.month}월 ${d.day}일 기록을 모두 삭제할까요?'),
         content: const Text(
-          '이 날짜의 걸음과 GPS 경로가 모두 삭제돼요.\n'
-          '자정을 넘어 이어진 산책은 원본 전체가 삭제되어 다른 날짜의 해당 경로도 사라져요.\n'
+          '이 날짜의 걸음 기록이 삭제돼요.\n'
           '아직 받지 않은 포인트는 취소되고, 이미 받은 포인트는 그대로 유지돼요.\n'
           '삭제 후에는 되돌릴 수 없어요.',
         ),
@@ -528,7 +512,7 @@ class _RecordDayScreenState extends State<RecordDayScreen> {
         else if (day.isDeleted)
           const ProductPanel(
             key: ValueKey('records_deleted'),
-            child: Text('삭제된 날짜예요. 걸음과 GPS 경로가 남아 있지 않아요.'),
+            child: Text('삭제된 날짜예요. 걸음 기록이 남아 있지 않아요.'),
           )
         else ...[
           _Section(
@@ -562,13 +546,6 @@ class _RecordDayScreenState extends State<RecordDayScreen> {
                     },
                   )
                 : _RewardBody(day: day, busy: busy, onClaim: () => claim(day)),
-          ),
-          const SizedBox(height: Space.s3),
-          _Section(
-            title: 'GPS 경로',
-            child: day.routes.isEmpty
-                ? const Text('이 날짜에 저장된 GPS 경로가 없어요.')
-                : _Routes(routes: day.routes),
           ),
           const SizedBox(height: Space.s6),
           OutlinedButton(
@@ -634,109 +611,6 @@ class _RewardBody extends StatelessWidget {
       ],
     );
   }
-}
-
-/// Server route segments drawn in one shared projection. Each segment is a
-/// separate path; nothing is drawn between segments or invented in gaps.
-class _Routes extends StatelessWidget {
-  const _Routes({required this.routes});
-  final List<RouteSegment> routes;
-
-  @override
-  Widget build(BuildContext context) {
-    final drawable = routes.any((r) => r.points.isNotEmpty);
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        if (drawable)
-          RecordedRouteMap(
-            routes: routes,
-            outline: ClipRRect(
-              borderRadius: BorderRadius.circular(12),
-              child: ColoredBox(
-                color: ProductColors.recordSoft,
-                child: AspectRatio(
-                  aspectRatio: 16 / 10,
-                  child: CustomPaint(
-                    key: const ValueKey('records_route_map'),
-                    painter: RoutePainter(routes),
-                  ),
-                ),
-              ),
-            ),
-          ),
-        const SizedBox(height: Space.s2),
-        for (final (i, r) in routes.indexed)
-          Padding(
-            padding: const EdgeInsets.only(bottom: Space.s1),
-            child: Text(
-              key: ValueKey('records_route_${r.id}'),
-              r.points.isEmpty
-                  ? '경로 ${i + 1} · 이 날짜의 위치 점 없음'
-                  : '경로 ${i + 1} · ${_hm(r.points.first.recordedAt)} – '
-                        '${_hm(r.points.last.recordedAt)} · 위치 ${r.points.length}개',
-            ),
-          ),
-      ],
-    );
-  }
-}
-
-class RoutePainter extends CustomPainter {
-  RoutePainter(this.routes);
-  final List<RouteSegment> routes;
-
-  /// Paths actually drawn; exposed so tests can verify segment separation.
-  int lastPathCount = 0;
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final pts = [for (final r in routes) ...r.points];
-    if (pts.isEmpty) return;
-    var minLat = pts.first.latitude, maxLat = minLat;
-    var minLng = pts.first.longitude, maxLng = minLng;
-    for (final p in pts) {
-      minLat = p.latitude < minLat ? p.latitude : minLat;
-      maxLat = p.latitude > maxLat ? p.latitude : maxLat;
-      minLng = p.longitude < minLng ? p.longitude : minLng;
-      maxLng = p.longitude > maxLng ? p.longitude : maxLng;
-    }
-    const pad = Space.s4;
-    final spanX = (maxLng - minLng).abs() < 1e-9 ? 1e-9 : maxLng - minLng;
-    final spanY = (maxLat - minLat).abs() < 1e-9 ? 1e-9 : maxLat - minLat;
-    final scale = [
-      (size.width - pad * 2) / spanX,
-      (size.height - pad * 2) / spanY,
-    ].reduce((a, b) => a < b ? a : b);
-    final ox = (size.width - spanX * scale) / 2;
-    final oy = (size.height - spanY * scale) / 2;
-    Offset at(RoutePointView p) => Offset(
-      ox + (p.longitude - minLng) * scale,
-      size.height - (oy + (p.latitude - minLat) * scale),
-    );
-    final line = Paint()
-      ..color = ProductColors.record
-      ..strokeWidth = 4
-      ..style = PaintingStyle.stroke
-      ..strokeCap = StrokeCap.round
-      ..strokeJoin = StrokeJoin.round;
-    final dot = Paint()..color = MeetingColors.ink;
-    lastPathCount = 0;
-    for (final r in routes) {
-      if (r.points.isEmpty) continue;
-      final path = Path()..moveTo(at(r.points.first).dx, at(r.points.first).dy);
-      for (final p in r.points.skip(1)) {
-        path.lineTo(at(p).dx, at(p).dy);
-      }
-      canvas.drawPath(path, line);
-      canvas.drawCircle(at(r.points.first), 4, dot);
-      canvas.drawCircle(at(r.points.last), 4, dot);
-      lastPathCount++;
-    }
-  }
-
-  @override
-  bool shouldRepaint(RoutePainter old) => old.routes != routes;
 }
 
 class _Section extends StatelessWidget {

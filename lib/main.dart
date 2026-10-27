@@ -13,7 +13,6 @@ import 'app/dependencies.dart';
 import 'app/router.dart';
 import 'features/auth/auth_adapters.dart';
 import 'features/ads/ads_sdk.dart';
-import 'features/records/record_map.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -21,7 +20,6 @@ Future<void> main() async {
   WidgetsBinding.instance.addPostFrameCallback((_) {
     unawaited(GoogleAdsSdk.instance.prepare());
   });
-  await recordMapRuntime.initialize(clientId: naverMapClientId);
   if (appFlavor == 'dev') {
     runApp(const ProviderScope(child: AppBootstrap()));
     return;

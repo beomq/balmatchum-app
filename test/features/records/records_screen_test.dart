@@ -128,23 +128,53 @@ void main() {
     expect(requests.last, DateTime(2027, 2));
   });
 
-  testWidgets('day shows steps, routes as separate segments, no gaps', (
+  testWidgets(
+    'day renders steps and rewards without route UI when routes exist',
+    (tester) async {
+      // Given a stored day that still contains server route data.
+      final stored = day(fixture: 'dev-fixture-v1');
+      // When the first-release record screen loads it.
+      await tester.pumpWidget(host(dayScreen(load: (_) async => stored)));
+      await tester.pumpAndSettle();
+      // Then steps and rewards remain usable without any route surface.
+      expect(find.text('4,200걸음'), findsOneWidget);
+      expect(find.text('4포인트를 받을 수 있어요.'), findsOneWidget);
+      expect(
+        find.byKey(const ValueKey('product_fixture_badge')),
+        findsOneWidget,
+      );
+      expect(find.byKey(const ValueKey('records_route_map')), findsNothing);
+      expect(find.byKey(const ValueKey('records_naver_map')), findsNothing);
+      expect(find.textContaining('GPS'), findsNothing);
+      expect(find.byKey(const ValueKey('records_claim')), findsOneWidget);
+    },
+  );
+
+  testWidgets('calendar hides routes when a stored day contains coordinates', (
     tester,
   ) async {
+    // Given an existing server record with coordinates and claimable rewards.
+    final stored = day();
+    // When the month containing it renders.
     await tester.pumpWidget(
-      host(dayScreen(load: (_) async => day(fixture: 'dev-fixture-v1'))),
+      host(
+        RecordsCalendarScreen(
+          initialMonth: date,
+          loadMonth: (month) async => RecordMonth(month: month, days: [stored]),
+          onOpenDay: (_) {},
+          onBack: () {},
+          onHome: () {},
+        ),
+      ),
     );
     await tester.pumpAndSettle();
-    expect(find.text('4,200걸음'), findsOneWidget);
-    expect(find.text('4포인트를 받을 수 있어요.'), findsOneWidget);
-    expect(find.byKey(const ValueKey('product_fixture_badge')), findsOneWidget);
-    expect(find.textContaining('09:00 – 09:20'), findsOneWidget);
-    expect(find.textContaining('14:00 – 14:20'), findsOneWidget);
-    expect(find.textContaining('확인 불가 구간'), findsNothing);
-    final paint = tester.widget<CustomPaint>(
-      find.byKey(const ValueKey('records_route_map')),
+    // Then only steps and rewards are advertised, including accessibility.
+    expect(
+      find.bySemanticsLabel(RegExp('^1월 4일, 4,200걸음, 받을 포인트 있음')),
+      findsOneWidget,
     );
-    expect((paint.painter! as RoutePainter).lastPathCount, 2);
+    expect(find.bySemanticsLabel(RegExp('GPS')), findsNothing);
+    expect(find.textContaining('GPS'), findsNothing);
   });
 
   testWidgets('unavailable steps-only day differs from zero', (tester) async {
@@ -163,7 +193,7 @@ void main() {
     );
     await tester.pumpAndSettle();
     expect(find.textContaining('0걸음과는 달라요'), findsOneWidget);
-    expect(find.text('이 날짜에 저장된 GPS 경로가 없어요.'), findsOneWidget);
+    expect(find.textContaining('GPS'), findsNothing);
     expect(find.byKey(const ValueKey('records_claim')), findsNothing);
   });
 
