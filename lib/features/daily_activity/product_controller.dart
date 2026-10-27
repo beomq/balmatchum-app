@@ -428,6 +428,7 @@ class ProductController extends ChangeNotifier {
       notifyListeners();
       return wardrobe(store!, outfitStore: outfits);
     } on api.ProductException catch (e) {
+      _requests.remove(key);
       throw WardrobeActionException(
         e.code == 'insufficientPoints'
             ? WardrobeFailureReason.insufficientPoints
@@ -452,6 +453,7 @@ class ProductController extends ChangeNotifier {
         OutfitChange.remove => repository.unequipOutfit(requestId),
       };
     } on api.ProductException catch (e) {
+      _requests.remove(key);
       throw WardrobeActionException(switch (e.code) {
         'insufficientPoints' => WardrobeFailureReason.insufficientPoints,
         'outfitIncompatible' => WardrobeFailureReason.incompatible,

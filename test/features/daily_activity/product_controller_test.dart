@@ -89,6 +89,8 @@ class AccountRepository extends ProductRepository {
   /// Thrown once by the next outfit change instead of its answer.
   Exception? outfitFailure;
   final outfitRequests = <String>[];
+  Exception? themeFailure;
+  final themeRequests = <String>[];
   final calls = <String>[];
   @override
   Future<WalletView> wallet() async {
@@ -148,6 +150,10 @@ class AccountRepository extends ProductRepository {
   @override
   Future<ThemeStore> purchase(String themeId, String requestId) async {
     calls.add('purchase:$themeId');
+    themeRequests.add(requestId);
+    final failure = themeFailure;
+    themeFailure = null;
+    if (failure != null) throw failure;
     return store = themeStore(cloudyOwned: true, balance: 39);
   }
 
@@ -412,6 +418,67 @@ void main() {
       );
     }
     expect(repository.wardrobeOutfits.items.single.owned, isFalse);
+  });
+
+  test('vest retry uses a new request id after server rejection', () async {
+    // Given: a purchase explicitly rejected by the server.
+    final repository = AccountRepository();
+    final controller = accountController(repository);
+    final vest = (await controller.loadWardrobe()).outfits!.items.single;
+    repository.outfitFailure = ProductException(code: 'insufficientPoints');
+    await expectLater(
+      controller.outfitAction(vest, OutfitChange.purchase),
+      throwsA(isA<WardrobeActionException>()),
+    );
+
+    // When: the user makes a fresh purchase attempt.
+    await controller.outfitAction(vest, OutfitChange.purchase);
+
+    // Then: the confirmed rejection's request id is not reused.
+    expect(repository.outfitRequests, hasLength(2));
+    expect(repository.outfitRequests.toSet(), hasLength(2));
+  });
+
+  test('theme retry uses a new request id after server rejection', () async {
+    // Given: a purchase explicitly rejected by the server.
+    final repository = AccountRepository();
+    final controller = accountController(repository);
+    final cloudy = (await controller.loadWardrobe()).themes.singleWhere(
+      (theme) => theme.id == 'cloudy',
+    );
+    repository.themeFailure = ProductException(code: 'insufficientPoints');
+    await expectLater(
+      controller.themeAction(cloudy, equip: false),
+      throwsA(isA<WardrobeActionException>()),
+    );
+
+    // When: the user makes a fresh purchase attempt.
+    await controller.themeAction(cloudy, equip: false);
+
+    // Then: the confirmed rejection's request id is not reused.
+    expect(repository.themeRequests, hasLength(2));
+    expect(repository.themeRequests.toSet(), hasLength(2));
+  });
+
+  test('theme retry uses the same request id after response loss', () async {
+    // Given: a purchase whose response was lost.
+    final repository = AccountRepository();
+    final controller = accountController(repository);
+    final cloudy = (await controller.loadWardrobe()).themes.singleWhere(
+      (theme) => theme.id == 'cloudy',
+    );
+    repository.themeFailure = Exception('response lost');
+    await expectLater(
+      controller.themeAction(cloudy, equip: false),
+      throwsException,
+    );
+
+    // When: the user retries the ambiguous purchase.
+    await controller.themeAction(cloudy, equip: false);
+
+    // Then: the retry retains the original idempotency key.
+    expect(repository.themeRequests, hasLength(2));
+    expect(repository.themeRequests.toSet(), hasLength(1));
   });
 
   test('lost vest response retries with the same request id', () async {
