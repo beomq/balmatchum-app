@@ -6,7 +6,7 @@
 `docs/BILLING_API.md`를 사용한다. 서버 소스는 수정하지 않았다.
 로컬 검증에는 해당 서버 worktree의 생성 client를 사용했다.
 현재 `pubspec.yaml`과 lock은 머지된 서버 develop 커밋
-`2b8c418994524746c5c25d3f795d965c2ea22aca`를 Git 소스로 고정하며,
+`af08b3fb034a541693ae6b93e9e1187b05aa6b32`를 Git 소스로 고정하며,
 `pubspec_overrides.yaml`은 커밋하지 않는다.
 기존 미커밋 `pubspec_overrides.yaml`의 서버 worktree 경로 override는
 사용자 변경 보존을 위해 유지했다. 따라서 현재 lockfile은 기존대로 path 의존성이다.
