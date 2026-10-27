@@ -10,6 +10,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:balmatchum_app/app/dependencies.dart';
 import 'package:balmatchum_app/features/daily_activity/daily_activity_providers.dart';
 import 'package:balmatchum_app/features/records/records_models.dart';
+import 'package:balmatchum_app/features/wardrobe/wardrobe_models.dart';
 
 DailyRecord record({bool deleted = false}) => DailyRecord(
   date: '2026-10-15',
@@ -54,12 +55,40 @@ ThemeStore themeStore({bool cloudyOwned = false, int balance = 42}) =>
       balance: balance,
     );
 
+/// Production outfit shape for a profile whose breed may wear the vest.
+OutfitStore outfitStore({
+  bool owned = false,
+  String? equipped,
+  int balance = 42,
+  String? breed = 'shih-tzu',
+}) => OutfitStore(
+  items: [
+    OutfitItem(
+      outfitId: 'vest-low-v',
+      name: 'Vest',
+      price: 3,
+      compatibleBreeds: ['shih-tzu', 'dachshund'],
+      compatible: true,
+      owned: owned,
+    ),
+  ],
+  equippedOutfit: equipped,
+  breedId: breed,
+  balance: balance,
+);
+
 class AccountRepository extends ProductRepository {
   AccountRepository() : super(Client('http://localhost/'));
   Completer<DailyRecord>? pending;
   bool failRead = false;
   bool failThemes = false;
   ThemeStore store = themeStore();
+  OutfitStore wardrobeOutfits = outfitStore();
+  bool failOutfits = false;
+
+  /// Thrown once by the next outfit change instead of its answer.
+  Exception? outfitFailure;
+  final outfitRequests = <String>[];
   final calls = <String>[];
   @override
   Future<WalletView> wallet() async {
@@ -123,6 +152,49 @@ class AccountRepository extends ProductRepository {
   }
 
   @override
+  Future<OutfitStore> outfits() async {
+    calls.add('outfits');
+    if (failOutfits) throw Exception('Outfits offline');
+    return wardrobeOutfits;
+  }
+
+  Future<OutfitStore> changeOutfit(
+    String call,
+    String requestId,
+    OutfitStore next,
+  ) async {
+    calls.add(call);
+    outfitRequests.add(requestId);
+    final failure = outfitFailure;
+    outfitFailure = null;
+    if (failure != null) throw failure;
+    return wardrobeOutfits = next;
+  }
+
+  @override
+  Future<OutfitStore> purchaseOutfit(String outfitId, String requestId) =>
+      changeOutfit(
+        'purchaseOutfit:$outfitId',
+        requestId,
+        outfitStore(owned: true, balance: 39),
+      );
+
+  @override
+  Future<OutfitStore> equipOutfit(String outfitId, String requestId) =>
+      changeOutfit(
+        'equipOutfit:$outfitId',
+        requestId,
+        outfitStore(owned: true, equipped: outfitId, balance: 39),
+      );
+
+  @override
+  Future<OutfitStore> unequipOutfit(String requestId) => changeOutfit(
+    'unequipOutfit',
+    requestId,
+    outfitStore(owned: true, balance: 39),
+  );
+
+  @override
   Future<DailyQuiz> quiz(DateTime date) async {
     calls.add('quiz');
     throw Exception('Fixture unavailable');
@@ -140,6 +212,19 @@ class PendingSessionRepository extends MissingSessionRepository {
   final session = Completer<void>();
   @override
   Future<void> connectDevelopmentUser() => session.future;
+}
+
+ProductController accountController(AccountRepository repository) {
+  final steps = DailyStepsController(
+    readSteps: () async => const DailyStepsResult(DailyStepsStatus.empty, null),
+  );
+  final controller = ProductController(repository, steps, null, account: 'A');
+  addTearDown(() {
+    controller.dispose();
+    steps.dispose();
+    repository.client.close();
+  });
+  return controller;
 }
 
 void main() {
@@ -212,20 +297,25 @@ void main() {
         'day',
         'wallet',
         'themes',
+        'outfits',
         'day',
         'wallet',
         'themes',
+        'outfits',
         'month',
         'day',
         'claim',
         'day',
         'wallet',
         'themes',
+        'outfits',
         'themes',
+        'outfits',
         'delete',
         'day',
         'wallet',
         'themes',
+        'outfits',
       ]);
       expect(controller.store?.equippedTheme, 'sunny');
       expect(controller.quiz, isNull);
@@ -253,8 +343,143 @@ void main() {
       isTrue,
     );
     expect(bought.balance, 39);
-    expect(repository.calls, ['themes', 'purchase:cloudy', 'themes']);
+    expect(repository.calls, [
+      'themes',
+      'outfits',
+      'purchase:cloudy',
+      'themes',
+    ]);
   });
+
+  test('real account buys, wears and removes the vest on the server', () async {
+    final repository = AccountRepository();
+    final controller = accountController(repository);
+    final offered = (await controller.loadWardrobe()).outfits!.items.single;
+    final bought = await controller.outfitAction(
+      offered,
+      OutfitChange.purchase,
+    );
+    final vest = bought.outfits!.items.single;
+    expect(vest.owned, isTrue);
+    expect(bought.balance, 39);
+    expect(controller.wornLayer('shih-tzu'), isNull);
+    await controller.outfitAction(vest, OutfitChange.wear);
+    expect(
+      controller.wornLayer('shih-tzu'),
+      'assets/wardrobe/vest/shih-tzu.png',
+    );
+    final removed = await controller.outfitAction(vest, OutfitChange.remove);
+    expect(removed.outfits!.equippedId, isNull);
+    expect(controller.wornLayer('shih-tzu'), isNull);
+    expect(repository.calls, [
+      'themes',
+      'outfits',
+      'purchaseOutfit:vest-low-v',
+      'outfits',
+      'equipOutfit:vest-low-v',
+      'outfits',
+      'unequipOutfit',
+      'outfits',
+    ]);
+    // Each confirmed change is a new intent with its own idempotency key.
+    expect(repository.outfitRequests.toSet(), hasLength(3));
+  });
+
+  test('outfit server codes become wardrobe failure reasons', () async {
+    final repository = AccountRepository();
+    final controller = accountController(repository);
+    final vest = (await controller.loadWardrobe()).outfits!.items.single;
+    const cases = {
+      'insufficientPoints': WardrobeFailureReason.insufficientPoints,
+      'outfitIncompatible': WardrobeFailureReason.incompatible,
+      'outfitNotOwned': WardrobeFailureReason.unavailable,
+      'unknownOutfit': WardrobeFailureReason.unavailable,
+      'idempotencyConflict': WardrobeFailureReason.unavailable,
+      'invalidRequestId': WardrobeFailureReason.unavailable,
+    };
+    for (final MapEntry(key: code, value: reason) in cases.entries) {
+      repository.outfitFailure = ProductException(code: code);
+      await expectLater(
+        controller.outfitAction(vest, OutfitChange.purchase),
+        throwsA(
+          isA<WardrobeActionException>().having(
+            (e) => e.reason,
+            'reason',
+            reason,
+          ),
+        ),
+        reason: code,
+      );
+    }
+    expect(repository.wardrobeOutfits.items.single.owned, isFalse);
+  });
+
+  test('lost vest response retries with the same request id', () async {
+    final repository = AccountRepository();
+    final controller = accountController(repository);
+    final vest = (await controller.loadWardrobe()).outfits!.items.single;
+    repository.outfitFailure = Exception('response lost');
+    await expectLater(
+      controller.outfitAction(vest, OutfitChange.purchase),
+      throwsException,
+    );
+    final bought = await controller.outfitAction(vest, OutfitChange.purchase);
+    expect(bought.outfits!.items.single.owned, isTrue);
+    expect(repository.outfitRequests, hasLength(2));
+    expect(repository.outfitRequests.toSet(), hasLength(1));
+  });
+
+  test('wardrobe still opens with themes when outfits fail', () async {
+    final repository = AccountRepository()..failOutfits = true;
+    final controller = accountController(repository);
+    final snapshot = await controller.loadWardrobe();
+    expect(snapshot.equippedThemeId, 'sunny');
+    expect(snapshot.themes, hasLength(2));
+    expect(snapshot.outfits, isNull);
+  });
+
+  test('vest without a server breed is never wearable', () async {
+    final repository = AccountRepository()
+      ..wardrobeOutfits = outfitStore(
+        owned: true,
+        equipped: 'vest-low-v',
+        breed: null,
+      );
+    final controller = accountController(repository);
+    final snapshot = await controller.loadWardrobe();
+    expect(snapshot.outfits!.items.single.compatible, isFalse);
+    expect(controller.wornLayer('shih-tzu'), isNull);
+  });
+
+  test(
+    'outfit failure keeps the worn vest and still refreshes records',
+    () async {
+      final repository = AccountRepository()
+        ..wardrobeOutfits = outfitStore(owned: true, equipped: 'vest-low-v');
+      final controller = accountController(repository);
+      await controller.connect();
+      repository.failOutfits = true;
+      await controller.sync();
+      expect(controller.error, isNull);
+      expect(controller.connected, isTrue);
+      expect(controller.today, isNotNull);
+      expect(controller.wallet!.balance, 42);
+      expect(
+        controller.wornLayer('shih-tzu'),
+        'assets/wardrobe/vest/shih-tzu.png',
+      );
+      expect(repository.calls, [
+        'day',
+        'wallet',
+        'themes',
+        'outfits',
+        'day',
+        'wallet',
+        'themes',
+        'outfits',
+      ]);
+    },
+  );
 
   test('theme failure keeps last theme and still refreshes records', () async {
     final repository = AccountRepository();
@@ -281,9 +506,11 @@ void main() {
       'day',
       'wallet',
       'themes',
+      'outfits',
       'day',
       'wallet',
       'themes',
+      'outfits',
     ]);
   });
 
@@ -401,9 +628,11 @@ void main() {
         equippedTheme: 'cloudy',
         balance: 5,
       );
+      controller.outfits = outfitStore(owned: true, equipped: 'vest-low-v');
       await controller.sync();
       expect(controller.connected, isFalse);
       expect(controller.store, isNull);
+      expect(controller.outfits, isNull);
       expect(controller.today, isNull);
       expect(controller.quiz, isNull);
       expect(controller.busy, isFalse);

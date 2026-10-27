@@ -54,6 +54,7 @@ flutter:
     - assets/first_meeting/
     - assets/first_meeting/dogs/
     - assets/first_meeting/icons/
+    - assets/wardrobe/vest/
     - assets/social/google.png
     - assets/social/apple.png
     - assets/social/kakao.png

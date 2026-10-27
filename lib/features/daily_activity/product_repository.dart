@@ -106,6 +106,18 @@ class ProductRepository {
 
   Future<ThemeStore> equip(String themeId, String requestId) =>
       _records((client) => client.product.equipTheme(themeId, requestId));
+
+  Future<OutfitStore> outfits() =>
+      _records((client) => client.product.listOutfits());
+
+  Future<OutfitStore> purchaseOutfit(String outfitId, String requestId) =>
+      _records((client) => client.product.purchaseOutfit(outfitId, requestId));
+
+  Future<OutfitStore> equipOutfit(String outfitId, String requestId) =>
+      _records((client) => client.product.equipOutfit(outfitId, requestId));
+
+  Future<OutfitStore> unequipOutfit(String requestId) =>
+      _records((client) => client.product.unequipOutfit(requestId));
 }
 
 class _RecordAuthHeader implements ClientAuthKeyProvider {

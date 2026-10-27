@@ -101,7 +101,7 @@ final routerProvider = Provider<GoRouter>((ref) {
             GoRoute(
               path: 'wardrobe',
               builder: (context, state) => WardrobeScreen(
-                dogAsset: controller.state.candidate!.spritePath,
+                dog: controller.state.candidate!,
                 loadWardrobe: ref.read(productControllerProvider).loadWardrobe,
                 purchaseTheme: (theme) => ref
                     .read(productControllerProvider)
@@ -109,6 +109,7 @@ final routerProvider = Provider<GoRouter>((ref) {
                 equipTheme: (theme) => ref
                     .read(productControllerProvider)
                     .themeAction(theme, equip: true),
+                changeOutfit: ref.read(productControllerProvider).outfitAction,
                 onBack: () => context.pop(),
                 onHome: () => context.go('/'),
               ),
@@ -216,11 +217,12 @@ final routerProvider = Provider<GoRouter>((ref) {
               final product = ref.read(authenticatedProductControllerProvider)!;
               return WardrobeScreen(
                 key: ObjectKey(authenticated),
-                dogAsset: authenticated!.state.candidate!.spritePath,
+                dog: authenticated!.state.candidate!,
                 loadWardrobe: product.loadWardrobe,
                 purchaseTheme: (theme) =>
                     product.themeAction(theme, equip: false),
                 equipTheme: (theme) => product.themeAction(theme, equip: true),
+                changeOutfit: product.outfitAction,
                 onBack: () => context.pop(),
                 onHome: () => context.go('/'),
               );
