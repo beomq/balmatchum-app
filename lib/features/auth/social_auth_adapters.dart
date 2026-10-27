@@ -54,6 +54,9 @@ class SocialAuthConfiguration {
   }
 }
 
+// Only the email is requested; the privacy policy says names are not collected.
+const appleSignInScopes = [AppleIDAuthorizationScopes.email];
+
 final class GoogleDisconnectUnavailable implements Exception {
   const GoogleDisconnectUnavailable();
 }
@@ -97,10 +100,7 @@ class NativeSocialLoginSdk implements SocialLoginSdk {
        _authenticateApple =
            authenticateApple ??
            (() => SignInWithApple.getAppleIDCredential(
-             scopes: [
-               AppleIDAuthorizationScopes.email,
-               AppleIDAuthorizationScopes.fullName,
-             ],
+             scopes: appleSignInScopes,
              webAuthenticationOptions:
                  configuration.platform == TargetPlatform.android
                  ? WebAuthenticationOptions(
@@ -170,8 +170,6 @@ class NativeSocialLoginSdk implements SocialLoginSdk {
       return SocialCredential(
         idToken: credential.identityToken ?? '',
         authorizationCode: credential.authorizationCode,
-        firstName: credential.givenName,
-        lastName: credential.familyName,
       );
     } on GoogleSignInException catch (error) {
       throw SocialLoginFailure(switch (error.code) {
@@ -225,8 +223,6 @@ class ServerpodSocialLoginServer implements SocialLoginServer {
         identityToken: credential.idToken,
         authorizationCode: credential.authorizationCode!,
         isNativeApplePlatformSignIn: platform == TargetPlatform.iOS,
-        firstName: credential.firstName,
-        lastName: credential.lastName,
       ),
     _ => throw const SocialLoginFailure('unsupportedProvider'),
   };
