@@ -7,6 +7,7 @@ import 'package:flutter/services.dart' show appFlavor;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:serverpod_auth_core_flutter/serverpod_auth_core_flutter.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../features/auth/auth_adapters.dart';
 import '../features/auth/account_deletion.dart';
@@ -24,6 +25,16 @@ import '../features/watch_sync/watch_sync_server.dart';
 import '../features/watch_sync/watch_sync_service.dart';
 
 const serverUrl = String.fromEnvironment('SERVER_URL');
+
+// Published from beomq/balmatchum-legal on GitHub Pages; the Android Health
+// Connect rationale screen repeats the policy URL in Kotlin.
+const privacyPolicyUrl =
+    'https://beomq.github.io/balmatchum-legal/privacy-policy.html';
+const accountDeletionUrl =
+    'https://beomq.github.io/balmatchum-legal/delete-account.html';
+
+Future<bool> openExternalUrl(Uri url) =>
+    launchUrl(url, mode: LaunchMode.externalApplication);
 
 final accountNoticeProvider = Provider<ValueNotifier<String?>>((ref) {
   final notice = ValueNotifier<String?>(null);
