@@ -11,7 +11,8 @@ void main() {
         () async {
           // Given a verified purchase and a pending, unrelated purchase.
           final sdk = FakeBillingStore(store: store);
-          final server = FakeBillingRepository()..current = config(store: store);
+          final server = FakeBillingRepository()
+            ..current = config(store: store);
           final controller = BillingController(
             repository: server,
             store: sdk,
