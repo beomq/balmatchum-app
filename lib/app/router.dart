@@ -153,6 +153,7 @@ final routerProvider = Provider<GoRouter>((ref) {
       if ((path == '/billing' ||
               path == '/photo' ||
               path == '/quiz' ||
+              path == '/wardrobe' ||
               path == '/records' ||
               path.startsWith('/records/')) &&
           (authenticated == null || !authenticated.state.isComplete)) {
@@ -191,6 +192,7 @@ final routerProvider = Provider<GoRouter>((ref) {
                 onOpenPhoto: () => context.push('/photo'),
                 onOpenRecords: () => context.push('/records'),
                 onOpenQuiz: () => context.push('/quiz'),
+                onOpenWardrobe: () => context.push('/wardrobe'),
                 onOpenBilling: () => context.push('/billing'),
               ),
         routes: [
@@ -207,6 +209,22 @@ final routerProvider = Provider<GoRouter>((ref) {
               onBack: () => context.pop(),
               onHome: () => context.go('/'),
             ),
+          ),
+          GoRoute(
+            path: 'wardrobe',
+            builder: (context, state) {
+              final product = ref.read(authenticatedProductControllerProvider)!;
+              return WardrobeScreen(
+                key: ObjectKey(authenticated),
+                dogAsset: authenticated!.state.candidate!.spritePath,
+                loadWardrobe: product.loadWardrobe,
+                purchaseTheme: (theme) =>
+                    product.themeAction(theme, equip: false),
+                equipTheme: (theme) => product.themeAction(theme, equip: true),
+                onBack: () => context.pop(),
+                onHome: () => context.go('/'),
+              );
+            },
           ),
           GoRoute(
             path: 'photo',

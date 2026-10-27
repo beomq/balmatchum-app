@@ -32,6 +32,13 @@ const unpriced = WardrobeTheme(
   owned: false,
   colorValue: 0xffeef3f6,
 );
+const ownedNight = WardrobeTheme(
+  id: 'night',
+  name: '저녁 마당',
+  owned: true,
+  colorValue: 0xffdce8ef,
+  price: 300,
+);
 
 WardrobeSnapshot snap({
   List<WardrobeTheme> themes = const [sunny, plain, store, unpriced],
@@ -64,6 +71,17 @@ WardrobeScreen screen({
 String caption(WidgetTester t) => t
     .widget<Text>(find.byKey(const ValueKey('wardrobe_preview_caption')))
     .data!;
+
+Future<void> buyNight(WidgetTester tester) async {
+  await tester.tap(find.byKey(const ValueKey('wardrobe_scope_store')));
+  await tester.pumpAndSettle();
+  await tester.tap(find.byKey(const ValueKey('wardrobe_theme_night')));
+  await tester.pump();
+  await tester.tap(find.byKey(const ValueKey('wardrobe_action')));
+  await tester.pumpAndSettle();
+  await tester.tap(find.byKey(const ValueKey('wardrobe_purchase_confirm')));
+  await tester.pumpAndSettle();
+}
 
 void main() {
   testWidgets('unknown equipped state requires reload before preview', (
@@ -251,5 +269,64 @@ void main() {
     await tester.tap(find.byKey(const ValueKey('wardrobe_earn_points')));
     await tester.pump();
     expect(home, 1);
+  });
+
+  testWidgets('lost purchase response reloads server ownership and balance', (
+    tester,
+  ) async {
+    var loads = 0;
+    final purchases = <String>[];
+    await tester.pumpWidget(
+      host(
+        screen(
+          load: () async => ++loads == 1
+              ? snap()
+              : snap(
+                  themes: const [sunny, plain, ownedNight, unpriced],
+                  balance: 200,
+                ),
+          purchase: (t) async {
+            purchases.add(t.id);
+            throw Exception('response lost after commit');
+          },
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await buyNight(tester);
+    expect(loads, 2);
+    expect(purchases, ['night']);
+    expect(caption(tester), '보유함 · 실제 적용 전');
+    expect(
+      tester.widget<Text>(find.byKey(const ValueKey('wardrobe_balance'))).data,
+      '보유 200포인트',
+    );
+  });
+
+  testWidgets('unconfirmed purchase result blocks another purchase', (
+    tester,
+  ) async {
+    var loads = 0;
+    final purchases = <String>[];
+    await tester.pumpWidget(
+      host(
+        screen(
+          load: () async {
+            if (++loads == 2) throw Exception('still offline');
+            return snap();
+          },
+          purchase: (t) async {
+            purchases.add(t.id);
+            throw Exception('response lost');
+          },
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await buyNight(tester);
+    expect(loads, 2);
+    expect(find.byKey(const ValueKey('wardrobe_action')), findsNothing);
+    expect(find.byKey(const ValueKey('product_retry')), findsOneWidget);
+    expect(purchases, ['night']);
   });
 }

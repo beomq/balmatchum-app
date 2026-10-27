@@ -107,10 +107,22 @@ class _WardrobeScreenState extends State<WardrobeScreen> {
         };
       });
     } on Exception {
-      if (mounted) {
+      // A lost response does not mean nothing changed: the server may have
+      // committed. Show its state so a retry is never sent blindly.
+      try {
+        final value = await widget.loadWardrobe();
+        if (!mounted) return;
         setState(() {
+          snapshot = value;
           busy = false;
-          actionError = '처리하지 못했어요. 상태는 바뀌지 않았어요. 다시 시도해 주세요.';
+          actionError = '응답을 받지 못해 서버의 현재 상태를 다시 불러왔어요.';
+        });
+      } on Exception {
+        if (!mounted) return;
+        setState(() {
+          snapshot = null;
+          busy = false;
+          loadError = '처리 결과를 확인하지 못했어요. 다시 불러와 주세요.';
         });
       }
     }

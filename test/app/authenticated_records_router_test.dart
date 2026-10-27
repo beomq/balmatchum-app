@@ -70,6 +70,7 @@ void main() {
           '/records/2026-10-15',
           '/quiz',
           '/billing',
+          '/wardrobe',
         ]) {
           router.go(route);
           await tester.pumpAndSettle();
@@ -183,7 +184,6 @@ void main() {
       expect(find.byKey(const ValueKey('records_deleted')), findsOneWidget);
       await capture(tester, boundary, 'records-deleted');
       expect(repository.calls, isNot(contains('dev')));
-      expect(repository.calls, isNot(contains('themes')));
       expect(repository.calls, isNot(contains('quiz')));
       router.go('/quiz');
       await tester.pumpAndSettle();

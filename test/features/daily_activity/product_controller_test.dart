@@ -31,10 +31,35 @@ DailyRecord record({bool deleted = false}) => DailyRecord(
   routes: [],
 );
 
+/// Production store shape: real prices and no fixture label.
+ThemeStore themeStore({bool cloudyOwned = false, int balance = 42}) =>
+    ThemeStore(
+      items: [
+        ThemeItem(
+          themeId: 'sunny',
+          name: 'Sunny',
+          colorValue: 0xfff5eedc,
+          price: 0,
+          owned: true,
+        ),
+        ThemeItem(
+          themeId: 'cloudy',
+          name: 'Cloudy',
+          colorValue: 0xffe4e7e9,
+          price: 3,
+          owned: cloudyOwned,
+        ),
+      ],
+      equippedTheme: 'sunny',
+      balance: balance,
+    );
+
 class AccountRepository extends ProductRepository {
   AccountRepository() : super(Client('http://localhost/'));
   Completer<DailyRecord>? pending;
   bool failRead = false;
+  bool failThemes = false;
+  ThemeStore store = themeStore();
   final calls = <String>[];
   @override
   Future<WalletView> wallet() async {
@@ -87,7 +112,14 @@ class AccountRepository extends ProductRepository {
   @override
   Future<ThemeStore> themes() async {
     calls.add('themes');
-    throw Exception('Fixture unavailable');
+    if (failThemes) throw Exception('Themes offline');
+    return store;
+  }
+
+  @override
+  Future<ThemeStore> purchase(String themeId, String requestId) async {
+    calls.add('purchase:$themeId');
+    return store = themeStore(cloudyOwned: true, balance: 39);
   }
 
   @override
@@ -174,26 +206,86 @@ void main() {
       expect(controller.wallet!.balance, 42);
       expect(await controller.claim(day), 10);
       await expectLater(controller.loadQuiz(), throwsFormatException);
-      await expectLater(controller.loadWardrobe(), throwsFormatException);
+      expect((await controller.loadWardrobe()).fixtureLabel, isNull);
       expect((await controller.deleteDay(day.date)).isDeleted, isTrue);
       expect(repository.calls, [
         'day',
         'wallet',
+        'themes',
         'day',
         'wallet',
+        'themes',
         'month',
         'day',
         'claim',
         'day',
         'wallet',
+        'themes',
+        'themes',
         'delete',
         'day',
         'wallet',
+        'themes',
       ]);
-      expect(controller.store, isNull);
+      expect(controller.store?.equippedTheme, 'sunny');
       expect(controller.quiz, isNull);
     },
   );
+
+  test('real account buys a theme from the server store', () async {
+    final repository = AccountRepository();
+    final steps = DailyStepsController(
+      readSteps: () async =>
+          const DailyStepsResult(DailyStepsStatus.empty, null),
+    );
+    final controller = ProductController(repository, steps, null, account: 'A');
+    addTearDown(() {
+      controller.dispose();
+      steps.dispose();
+      repository.client.close();
+    });
+    final cloudy = (await controller.loadWardrobe()).themes.singleWhere(
+      (theme) => theme.id == 'cloudy',
+    );
+    final bought = await controller.themeAction(cloudy, equip: false);
+    expect(
+      bought.themes.singleWhere((theme) => theme.id == 'cloudy').owned,
+      isTrue,
+    );
+    expect(bought.balance, 39);
+    expect(repository.calls, ['themes', 'purchase:cloudy', 'themes']);
+  });
+
+  test('theme failure keeps last theme and still refreshes records', () async {
+    final repository = AccountRepository();
+    final steps = DailyStepsController(
+      readSteps: () async =>
+          const DailyStepsResult(DailyStepsStatus.empty, null),
+    );
+    final controller = ProductController(repository, steps, null, account: 'A');
+    addTearDown(() {
+      controller.dispose();
+      steps.dispose();
+      repository.client.close();
+    });
+    await controller.connect();
+    final previous = controller.store;
+    repository.failThemes = true;
+    await controller.sync();
+    expect(controller.error, isNull);
+    expect(controller.connected, isTrue);
+    expect(controller.today, isNotNull);
+    expect(controller.wallet!.balance, 42);
+    expect(controller.store, same(previous));
+    expect(repository.calls, [
+      'day',
+      'wallet',
+      'themes',
+      'day',
+      'wallet',
+      'themes',
+    ]);
+  });
 
   test('confirmed delete succeeds even when refresh fails', () async {
     final repository = AccountRepository()..failRead = true;
