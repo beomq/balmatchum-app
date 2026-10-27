@@ -69,6 +69,17 @@ printf 'ok - every required value fails closed when missing\n'
 
 expect_rejected android SERVER_URL SERVER_URL=http://balmatchum-prod.example.test/
 expect_rejected android SERVER_URL SERVER_URL=https://balmatchum-prod.example.test
+for platform in ios android; do
+  for port in 0 65536 99999; do
+    expect_rejected "$platform" SERVER_URL "SERVER_URL=https://example.test:$port/"
+  done
+  for port in 1 443 65535; do
+    out="$test_root/$platform-port-$port/app-config.json"
+    run_sut "$platform" "SERVER_URL=https://example.test:$port/" > /dev/null
+    jq -e --arg url "https://example.test:$port/" '.SERVER_URL == $url' "$out" > /dev/null
+  done
+done
+printf 'ok - URL port boundaries are enforced on both platforms\n'
 expect_rejected android KAKAO_NATIVE_APP_KEY KAKAO_NATIVE_APP_KEY=0123456789ABCDEF0123456789ABCDEF
 expect_rejected android KAKAO_NATIVE_APP_KEY KAKAO_NATIVE_APP_KEY=0123456789abcdef
 expect_rejected android GOOGLE_SERVER_CLIENT_ID GOOGLE_SERVER_CLIENT_ID=not-a-client-id

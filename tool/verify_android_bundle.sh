@@ -2,6 +2,42 @@
 set -euo pipefail
 set +x
 
+verify_manifest() {
+  local flavor=$1 manifest=$2 package
+  case "$flavor" in
+    prod) package=com.beomq.balmatchum ;;
+    dev) package=com.beomq.balmatchum.dev ;;
+    *) echo 'Unsupported flavor' >&2; return 1 ;;
+  esac
+  python3 - "$manifest" "$package" "$flavor" <<'PY'
+import re
+import sys
+import xml.etree.ElementTree as ET
+root = ET.parse(sys.argv[1]).getroot()
+ns = '{http://schemas.android.com/apk/res/android}'
+assert root.attrib['package'] == sys.argv[2], 'Unexpected package'
+assert int(root.attrib[ns + 'versionCode']) > 0, 'Invalid versionCode'
+assert root.attrib[ns + 'versionName'], 'Missing versionName'
+print('Package/version:', root.attrib['package'], root.attrib[ns + 'versionName'], root.attrib[ns + 'versionCode'])
+ads = [m.attrib.get(ns + 'value', '') for m in root.iter('meta-data')
+       if m.attrib.get(ns + 'name') == 'com.google.android.gms.ads.APPLICATION_ID']
+assert len(ads) == 1 and re.fullmatch(r'ca-app-pub-[0-9]{16}~[0-9]{10}', ads[0]), 'Missing or malformed AdMob app ID'
+assert not ads[0].startswith('ca-app-pub-3940256099942544~'), 'Google sample AdMob app ID'
+print('AdMob app ID verified')
+if sys.argv[3] == 'prod':
+    kakao = [d.attrib.get(ns + 'scheme', '') for a in root.iter('activity')
+             if a.attrib.get(ns + 'name') == 'com.kakao.sdk.flutter.auth.AuthCodeHandlerActivity'
+             for d in a.iter('data') if d.attrib.get(ns + 'host') == 'oauth']
+    assert len(kakao) == 1 and re.fullmatch(r'kakao[0-9a-f]{32}', kakao[0]), 'Missing or malformed Kakao login redirect scheme'
+    print('Kakao redirect scheme verified')
+PY
+}
+
+if [[ "${1:-}" == manifest ]]; then
+  verify_manifest "${2:?Missing flavor}" "${3:?Missing manifest}"
+  exit 0
+fi
+
 if [[ "${1:-}" == preflight ]]; then
   [[ "${GITHUB_REF:-}" == refs/heads/chore/cicd-validation ]] || { echo 'Signing validation requires chore/cicd-validation' >&2; exit 1; }
   : "${KEYSTORE_BASE64:?Missing Prod keystore}"
@@ -19,8 +55,8 @@ bundle=${1:?Usage: verify_prod_bundle.sh AAB}
 : "${ANDROID_STORE_PASSWORD:?Missing Prod store password}"
 : "${ANDROID_KEY_PASSWORD:?Missing Prod key password}"
 case "${FLAVOR:?Missing flavor}" in
-  prod) package=com.beomq.balmatchum; expected=5756f95ecb2910820ba1da7acbe32344a56730cb6bc2924e4f1aeb6b2bc5b6ee ;;
-  dev) package=com.beomq.balmatchum.dev; expected=66a05b5d1602aa2680daa060364219c7b1a75468bad0ea3961fc3b969a7b94b7 ;;
+  prod) expected=5756f95ecb2910820ba1da7acbe32344a56730cb6bc2924e4f1aeb6b2bc5b6ee ;;
+  dev) expected=66a05b5d1602aa2680daa060364219c7b1a75468bad0ea3961fc3b969a7b94b7 ;;
   *) echo 'Unsupported flavor' >&2; exit 1 ;;
 esac
 work=$(mktemp -d)
@@ -28,28 +64,7 @@ trap 'rm -rf "$work"' EXIT
 
 java -jar "$BUNDLETOOL_JAR" validate --bundle="$bundle"
 java -jar "$BUNDLETOOL_JAR" dump manifest --bundle="$bundle" --module=base > "$work/manifest.xml"
-python3 - "$work/manifest.xml" "$package" "$FLAVOR" <<'PY'
-import re
-import sys
-import xml.etree.ElementTree as ET
-root = ET.parse(sys.argv[1]).getroot()
-ns = '{http://schemas.android.com/apk/res/android}'
-assert root.attrib['package'] == sys.argv[2], 'Unexpected package'
-assert int(root.attrib[ns + 'versionCode']) > 0, 'Invalid versionCode'
-assert root.attrib[ns + 'versionName'], 'Missing versionName'
-print('Package/version:', root.attrib['package'], root.attrib[ns + 'versionName'], root.attrib[ns + 'versionCode'])
-ads = [m.attrib.get(ns + 'value', '') for m in root.iter('meta-data')
-       if m.attrib.get(ns + 'name') == 'com.google.android.gms.ads.APPLICATION_ID']
-assert len(ads) == 1 and re.fullmatch(r'ca-app-pub-[0-9]{16}~[0-9]{10}', ads[0]), 'Missing or malformed AdMob app ID'
-assert not ads[0].startswith('ca-app-pub-3940256099942544~'), 'Google sample AdMob app ID'
-print('AdMob app ID:', ads[0])
-if sys.argv[3] == 'prod':
-    kakao = [d.attrib.get(ns + 'scheme', '') for a in root.iter('activity')
-             if a.attrib.get(ns + 'name') == 'com.kakao.sdk.flutter.auth.AuthCodeHandlerActivity'
-             for d in a.iter('data') if d.attrib.get(ns + 'host') == 'oauth']
-    assert len(kakao) == 1 and re.fullmatch(r'kakao[0-9a-f]{32}', kakao[0]), 'Missing or malformed Kakao login redirect scheme'
-    print('Kakao redirect scheme:', kakao[0])
-PY
+verify_manifest "$FLAVOR" "$work/manifest.xml"
 jarsigner -verify "$bundle"
 keytool -J-Duser.language=en -printcert -jarfile "$bundle" > "$work/certificate.txt"
 fingerprint=$(awk '/SHA256:/ {print $2}' "$work/certificate.txt" | tr -d ':' | tr '[:upper:]' '[:lower:]')

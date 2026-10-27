@@ -72,11 +72,16 @@ variables, secret 아님)를 받습니다. 서명 자격 증명은 기존처럼 
 `tool/release_app_config.sh ios|android OUT.json`이 유일한 입력 지점입니다. 환경 변수를
 검사해 하나라도 없거나 형식이 틀리면 빌드 전에 실패하고, 통과하면 `--dart-define-from-file`용
 JSON을 씁니다. 네이티브 값은 같은 JSON에서 파생합니다.
+URL은 https와 마지막 `/`가 필요하며, 명시한 포트는 1~65535만 허용합니다.
+생성 스크립트의 URL 파싱과 manifest 검증에는 Python 3가 필요합니다.
 
 - Android: Gradle이 Flutter의 `dart-defines`를 해석해 Kakao `AuthCodeHandlerActivity`의
   `kakao{키}://oauth` 스킴을 manifest에 넣습니다. `prodRelease`는
   `validateProdReleaseAppConfig`에서 `SERVER_URL`·Kakao·Google 서버 클라이언트가 없으면
   실패합니다. `tool/verify_android_bundle.sh`는 prod AAB의 Kakao 스킴도 검사합니다.
+  `manifest prod MANIFEST.xml` 명령은 동일한 검사를 추출된 manifest에 실행합니다.
+  설정 없는 Android 빌드는 `${applicationId}.kakao-unconfigured`를 쓰므로 dev와 prod가
+  서로 다른 스킴을 등록합니다.
 - iOS: fastlane prod archive가 JSON에서 `KAKAO_URL_SCHEME`, `GOOGLE_REVERSED_CLIENT_ID`
   빌드 설정을 넘겨 `Info.plist`의 `CFBundleURLTypes`를 채우고, `Generated.xcconfig`의
   `DART_DEFINES`와 archive plist를 다시 대조합니다(`tool/apple/app_config.rb`).

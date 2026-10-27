@@ -1,4 +1,5 @@
 import java.util.Base64
+import java.net.URI
 
 plugins {
     id("com.android.application")
@@ -44,7 +45,7 @@ android {
         versionName = flutter.versionName
         manifestPlaceholders["admobAppId"] = providers.environmentVariable("ADMOB_ANDROID_APP_ID").orNull ?: ""
         manifestPlaceholders["kakaoScheme"] =
-            if (kakaoNativeAppKey.isEmpty()) "com.beomq.balmatchum.kakao-unconfigured" else "kakao$kakaoNativeAppKey"
+            if (kakaoNativeAppKey.isEmpty()) "\${applicationId}.kakao-unconfigured" else "kakao$kakaoNativeAppKey"
     }
 
     signingConfigs {
@@ -129,7 +130,14 @@ val validateProdReleaseAppConfig by tasks.registering {
             "KAKAO_NATIVE_APP_KEY" to Regex("^[0-9a-f]{32}$"),
             "GOOGLE_SERVER_CLIENT_ID" to Regex("^[0-9]+-[a-z0-9]+\\.apps\\.googleusercontent\\.com$"),
         )
-        val invalid = rules.filterNot { (name, rule) -> rule.matches(defines[name].orEmpty()) }.keys
+        val invalid = rules.filterNot { (name, rule) ->
+            val value = defines[name].orEmpty()
+            rule.matches(value) && (name != "SERVER_URL" || runCatching {
+                val url = URI(value)
+                url.scheme == "https" && !url.host.isNullOrEmpty() &&
+                    url.path.endsWith("/") && (url.port == -1 || url.port in 1..65535)
+            }.getOrDefault(false))
+        }.keys
         check(invalid.isEmpty()) {
             "Prod release requires --dart-define-from-file from tool/release_app_config.sh; " +
                 "missing or malformed: ${invalid.joinToString()}."

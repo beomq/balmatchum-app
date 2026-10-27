@@ -74,7 +74,8 @@ platform :ios do
       sh('xcodebuild', '-workspace', 'ios/Runner.xcworkspace', '-scheme', scheme,
         '-configuration', configuration, '-destination', 'generic/platform=iOS',
         '-archivePath', archive, '-xcconfig', "ios/Signing/#{config}Archive.xcconfig",
-        "ADMOB_IOS_APP_ID=#{admob_app_id}", *(app_settings || {}).map { |key, value| "#{key}=#{value}" }, 'archive')
+        "ADMOB_IOS_APP_ID=#{admob_app_id}", *(app_settings || {}).map { |key, value| "#{key}=#{value}" }, 'archive',
+        log: false)
       sh('xcodebuild', '-exportArchive', '-archivePath', archive, '-exportPath', export,
         '-exportOptionsPlist', "ios/Signing/ExportOptions-#{config}.plist")
       ApplePackage.verify!(archive: archive, ipa: File.join(export, 'balmatchum_app.ipa'), bundle: bundle, number: number)

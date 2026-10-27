@@ -27,6 +27,17 @@ require() {
 
 require SERVER_URL '^https://[A-Za-z0-9.-]+(:[0-9]{1,5})?(/[A-Za-z0-9._~-]+)*/$' \
   'https URL ending with /'
+python3 - "$SERVER_URL" <<'PY' || die 'SERVER_URL must use a port between 1 and 65535'
+import sys
+from urllib.parse import urlsplit
+
+try:
+    url = urlsplit(sys.argv[1])
+    port = url.port
+except ValueError:
+    sys.exit(1)
+sys.exit(0 if port is None or 1 <= port <= 65535 else 1)
+PY
 require KAKAO_NATIVE_APP_KEY '^[0-9a-f]{32}$' '32 lowercase hex characters'
 require GOOGLE_SERVER_CLIENT_ID "$google_client" \
   '<project number>-<id>.apps.googleusercontent.com web client'
