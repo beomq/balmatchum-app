@@ -66,6 +66,8 @@ jobs:
           fvm flutter analyze
           fvm flutter test
           ruby fastlane/apple/asc_preflight_test.rb
+          ruby fastlane/apple/asc_upload_test.rb
+          ruby fastlane/apple/delivery_validation_test.rb
           ruby tool/apple/build_number_test.rb
           ruby tool/apple/delivery_target_test.rb
           ruby tool/apple/verify_package_test.rb

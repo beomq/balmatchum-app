@@ -1,4 +1,5 @@
 require_relative 'asc_preflight'
+require_relative 'delivery_validation'
 require_relative '../../tool/apple/build_number'
 require_relative '../../tool/apple/verify_package'
 require_relative '../../tool/apple/delivery_target'
@@ -84,14 +85,21 @@ platform :ios do
       end
       ApplePreflight.verify!(bundle: bundle, app_id: app_id, fetcher: fetcher)
       next if mode == 'verify'
+      ipa = File.join(export, 'balmatchum_app.ipa')
+      AppleDeliveryValidation.with_key(key_id: key_id, key_path: key_path) do
+        sh('xcrun', 'altool', '--validate-app', '-f', ipa, '-t', 'ios',
+          '--apiKey', key_id, '--apiIssuer', issuer)
+      end
       current = fetcher.call(builds_path).map { |build| build.fetch('attributes').fetch('version') }
       UI.user_error!('ASC build history changed; rebuild required') unless current.all? { |v| AppleBuildNumber.ordinal(v) < AppleBuildNumber.ordinal(number) }
       api = app_store_connect_api_key(key_id: key_id, issuer_id: issuer, key_filepath: key_path,
         duration: 120, in_house: false, set_spaceship_token: false)
       upload_to_testflight(api_key: api, app_identifier: bundle, apple_id: app_id,
-        ipa: File.join(export, 'balmatchum_app.ipa'), skip_submission: true,
+        ipa: ipa, skip_submission: true,
         skip_waiting_for_build_processing: true, distribute_external: false,
         notify_external_testers: false, submit_beta_review: false)
+      registered = ApplePreflight.verify_upload!(app_id: app_id, number: number, fetcher: fetcher)
+      UI.message("APPLE_UPLOAD_REGISTERED app=#{app_id} build=#{number} state=#{registered.fetch('attributes').fetch('processingState')}")
     end
   end
 end
