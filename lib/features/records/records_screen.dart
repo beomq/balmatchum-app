@@ -4,7 +4,10 @@ import 'package:flutter/material.dart';
 import 'package:world_holidays/world_holidays.dart';
 
 import '../first_meeting/meeting_theme.dart';
+import '../daily_activity/product_controller.dart';
+import '../daily_activity/reward_panel.dart';
 import 'product_page.dart';
+import 'record_map.dart';
 import 'records_models.dart';
 
 final _holidays = WorldHolidays();
@@ -237,7 +240,9 @@ class _DayCell extends StatelessWidget {
         ? '${(s.steps! / 1000).toStringAsFixed(s.steps! >= 10000 ? 0 : 1)}k'
         : '${s.steps}';
     final hasRoute = s != null && s.routes.isNotEmpty;
-    final claimable = s?.rewardStatus == DayRewardStatus.claimable;
+    final claimable =
+        s?.rewardStatus == DayRewardStatus.claimable ||
+        s?.rewardStatus == DayRewardStatus.adRequired;
     final semantics = [
       '${date.month}월 ${date.day}일',
       if (holiday != null) holiday,
@@ -359,6 +364,7 @@ class RecordDayScreen extends StatefulWidget {
     required this.loadDay,
     required this.deleteDay,
     required this.claimDay,
+    this.rewardController,
     required this.onBack,
     required this.onHome,
     this.onDayChanged,
@@ -372,6 +378,7 @@ class RecordDayScreen extends StatefulWidget {
   final LoadRecordDay loadDay;
   final DeleteRecordDay deleteDay;
   final ClaimRecordDay claimDay;
+  final ProductController? rewardController;
   final VoidCallback onBack;
   final VoidCallback onHome;
 
@@ -545,6 +552,15 @@ class _RecordDayScreenState extends State<RecordDayScreen> {
                     onPressed: widget.onHome,
                     child: const Text('오늘 포인트는 홈에서 받기'),
                   )
+                : widget.rewardController != null
+                ? RewardPanel(
+                    controller: widget.rewardController!,
+                    day: day,
+                    onChanged: (fresh) {
+                      setState(() => data = fresh);
+                      widget.onDayChanged?.call(fresh);
+                    },
+                  )
                 : _RewardBody(day: day, busy: busy, onClaim: () => claim(day)),
           ),
           const SizedBox(height: Space.s3),
@@ -593,6 +609,9 @@ class _RewardBody extends StatelessWidget {
             : '${formatCount(day.claimablePoints!)}포인트를 받을 수 있어요.',
       DayRewardStatus.paid => '이 날짜의 포인트를 모두 받았어요.',
       DayRewardStatus.expired => '받을 수 있는 기간이 지났어요.',
+      DayRewardStatus.adRequired => '광고 확인 후 남은 포인트를 받을 수 있어요.',
+      DayRewardStatus.futureDate => '미래 날짜의 기록이에요.',
+      DayRewardStatus.legacyPolicyExcluded => '이전 테스트 정책 기록으로 운영 보상 대상이 아니에요.',
       DayRewardStatus.canceled => '삭제로 받지 않은 포인트가 취소됐어요.',
       DayRewardStatus.unconfigured => '포인트 정책이 아직 준비되지 않았어요.',
     };
@@ -630,15 +649,18 @@ class _Routes extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         if (drawable)
-          ClipRRect(
-            borderRadius: BorderRadius.circular(12),
-            child: ColoredBox(
-              color: ProductColors.recordSoft,
-              child: AspectRatio(
-                aspectRatio: 16 / 10,
-                child: CustomPaint(
-                  key: const ValueKey('records_route_map'),
-                  painter: RoutePainter(routes),
+          RecordedRouteMap(
+            routes: routes,
+            outline: ClipRRect(
+              borderRadius: BorderRadius.circular(12),
+              child: ColoredBox(
+                color: ProductColors.recordSoft,
+                child: AspectRatio(
+                  aspectRatio: 16 / 10,
+                  child: CustomPaint(
+                    key: const ValueKey('records_route_map'),
+                    painter: RoutePainter(routes),
+                  ),
                 ),
               ),
             ),

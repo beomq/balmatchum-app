@@ -230,6 +230,8 @@ void main() {
     expect(calls, [date]);
     expect(changed.single.isDeleted, isTrue);
     expect(find.byKey(const ValueKey('records_deleted')), findsOneWidget);
+    expect(find.byKey(const ValueKey('records_route_map')), findsNothing);
+    expect(find.byKey(const ValueKey('records_naver_map')), findsNothing);
     expect(find.byKey(const ValueKey('records_delete_day')), findsNothing);
   });
 
