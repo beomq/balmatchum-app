@@ -33,14 +33,16 @@ module ApplePackage
         File.write(profile_path, command('security', 'cms', '-D', '-i', File.join(path, 'embedded.mobileprovision')))
         entitlements_path = File.join(temp, 'entitlements.plist')
         File.write(entitlements_path, command('codesign', '-d', '--entitlements', ':-', path))
-        [plist(profile_path).fetch('Entitlements'), plist(entitlements_path)].each do |entitlements|
+        signed_entitlements = plist(entitlements_path)
+        [plist(profile_path).fetch('Entitlements'), signed_entitlements].each do |entitlements|
           raise 'Signing entitlement mismatch' unless entitlements['application-identifier'] == "Q4E6NKD9VN.#{expected}" && entitlements['com.apple.developer.team-identifier'] == 'Q4E6NKD9VN' && entitlements['get-task-allow'] == false
           raise 'Missing HealthKit entitlement' if path == app && entitlements['com.apple.developer.healthkit'] != true
-          if entitlements['com.apple.developer.healthkit'] == true
-            # ITMS-90683 requires this string even when authorization shares no types.
-            update = info['NSHealthUpdateUsageDescription']
-            raise 'Missing HealthKit purpose: NSHealthUpdateUsageDescription' unless update.is_a?(String) && !update.strip.empty?
-          end
+        end
+        if signed_entitlements['com.apple.developer.healthkit'] == true
+          # ITMS-90683 follows signed HealthKit usage, not a profile's allowed capabilities.
+          # A signed HealthKit bundle needs this string even when authorization shares no types.
+          update = info['NSHealthUpdateUsageDescription']
+          raise 'Missing HealthKit purpose: NSHealthUpdateUsageDescription' unless update.is_a?(String) && !update.strip.empty?
         end
       end
     end
