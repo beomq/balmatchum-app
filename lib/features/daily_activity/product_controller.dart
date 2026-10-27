@@ -121,14 +121,14 @@ class ProductController extends ChangeNotifier {
     _checkAccount();
     final balance = await repository.wallet();
     _checkAccount();
+    final themes = await repository.themes();
+    _checkAccount();
     if (account == null) {
-      final themes = await repository.themes();
-      _checkAccount();
       final question = await repository.quiz(ProductRepository.today);
       _checkAccount();
-      store = themes;
       quiz = question;
     }
+    store = themes;
     today = day;
     wallet = balance;
     notifyListeners();
@@ -341,15 +341,18 @@ class ProductController extends ChangeNotifier {
   );
 
   Future<WardrobeSnapshot> loadWardrobe() async {
-    _requireFixture();
-    return wardrobe(await repository.themes());
+    _checkAccount();
+    final value = await repository.themes();
+    _checkAccount();
+    store = value;
+    notifyListeners();
+    return wardrobe(value);
   }
 
   Future<WardrobeSnapshot> themeAction(
     WardrobeTheme theme, {
     required bool equip,
   }) => _mutate(() async {
-    _requireFixture();
     final key = '${equip ? 'equip' : 'buy'}:${theme.id}';
     try {
       final confirmed = equip

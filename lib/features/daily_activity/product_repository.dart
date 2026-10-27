@@ -98,13 +98,14 @@ class ProductRepository {
   Future<DailyQuiz> answer(String date, int answerIndex, String requestId) =>
       client.product.answerQuiz(date, answerIndex, requestId);
 
-  Future<ThemeStore> themes() => client.product.listThemes();
+  Future<ThemeStore> themes() =>
+      _records((client) => client.product.listThemes());
 
   Future<ThemeStore> purchase(String themeId, String requestId) =>
-      client.product.purchaseTheme(themeId, requestId);
+      _records((client) => client.product.purchaseTheme(themeId, requestId));
 
   Future<ThemeStore> equip(String themeId, String requestId) =>
-      client.product.equipTheme(themeId, requestId);
+      _records((client) => client.product.equipTheme(themeId, requestId));
 }
 
 class _RecordAuthHeader implements ClientAuthKeyProvider {
