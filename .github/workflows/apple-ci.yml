@@ -31,7 +31,7 @@ jobs:
       APP_SCHEME: ${{ matrix.scheme }}
       APP_CONFIGURATION: ${{ matrix.configuration }}
       APP_BUNDLE: ${{ matrix.bundle }}
-      ADMOB_IOS_APP_ID: ${{ matrix.environment == 'dev' && vars.ADMOB_IOS_APP_ID_DEV || vars.ADMOB_IOS_APP_ID_PROD }}
+      ADMOB_IOS_APP_ID: ${{ vars[matrix.environment == 'dev' && 'ADMOB_IOS_APP_ID_DEV' || 'ADMOB_IOS_APP_ID_PROD'] }}
     steps:
       - uses: actions/checkout@v4
         with:

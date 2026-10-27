@@ -71,23 +71,15 @@ class _CapturedAuthHeader implements ClientAuthKeyProvider {
 
 GpsRecordInput watchRecordInput(watch.GpsRecord record) {
   final json = record.toJson();
-  final points = (json['payload']! as watch.JsonObject)['points']! as List;
   return GpsRecordInput(
     schemaVersion: 1,
     clientRecordId: UuidValue.fromString(json['recordId']! as String),
     startedAt: DateTime.parse(json['startedAt']! as String),
     endedAt: DateTime.parse(json['endedAt']! as String),
     source: 'watch',
-    routePoints: points.map((value) {
-      final point = value as watch.JsonObject;
-      return RoutePoint(
-        recordedAt: DateTime.parse(point['recordedAt']! as String),
-        latitude: (point['latitude']! as num).toDouble(),
-        longitude: (point['longitude']! as num).toDouble(),
-        horizontalAccuracyMeters: (point['horizontalAccuracyMeters']! as num)
-            .toDouble(),
-      );
-    }).toList(),
+    // The first release does not collect or upload location, including records
+    // left in the native queue by an older companion.
+    routePoints: [],
   );
 }
 
