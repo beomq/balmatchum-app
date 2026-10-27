@@ -95,7 +95,11 @@ jobs:
           test "$(plutil -extract CFBundleIdentifier raw "$watch/Info.plist")" = "$APP_BUNDLE.watchkitapp"
           test "$(plutil -extract WKCompanionAppBundleIdentifier raw "$watch/Info.plist")" = "$APP_BUNDLE"
           purpose="$(plutil -extract NSHealthShareUsageDescription raw "$app/Info.plist")"
-          test -n "$purpose"
+          test -n "$(printf '%s' "$purpose" | tr -d '[:space:]')"
+          if /usr/libexec/PlistBuddy -c 'Print :NSHealthUpdateUsageDescription' "$app/Info.plist" >/dev/null 2>&1; then
+            echo 'Unexpected HealthKit write purpose'
+            exit 1
+          fi
           test "$(plutil -extract BalmatchumHealthKitCapabilityVerified raw "$app/Info.plist")" = true
           test "$(/usr/libexec/PlistBuddy -c 'Print :com.apple.developer.healthkit' ios/Runner/Runner.entitlements)" = true
           for key in CFBundleShortVersionString CFBundleVersion; do
