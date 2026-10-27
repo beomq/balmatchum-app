@@ -12,7 +12,7 @@ final class DailyStepsReader {
         }
         // iOS does not expose macOS SecTask entitlement inspection. The app owner
         // may enable this only after verifying the signed target/profile entitlement.
-        // Missing configuration (the current release profiles) must never call HK.
+        // Missing configuration must never call HK; device profiles are a release gate.
         guard Bundle.main.object(forInfoDictionaryKey: "BalmatchumHealthKitCapabilityVerified") as? Bool == true,
               let description = Bundle.main.object(forInfoDictionaryKey: "NSHealthShareUsageDescription") as? String,
               !description.isEmpty else {

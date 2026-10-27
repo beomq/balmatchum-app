@@ -17,7 +17,8 @@
 <key>LSRequiresIPhoneOS</key><true/>
 <key>NSLocationWhenInUseUsageDescription</key><string>개발용 위치 실험에서 이동 표본과 누락 구간을 확인합니다.</string>
 <key>NSLocationAlwaysAndWhenInUseUsageDescription</key><string>개발용 실험 실행 중 백그라운드 위치 표본을 기록합니다.</string>
-<key>NSHealthShareUsageDescription</key><string>건강 앱의 통합 오늘 걸음 수를 표시합니다.</string>
+<key>NSHealthShareUsageDescription</key><string>건강 앱에 기록된 오늘의 걸음 수를 읽어 발맞춤의 오늘 걸음과 목표 달성 현황을 표시합니다.</string>
+<key>BalmatchumHealthKitCapabilityVerified</key><true/>
 <key>UIBackgroundModes</key><array><string>location</string></array>
 <key>UIApplicationSceneManifest</key><dict>
 <key>UIApplicationSupportsMultipleScenes</key><false/>
