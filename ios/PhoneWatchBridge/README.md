@@ -32,7 +32,8 @@ Native validation is not independent proof of a server transaction.
 
 Health statuses are `available`, `capabilityUnavailable`, `unavailable`, `empty`,
 and `error`. Only `available` carries steps; a real integrated zero remains zero.
-No empty/denied result becomes zero. The query is cumulativeSum from Seoul midnight
+No empty/denied result becomes zero. HealthKit's `errorNoData` or a nil sum is
+`empty` (`DailyStepsQueryOutcome`); other query errors stay `error`. The query is cumulativeSum from Seoul midnight
 to query initiation. A boundary change during permission/query completion discards
 the result. `NSHealthShareUsageDescription` must exist before authorization.
 
