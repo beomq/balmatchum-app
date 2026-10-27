@@ -87,8 +87,8 @@ struct WatchDashboard: View {
     }
 
     @ViewBuilder private func dogImage(_ selected: DisplaySnapshot.Dog?) -> some View {
-        if let selected, selected.assetKey == "dog.preview.shih-tzu" {
-            Image("SelectedDogShihTzu")
+        if let selected, let asset = DogAsset.name(for: selected.assetKey) {
+            Image(asset)
                 .resizable()
                 .interpolation(.none)
                 .scaledToFit()
@@ -100,7 +100,7 @@ struct WatchDashboard: View {
     @ViewBuilder private func dogName(_ selected: DisplaySnapshot.Dog?) -> some View {
         if let selected {
             // Asset resolution is deliberately explicit; no other breed is substituted.
-            if selected.assetKey != "dog.preview.shih-tzu" {
+            if DogAsset.name(for: selected.assetKey) == nil {
                 Text("강아지 이미지 준비 중")
                     .font(.caption)
             }

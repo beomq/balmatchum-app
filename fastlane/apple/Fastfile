@@ -13,6 +13,10 @@ platform :ios do
     AppleDeliveryTarget.verify!(target: target, mode: mode, ref: ENV.fetch('GITHUB_REF'))
     UI.user_error!('mode must be verify or upload') unless %w[verify upload].include?(mode)
     UI.user_error!('target must be dev or prod') unless %w[dev prod].include?(target)
+    admob_app_id = ENV.fetch('ADMOB_IOS_APP_ID', '')
+    unless admob_app_id.match?(/\Aca-app-pub-\d{16}~\d{10}\z/) && !admob_app_id.start_with?('ca-app-pub-3940256099942544~')
+      UI.user_error!('A real environment-specific ADMOB_IOS_APP_ID is required for archive builds')
+    end
     config = target == 'dev' ? 'Dev' : 'Prod'
     scheme = target == 'dev' ? 'dev' : 'Runner'
     configuration = target == 'dev' ? 'Release-dev' : 'Release'
@@ -60,7 +64,8 @@ platform :ios do
       export = File.join(output, 'export')
       sh('xcodebuild', '-workspace', 'ios/Runner.xcworkspace', '-scheme', scheme,
         '-configuration', configuration, '-destination', 'generic/platform=iOS',
-        '-archivePath', archive, '-xcconfig', "ios/Signing/#{config}Archive.xcconfig", 'archive')
+        '-archivePath', archive, '-xcconfig', "ios/Signing/#{config}Archive.xcconfig",
+        "ADMOB_IOS_APP_ID=#{admob_app_id}", 'archive')
       sh('xcodebuild', '-exportArchive', '-archivePath', archive, '-exportPath', export,
         '-exportOptionsPlist', "ios/Signing/ExportOptions-#{config}.plist")
       ApplePackage.verify!(archive: archive, ipa: File.join(export, 'balmatchum_app.ipa'), bundle: bundle, number: number)

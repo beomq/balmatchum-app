@@ -15,9 +15,10 @@ abstract final class _SignInLayout {
 }
 
 class SignInScreen extends StatefulWidget {
-  const SignInScreen({required this.starter, super.key});
+  const SignInScreen({required this.starter, this.notice, super.key});
 
   final SignInStarter starter;
+  final String? notice;
 
   @override
   State<SignInScreen> createState() => _SignInScreenState();
@@ -61,6 +62,8 @@ class _SignInScreenState extends State<SignInScreen> {
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   Text('로그인', style: textTheme.headlineMedium),
+                  if (widget.notice != null)
+                    Semantics(liveRegion: true, child: Text(widget.notice!)),
                   const SizedBox(height: _SignInLayout.sectionGap),
                   SocialButtonList.vertical(
                     shape: SocialButtonShape.rounded,
@@ -125,6 +128,10 @@ class _SignInScreenState extends State<SignInScreen> {
                                 'missingIdToken' =>
                                   '카카오 OpenID Connect 설정을 확인해 주세요.',
                                 'networkError' => '네트워크 연결을 확인하고 다시 시도해 주세요.',
+                                'serverError' =>
+                                  '서버에서 로그인을 확인하지 못했습니다. 다시 시도해 주세요.',
+                                'sessionStorageError' =>
+                                  '로그인 정보를 기기에 저장하지 못했습니다. 다시 시도해 주세요.',
                                 _ => '로그인을 완료하지 못했습니다. 다시 시도해 주세요.',
                               },
                             },

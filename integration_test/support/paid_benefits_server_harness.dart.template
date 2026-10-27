@@ -1,0 +1,86 @@
+// Local QA only: actual Serverpod/DB and store parsers, fixture external wire.
+import 'dart:convert';
+import 'dart:io';
+import 'package:balmatchum_server/src/auth/auth_setup.dart';
+import 'package:balmatchum_server/src/billing/billing_service.dart';
+import 'package:balmatchum_server/src/billing/billing_verifier.dart';
+import 'package:balmatchum_server/src/generated/protocol.dart';
+import 'package:balmatchum_server/src/generated/serverpod.dart';
+import 'package:balmatchum_server/src/product/product_endpoint.dart';
+import 'package:balmatchum_server/src/product/product_service.dart';
+import 'package:balmatchum_server/src/quiz/quiz_bank.dart';
+import 'package:clock/clock.dart';
+import 'package:http/http.dart' as http;
+import 'package:http/testing.dart';
+import 'package:serverpod_auth_core_server/serverpod_auth_core_server.dart';
+
+import '../../../../../server/.worktrees/full-feature-audit/server/test/unit/billing/billing_fixture.dart' as fixture;
+import '../../../../../server/.worktrees/full-feature-audit/server/test/test_utils/quiz_fixture.dart';
+
+Future<void> main() async {
+  final directory = await Directory.systemTemp.createTemp('paid-db-');
+  final pod = Serverpod(['--mode=test', '--apply-migrations'], configOverride: (c) => c.copyWith(
+    apiServer: ServerConfig(port: 18110, publicHost: 'localhost', publicPort: 18110, publicScheme: 'http'),
+    database: PostgresDatabaseConfig.embedded(dataPath: '${directory.path}/pgdata', name: 'paid_native_test', maxConnectionCount: 10),
+  ));
+  configureAuth(pod, sessionPepper: 'public-disposable-paid-harness');
+  final settings = fixture.config();
+  String? binding;
+  var unavailable = false;
+  var refunded = false;
+  var queries = 0;
+  Future<http.Response> external(http.Request request) async {
+    if (request.url.host == 'oauth2.googleapis.com') return http.Response(jsonEncode({'access_token': 'test-only', 'token_type': 'Bearer', 'expires_in': 3600}), 200);
+    queries++;
+    if (unavailable) return http.Response('fixture unavailable', 503);
+    final purchase = fixture.lifetimePurchase(state: refunded ? 'CANCELLED' : 'PURCHASED')
+      ..['obfuscatedExternalAccountId'] = binding;
+    return http.Response(jsonEncode(purchase), 200);
+  }
+  BillingService.instances[pod] = BillingService(settings, base64Encode(List.filled(32, 42)),
+    google: GoogleBillingClient(settings.google!, clientFactory: () => MockClient(external)),
+  );
+  await pod.start(runInGuardedZone: false);
+  await configureQuizBank(pod, bank: fixtureBank(3));
+  final admin = await pod.createSession(enableLogging: false);
+  final user = await AuthServices.instance.authUsers.create(admin);
+  final auth = await AuthServices.instance.tokenManager.issueToken(admin, authUserId: user.id, method: 'paid-native-fixture');
+  final session = await pod.createSession(enableLogging: false);
+  session.updateAuthenticated(await AuthServices.instance.authenticationHandler(session, auth.token));
+  // Bind through the public endpoint from the native app before verification.
+  final endpoint = ProductEndpoint();
+  await endpoint.registerStepStream(session, 'paid-seed-stream', 0);
+  final now = DateTime.now().toUtc();
+  final past = now.subtract(const Duration(days: 10));
+  final date = localDate(past);
+  Future<void> seed(DateTime at, int revision, int total) => withClock(Clock.fixed(at), () async {
+    await endpoint.submitSteps(session, DailyStepInput(date: date, streamGeneration: 1, revision: revision,
+      windowStart: dayStart(date), windowEnd: dayStart(date).add(const Duration(days: 1)),
+      observedAt: at, availability: 'confirmed', total: total));
+  });
+  await seed(past, 1, 7000);
+  await seed(now, 2, 9000);
+  final seam = await HttpServer.bind(InternetAddress.loopbackIPv4, 18111);
+  seam.listen((request) async {
+    try {
+      request.response.headers.contentType = ContentType.json;
+      switch (request.uri.path) {
+        case '/session': request.response.write(jsonEncode({'auth': auth.toJson(), 'pastDate': date}));
+        case '/binding': binding = request.uri.queryParameters['value'];
+        case '/unavailable': unavailable = request.uri.queryParameters['value'] == 'true';
+        case '/refund': refunded = true;
+        case '/evidence':
+          request.response.write(jsonEncode({'storeQueries': queries, 'ledgerRows': await PointEntry.db.count(admin), 'fixture': 'real-parser-fake-store-wire'}));
+        case '/capture':
+          final name = request.uri.queryParameters['name']!;
+          if (!RegExp(r'^paid-[a-z-]+$').hasMatch(name)) throw const FormatException('capture name');
+          final file = File('${Directory.systemTemp.path}/$name.png').openWrite();
+          await file.addStream(request); await file.close();
+        default: request.response.statusCode = 404;
+      }
+    } catch (error, stack) { stderr.writeln('$error\n$stack'); request.response.statusCode = 500; }
+    finally { await request.response.close(); }
+  });
+  await session.close();
+  stdout.writeln('PAID_HARNESS_READY');
+}

@@ -8,7 +8,9 @@ struct WatchPreviewApp: App {
     private var scenario: String { ProcessInfo.processInfo.arguments.dropFirst().first ?? "signedOut" }
     private var snapshot: DisplaySnapshot? {
         if scenario == "signedOut" { return nil }
-        let dog = scenario == "noDog" ? "null" : "{\"dogId\":\"fixture\",\"displayName\":\"미리보기 보리\",\"assetKey\":\"\(scenario == "unsupported" ? "unsupported" : "dog.preview.shih-tzu")\"}"
+        let requestedBreed = ProcessInfo.processInfo.arguments.first { $0.hasPrefix("breed=") }?.dropFirst(6)
+        let assetKey = scenario == "unsupported" ? "dog.unsupported" : "dog.preview.\(requestedBreed.map(String.init) ?? "shih-tzu")"
+        let dog = scenario == "noDog" ? "null" : "{\"dogId\":\"fixture\",\"displayName\":\"미리보기 보리\",\"assetKey\":\"\(assetKey)\"}"
         let steps = scenario == "nullSteps" ? "null" : "{\"date\":\"2026-10-13\",\"timeZone\":\"Asia/Seoul\",\"count\":\(scenario == "zero" ? 0 : 4321),\"observedAt\":\"2026-10-13T01:00:00Z\"}"
         return try? DisplaySnapshot.decode(Data("""
         {"schemaVersion":1,"contextId":"preview","revision":1,"authState":"authenticated","selectedDog":\(dog),"dailySteps":\(steps)}

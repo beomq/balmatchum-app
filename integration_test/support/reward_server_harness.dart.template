@@ -1,0 +1,95 @@
+// Run from the server package with its --packages configuration, never ship.
+import 'dart:convert';
+import 'dart:io';
+
+import 'package:balmatchum_server/src/ads/ad_config.dart';
+import 'package:balmatchum_server/src/ads/ad_setup.dart';
+import 'package:balmatchum_server/src/ads/ad_verifier.dart';
+import 'package:balmatchum_server/src/auth/auth_setup.dart';
+import 'package:balmatchum_server/src/auth/dev_test_user.dart';
+import 'package:balmatchum_server/src/generated/protocol.dart';
+import 'package:balmatchum_server/src/generated/serverpod.dart';
+import 'package:balmatchum_server/src/product/product_endpoint.dart';
+import 'package:balmatchum_server/src/product/product_service.dart';
+import 'package:clock/clock.dart';
+import 'package:serverpod_auth_core_server/serverpod_auth_core_server.dart';
+
+import 'ad_test_keys.dart';
+
+Future<void> main() async {
+  final directory = await Directory.systemTemp.createTemp('reward-');
+  final pod = Serverpod(['--mode=test', '--apply-migrations'],
+    configOverride: (c) => c.copyWith(
+      runMode: 'development',
+      apiServer: ServerConfig(port: 18090, publicHost: 'localhost',
+        publicPort: 18090, publicScheme: 'http'),
+      database: PostgresDatabaseConfig(host: '127.0.0.1', port: 0,
+        user: 'postgres', password: 'local-disposable-test-only',
+        dataPath: '${directory.path}/pgdata', name: devTestDatabaseName),
+    ),
+  );
+  configureAuth(pod, sessionPepper: 'public-disposable-reward-harness');
+  await pod.start(runInGuardedZone: false);
+  final admin = await pod.createSession(enableLogging: false);
+  final auth = await bootstrapDevTestUser(admin);
+  final session = await pod.createSession(enableLogging: false);
+  session.updateAuthenticated(await AuthServices.instance.authenticationHandler(session, auth.token));
+  final now = DateTime.now().toUtc();
+  final past = now.subtract(const Duration(days: 10));
+  final date = localDate(past);
+  final endpoint = ProductEndpoint();
+  await endpoint.registerStepStream(session, 'reward-seed-stream', 0);
+  Future<void> seed(DateTime at, int revision, int steps) => withClock(
+    Clock.fixed(at), () async {
+      await endpoint.submitSteps(session, DailyStepInput(
+        date: date, streamGeneration: 1, revision: revision,
+        windowStart: dayStart(date),
+        windowEnd: dayStart(date).add(const Duration(days: 1)),
+        observedAt: at, availability: 'confirmed', total: steps,
+      ));
+    },
+  );
+  await seed(past, 1, 7000);
+  await seed(now, 2, 9000);
+  final ssv = (await configureAdMob(pod,
+    config: AdConfig({'dailyReward': const AdPlacement('local-reward-unit', 'point', '1')}, 0),
+    verifier: AdVerifier(loadKeys: () async => adKeys()),
+  ))!;
+  final seam = await HttpServer.bind(InternetAddress.loopbackIPv4, 18091);
+  seam.listen((request) async {
+    try {
+      if (request.uri.path == '/session') {
+        request.response.headers.contentType = ContentType.json;
+        request.response.write(jsonEncode({'auth': auth.toJson(), 'pastDate': date}));
+      } else if (request.uri.path == '/ssv') {
+        final nonce = request.uri.queryParameters['nonce']!;
+        final owner = request.uri.queryParameters['owner']!;
+        final query = signAd('ad_network=123&ad_unit=local-reward-unit&custom_data=$nonce'
+          '&reward_amount=1&reward_item=point&timestamp=${DateTime.now().millisecondsSinceEpoch}'
+          '&transaction_id=${utf8.encode(nonce).map((v) => v.toRadixString(16).padLeft(2, '0')).join()}&user_id=$owner');
+        final socket = await Socket.connect('127.0.0.1', ssv.port);
+        final response = socket.cast<List<int>>().transform(utf8.decoder).join();
+        socket.write('GET /admob/ssv?$query HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n');
+        await socket.flush();
+        final text = await response.timeout(const Duration(seconds: 10));
+        socket.destroy();
+        request.response.statusCode = int.parse(text.split(' ')[1]);
+      } else if (request.method == 'POST' && request.uri.path == '/capture') {
+        final name = request.uri.queryParameters['name']!;
+        if (!RegExp(r'^reward-[a-z-]+$').hasMatch(name)) throw const FormatException('capture name');
+        final file = File('${Directory.systemTemp.path}/$name.png').openWrite();
+        await file.addStream(request);
+        await file.close();
+      } else {
+        request.response.statusCode = 404;
+      }
+    } catch (_) {
+      request.response.statusCode = 500;
+    } finally {
+      await request.response.close();
+    }
+  });
+  await session.close();
+  await admin.close();
+  stdout.writeln('REWARD_HARNESS_READY');
+}

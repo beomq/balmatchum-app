@@ -6,6 +6,9 @@ import 'package:social_signin_kit/social_signin_kit.dart';
 import '../daily_activity/daily_steps_controller.dart';
 import '../daily_activity/product_controller.dart';
 import '../daily_activity/record_mapping.dart';
+import '../daily_activity/reward_panel.dart';
+import '../daily_activity/product_repository.dart';
+import '../auth/kakao_auth_service.dart';
 import '../watch_sync/watch_bridge.dart';
 import 'domain/first_meeting.dart';
 import 'meeting_theme.dart';
@@ -19,7 +22,10 @@ class FirstMeetingScreen extends StatefulWidget {
     this.onOpenRecords,
     this.onOpenQuiz,
     this.onOpenWardrobe,
+    this.onOpenBilling,
     this.product,
+    this.onLogout,
+    this.onDeleteAccount,
     super.key,
   });
   final FirstMeetingController controller;
@@ -28,13 +34,17 @@ class FirstMeetingScreen extends StatefulWidget {
   final VoidCallback? onOpenRecords;
   final VoidCallback? onOpenQuiz;
   final VoidCallback? onOpenWardrobe;
+  final VoidCallback? onOpenBilling;
   final ProductController? product;
+  final Future<LogoutOutcome> Function()? onLogout;
+  final Future<void> Function()? onDeleteAccount;
   @override
   State<FirstMeetingScreen> createState() => _FirstMeetingScreenState();
 }
 
 class _FirstMeetingScreenState extends State<FirstMeetingScreen> {
   FirstMeetingController? controller;
+  final deletingAccount = ValueNotifier(false);
   String? loadError;
   final name = TextEditingController();
   final goal = TextEditingController();
@@ -45,6 +55,7 @@ class _FirstMeetingScreenState extends State<FirstMeetingScreen> {
     super.initState();
     widget.dailySteps?.addListener(changed);
     widget.product?.addListener(changed);
+    if (widget.product?.account != null) unawaited(widget.product!.connect());
     unawaited(load());
   }
 
@@ -65,6 +76,159 @@ class _FirstMeetingScreenState extends State<FirstMeetingScreen> {
     }
   }
 
+  Future<void> settings() async {
+    final c = controller!;
+    final settingsName = TextEditingController(text: c.state.name);
+    final settingsGoal = TextEditingController(text: '${c.state.goal}');
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      builder: (context) => ListenableBuilder(
+        listenable: Listenable.merge([c, deletingAccount]),
+        builder: (context, _) => AbsorbPointer(
+          absorbing: deletingAccount.value,
+          child: SafeArea(
+            child: SingleChildScrollView(
+              padding: EdgeInsets.fromLTRB(
+                24,
+                24,
+                24,
+                24 + MediaQuery.viewInsetsOf(context).bottom,
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  const MeetingHeading('설정', '이름과 하루 목표를 변경할 수 있어요.'),
+                  if (deletingAccount.value) const LinearProgressIndicator(),
+                  TextField(
+                    key: const ValueKey('settings_name'),
+                    controller: settingsName,
+                    enabled: !c.isBusy && !c.hasPendingMutation,
+                    decoration: const InputDecoration(labelText: '강아지 이름'),
+                  ),
+                  const SizedBox(height: 12),
+                  FilledButton(
+                    onPressed: c.isBusy || c.hasPendingMutation
+                        ? null
+                        : () => c.renameDog(settingsName.text),
+                    child: const Text('이름 저장'),
+                  ),
+                  const SizedBox(height: 20),
+                  TextField(
+                    key: const ValueKey('settings_goal'),
+                    controller: settingsGoal,
+                    enabled: !c.isBusy && !c.hasPendingMutation,
+                    keyboardType: TextInputType.number,
+                    decoration: const InputDecoration(labelText: '하루 걸음 목표'),
+                  ),
+                  const SizedBox(height: 12),
+                  FilledButton(
+                    onPressed: c.isBusy || c.hasPendingMutation
+                        ? null
+                        : () => c.changeGoal(settingsGoal.text),
+                    child: const Text('목표 저장'),
+                  ),
+                  if (c.error != null || c.profileError != null)
+                    Text(
+                      c.profileError == 'staleRevision'
+                          ? '다른 기기에서 변경되었어요. 최신 정보를 확인하고 다시 저장해 주세요.'
+                          : '저장하지 못했어요. 입력 또는 연결 상태를 확인해 주세요.',
+                    ),
+                  if (c.hasPendingMutation)
+                    OutlinedButton(
+                      onPressed: c.isBusy ? null : c.retryMutation,
+                      child: const Text('저장 결과 확인 · 재시도'),
+                    ),
+                  Text('현재 이름 ${c.state.name} · 목표 ${c.state.goal}걸음'),
+                  const SizedBox(height: 20),
+                  if (widget.onOpenBilling != null) ...[
+                    OutlinedButton(
+                      key: const ValueKey('settings_billing'),
+                      onPressed: c.isBusy
+                          ? null
+                          : () {
+                              Navigator.pop(context);
+                              widget.onOpenBilling!();
+                            },
+                      child: const Text('구매 및 복원'),
+                    ),
+                    const SizedBox(height: 12),
+                  ],
+                  OutlinedButton(
+                    onPressed: c.isBusy || widget.onLogout == null
+                        ? null
+                        : () async {
+                            final result = await widget.onLogout!();
+                            if (context.mounted) {
+                              if (result.session.localCleared) {
+                                Navigator.pop(context);
+                              } else {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(
+                                    content: Text('로그아웃하지 못했어요. 다시 시도해 주세요.'),
+                                  ),
+                                );
+                              }
+                            }
+                          },
+                    child: const Text('로그아웃'),
+                  ),
+                  if (widget.onDeleteAccount != null)
+                    TextButton(
+                      onPressed: c.isBusy ? null : deleteAccount,
+                      child: const Text('회원 탈퇴'),
+                    ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+    // Modal route transitions may still reference the fields until unmounted.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      settingsName.dispose();
+      settingsGoal.dispose();
+    });
+  }
+
+  Future<void> deleteAccount() async {
+    if (deletingAccount.value) return;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('계정을 삭제할까요?'),
+        content: const Text(
+          '친구, 산책 기록과 보유 포인트가 삭제되며 복구할 수 없어요. 소셜 계정 자체는 삭제되지 않아요.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('취소'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('계정 영구 삭제'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+    deletingAccount.value = true;
+    try {
+      await widget.onDeleteAccount!();
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('탈퇴 처리를 완료하지 못했어요. 다시 시도해 주세요.')),
+        );
+      }
+    } finally {
+      if (mounted) deletingAccount.value = false;
+    }
+  }
+
   void changed() {
     if (mounted) setState(() {});
   }
@@ -74,6 +238,7 @@ class _FirstMeetingScreenState extends State<FirstMeetingScreen> {
     widget.dailySteps?.removeListener(changed);
     widget.product?.removeListener(changed);
     controller?.removeListener(changed);
+    deletingAccount.dispose();
     name.dispose();
     goal.dispose();
     super.dispose();
@@ -125,52 +290,30 @@ class _FirstMeetingScreenState extends State<FirstMeetingScreen> {
       unavailable('포인트 받기');
       return;
     }
-    var claiming = false;
+    if (day.date != ProductRepository.dateKey(ProductRepository.today)) {
+      await product.connect();
+      if (!mounted) return;
+      if (product.today?.date !=
+          ProductRepository.dateKey(ProductRepository.today)) {
+        unavailable('오늘 포인트 조회');
+        return;
+      }
+    }
     await showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
-      builder: (context) => StatefulBuilder(
-        builder: (context, setSheetState) {
-          return SafeArea(
-            child: Padding(
-              padding: const EdgeInsets.all(24),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  const Text('오늘 포인트'),
-                  if (day.fixtureLabel != null) const Text('개발 검증용'),
-                  Text('${day.claimablePoints ?? '—'} P'),
-                  FilledButton(
-                    onPressed:
-                        claiming ||
-                            product.busy ||
-                            (day.claimablePoints ?? 0) <= 0
-                        ? null
-                        : () async {
-                            setSheetState(() => claiming = true);
-                            try {
-                              await product.claim(recordDay(day));
-                              if (context.mounted) Navigator.pop(context);
-                            } on Exception {
-                              if (context.mounted) {
-                                setSheetState(() => claiming = false);
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  const SnackBar(
-                                    content: Text(
-                                      '수령 결과를 확인하지 못했어요. 다시 조회해 주세요.',
-                                    ),
-                                  ),
-                                );
-                              }
-                            }
-                          },
-                    child: const Text('기본 포인트 받기'),
-                  ),
-                ],
-              ),
-            ),
-          );
-        },
+      builder: (context) => SafeArea(
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              const Text('오늘 포인트'),
+              RewardPanel(controller: product, day: recordDay(product.today!)),
+            ],
+          ),
+        ),
       ),
     );
   }
@@ -209,6 +352,24 @@ class _FirstMeetingScreenState extends State<FirstMeetingScreen> {
               ? null
               : c.back,
           children: [
+            if (c.hasPendingMutation)
+              OutlinedButton(
+                onPressed: c.isBusy ? null : c.retryMutation,
+                child: const Text('저장 결과 확인 · 재시도'),
+              ),
+            if (c.profileError != null) ...[
+              MeetingNotice(
+                '서버 프로필 확인',
+                c.profileError == 'staleRevision'
+                    ? '다른 기기에서 변경되었어요. 최신 정보를 확인하고 다시 시도해 주세요.'
+                    : '프로필을 확인하지 못했어요. 다시 시도해 주세요.',
+              ),
+              if (!c.isRestored)
+                OutlinedButton(
+                  onPressed: c.isBusy ? null : c.initialize,
+                  child: const Text('프로필 다시 읽기'),
+                ),
+            ],
             if (c.error != null) ...[
               MeetingNotice('저장 상태를 확인해 주세요', switch (c.error!) {
                 FirstMeetingError.corruption =>
@@ -218,7 +379,8 @@ class _FirstMeetingScreenState extends State<FirstMeetingScreen> {
                 FirstMeetingError.validation => '이름·성별과 양의 정수 목표를 확인해 주세요.',
               }),
               const SizedBox(height: 16),
-              if (c.error == FirstMeetingError.corruption)
+              if (c.error == FirstMeetingError.corruption &&
+                  c.profileRepository == null)
                 OutlinedButton(onPressed: reset, child: const Text('체험 초기화')),
               if (c.error == FirstMeetingError.storage && !c.isRestored)
                 OutlinedButton(
@@ -243,7 +405,7 @@ class _FirstMeetingScreenState extends State<FirstMeetingScreen> {
   List<Widget> screen(FirstMeetingController c) {
     final s = c.state;
     final catalogPage = s.catalogPage;
-    final enabled = !c.isBusy;
+    final enabled = !c.isBusy && !c.hasPendingMutation;
     switch (s.step) {
       case FirstMeetingStep.login:
         return [
@@ -595,8 +757,8 @@ class _FirstMeetingScreenState extends State<FirstMeetingScreen> {
                   ),
                 ),
                 IconButton(
-                  onPressed: reset,
-                  tooltip: 'Dev 체험 초기화',
+                  onPressed: c.profileRepository == null ? reset : settings,
+                  tooltip: c.profileRepository == null ? 'Dev 체험 초기화' : '설정',
                   icon: Image.asset(
                     'assets/first_meeting/icons/settings.png',
                     width: 32,
@@ -713,12 +875,19 @@ class _FirstMeetingScreenState extends State<FirstMeetingScreen> {
                           ? product.sync
                           : product.connect,
                       child: Text(
-                        product.connected ? '서버 동기화' : '개발 테스트 사용자 연결',
+                        product.connected
+                            ? '서버 동기화'
+                            : product.account == null
+                            ? '개발 테스트 사용자 연결'
+                            : '서버 다시 연결',
                       ),
                     ),
                     if (product.error != null) Text(product.error!),
-                    if (product.store != null)
-                      Text('${product.store!.balance} P · 개발 검증용'),
+                    if (product.wallet case final wallet?)
+                      Text(
+                        '${wallet.balance} P${wallet.fixtureLabel == null ? '' : ' · 개발 검증용'}',
+                        key: const ValueKey('reward_wallet'),
+                      ),
                   ],
                   const SizedBox(height: 12),
                   LayoutBuilder(
@@ -798,8 +967,8 @@ class _FirstMeetingScreenState extends State<FirstMeetingScreen> {
                   ),
               ],
             ),
-            footer: const Text(
-              'Dev 체험 · 이 기기에 저장',
+            footer: Text(
+              c.profileRepository == null ? 'Dev 체험 · 이 기기에 저장' : '계정에 저장된 친구',
               textAlign: TextAlign.center,
             ),
           ),

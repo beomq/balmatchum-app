@@ -224,6 +224,9 @@
 					97C146ED1CF9000F007C117D = {
 						CreatedOnToolsVersion = 7.3.1;
 						LastSwiftMigration = 1100;
+						SystemCapabilities = {
+							com.apple.InAppPurchase = { enabled = 1; };
+						};
 					};
 				};
 			};
@@ -305,7 +308,7 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
-			shellScript = "/bin/sh \"$FLUTTER_ROOT/packages/flutter_tools/bin/xcode_backend.sh\" build";
+			shellScript = "if ! printf '%s' \"$ADMOB_IOS_APP_ID\" | /usr/bin/grep -Eq '^ca-app-pub-[0-9]{16}~[0-9]{10}$'; then echo 'error: ADMOB_IOS_APP_ID is required by the linked Google Mobile Ads SDK. Supply an external xcconfig; for explicit dev tests use ios/Flutter/AdMobTest.xcconfig.'; exit 1; fi\nif printf '%s' \"$ADMOB_IOS_APP_ID\" | /usr/bin/grep -q '^ca-app-pub-3940256099942544~'; then if [ \"$CONFIGURATION\" != 'Debug-dev' ]; then echo 'error: AdMob sample AppID is allowed only in Debug-dev.'; exit 1; fi; fi\n/bin/sh \"$FLUTTER_ROOT/packages/flutter_tools/bin/xcode_backend.sh\" build";
 		};
 /* End PBXShellScriptBuildPhase section */
 
@@ -436,6 +439,7 @@
 				APP_DISPLAY_NAME = "발맞춤";
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CLANG_ENABLE_MODULES = YES;
+				CODE_SIGN_ENTITLEMENTS = Runner/Runner.entitlements;
 				CURRENT_PROJECT_VERSION = "$(FLUTTER_BUILD_NUMBER)";
 				ENABLE_BITCODE = NO;
 				INFOPLIST_FILE = Runner/Info.plist;
@@ -619,6 +623,7 @@
 				APP_DISPLAY_NAME = "발맞춤";
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CLANG_ENABLE_MODULES = YES;
+				CODE_SIGN_ENTITLEMENTS = Runner/Runner.entitlements;
 				CURRENT_PROJECT_VERSION = "$(FLUTTER_BUILD_NUMBER)";
 				ENABLE_BITCODE = NO;
 				INFOPLIST_FILE = Runner/Info.plist;
@@ -643,6 +648,7 @@
 				APP_DISPLAY_NAME = "발맞춤";
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CLANG_ENABLE_MODULES = YES;
+				CODE_SIGN_ENTITLEMENTS = Runner/Runner.entitlements;
 				CURRENT_PROJECT_VERSION = "$(FLUTTER_BUILD_NUMBER)";
 				ENABLE_BITCODE = NO;
 				INFOPLIST_FILE = Runner/Info.plist;

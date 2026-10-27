@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/services.dart';
 
 import '../auth/kakao_auth_service.dart';
+import '../first_meeting/domain/first_meeting.dart';
 import 'watch_bridge.dart';
 import 'watch_contract.dart';
 import 'watch_sync_server.dart';
@@ -20,6 +21,7 @@ class WatchSyncService {
   String? _account;
   WatchContext? _context;
   JsonObject? _steps;
+  JsonObject? _dog;
   bool _changingAuthentication = false;
   bool _disposed = false;
   String? lastError;
@@ -55,6 +57,47 @@ class WatchSyncService {
     _account = null;
     _context = null;
     _steps = null;
+    _dog = null;
+  }
+
+  /// Observe server-confirmed profiles only; this never establishes a session
+  /// or starts an upload. The returned cleanup belongs to the provider lifetime.
+  void Function() observeProfile(
+    String account,
+    FirstMeetingController controller,
+  ) {
+    final epoch = _epoch;
+    var attached = true;
+    int? revision;
+    void changed() {
+      if (!attached || !_current(epoch, account)) return;
+      final profile = controller.profile;
+      if (profile == null ||
+          (revision != null && profile.revision <= revision!)) {
+        return;
+      }
+      revision = profile.revision;
+      final dog = <String, Object?>{
+        // The server contract has one profile per owner, not a dog UUID.
+        'dogId': 'owner:$account',
+        'displayName': profile.name,
+        'assetKey': watchDogAssetKey(profile.breedId),
+      };
+      _background(
+        _enqueue(() async {
+          if (!attached || !_current(epoch, account)) return;
+          _dog = dog;
+          await _publish(epoch, account);
+        }),
+      );
+    }
+
+    controller.addListener(changed);
+    changed();
+    return () {
+      attached = false;
+      controller.removeListener(changed);
+    };
   }
 
   bool _current(int epoch, String account) =>
@@ -145,7 +188,7 @@ class WatchSyncService {
         'contextId': context.contextId,
         'revision': revision,
         'authState': 'authenticated',
-        'selectedDog': null,
+        'selectedDog': _dog,
         'dailySteps': _steps,
       }),
     );
@@ -259,3 +302,38 @@ class WatchSyncService {
     await _events?.cancel();
   }
 }
+
+/// Only approved bundled Watch sprites resolve; unknown IDs remain unsupported.
+String watchDogAssetKey(String breedId) => switch (breedId) {
+  'pekingese' => 'dog.preview.pekingese',
+  'bulldog' => 'dog.preview.bulldog',
+  'shih-tzu' => 'dog.preview.shih-tzu',
+  'pug' => 'dog.preview.pug',
+  'maltese' => 'dog.preview.maltese',
+  'chihuahua' => 'dog.preview.chihuahua',
+  'french-bulldog' => 'dog.preview.french-bulldog',
+  'dachshund' => 'dog.preview.dachshund',
+  'miniature-schnauzer' => 'dog.preview.miniature-schnauzer',
+  'bichon-frise' => 'dog.preview.bichon-frise',
+  'yorkshire-terrier' => 'dog.preview.yorkshire-terrier',
+  'west-highland-white-terrier' => 'dog.preview.west-highland-white-terrier',
+  'norwich-terrier' => 'dog.preview.norwich-terrier',
+  'jindo' => 'dog.preview.jindo',
+  'shiba-inu' => 'dog.preview.shiba-inu',
+  'alaskan-malamute' => 'dog.preview.alaskan-malamute',
+  'german-shepherd' => 'dog.preview.german-shepherd',
+  'pembroke-welsh-corgi' => 'dog.preview.pembroke-welsh-corgi',
+  'pomeranian' => 'dog.preview.pomeranian',
+  'miniature-pinscher' => 'dog.preview.miniature-pinscher',
+  'boston-terrier' => 'dog.preview.boston-terrier',
+  'siberian-husky' => 'dog.preview.siberian-husky',
+  'dalmatian' => 'dog.preview.dalmatian',
+  'beagle' => 'dog.preview.beagle',
+  'golden-retriever' => 'dog.preview.golden-retriever',
+  'labrador-retriever' => 'dog.preview.labrador-retriever',
+  'border-collie' => 'dog.preview.border-collie',
+  'samoyed' => 'dog.preview.samoyed',
+  'toy-poodle' => 'dog.preview.toy-poodle',
+  'cocker-spaniel' => 'dog.preview.cocker-spaniel',
+  _ => 'dog.unsupported',
+};

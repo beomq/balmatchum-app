@@ -1,0 +1,3 @@
+// Explicit local QA only: opt in using XCODE_XCCONFIG_FILE and dev debug flavor.
+// Never include this from Debug.xcconfig/Release.xcconfig or archive configs.
+ADMOB_IOS_APP_ID = ca-app-pub-3940256099942544~1458002511

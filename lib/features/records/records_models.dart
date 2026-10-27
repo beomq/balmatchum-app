@@ -32,6 +32,10 @@ enum DayRewardStatus {
   /// `expired`: the free claim window passed.
   expired,
 
+  adRequired,
+  futureDate,
+  legacyPolicyExcluded,
+
   /// `canceled`: the day was deleted.
   canceled,
 
@@ -72,6 +76,9 @@ class RecordDay {
     required this.availability,
     required this.rewardStatus,
     this.claimablePoints,
+    this.adClaimablePoints,
+    this.policyVersion,
+    this.gracePolicyStatus,
     this.grantedPoints = 0,
     this.fixtureLabel,
     this.routes = const [],
@@ -85,6 +92,9 @@ class RecordDay {
   final StepAvailability availability;
   final DayRewardStatus rewardStatus;
   final int? claimablePoints;
+  final int? adClaimablePoints;
+  final String? policyVersion;
+  final String? gracePolicyStatus;
   final int grantedPoints;
 
   /// Non-null when amounts come from development fixtures.

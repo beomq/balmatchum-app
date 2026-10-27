@@ -4,19 +4,29 @@ import 'package:path_provider/path_provider.dart';
 
 import '../domain/first_meeting_state.dart';
 
-/// Dev-only local data. Never shares auth, account or server namespaces.
+/// Account drafts and the separate dev experience use distinct file namespaces.
 class FirstMeetingFileStorage implements FirstMeetingStorage {
-  FirstMeetingFileStorage({required this.directory});
+  FirstMeetingFileStorage({required this.directory, String? accountId})
+    : _fileName = accountId == null
+          ? fileName
+          : 'first_meeting_${Uri.encodeComponent(accountId)}_v1.json';
 
   factory FirstMeetingFileStorage.device() =>
       FirstMeetingFileStorage(directory: getApplicationSupportDirectory);
 
+  factory FirstMeetingFileStorage.forAccount(String accountId) =>
+      FirstMeetingFileStorage(
+        directory: getApplicationSupportDirectory,
+        accountId: accountId,
+      );
+
   static const fileName = 'dev_first_meeting_v1.json';
+  final String _fileName;
   final Future<Directory> Function() directory;
 
   Future<File> _file() async {
     final resolvedDirectory = await directory();
-    return File('${resolvedDirectory.path}/$fileName');
+    return File('${resolvedDirectory.path}/$_fileName');
   }
 
   @override
