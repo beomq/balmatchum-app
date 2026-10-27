@@ -127,7 +127,11 @@ class GoogleAdsSdk implements AdsSdk {
     final loaded = Completer<RewardedPlacement>();
     await RewardedAd.load(
       adUnitId: adUnit,
-      request: const AdRequest(),
+      // iOS ships without ATT, so it never asks for personalized ads.
+      // Android keeps the plain request and follows the UMP consent result.
+      request: defaultTargetPlatform == TargetPlatform.iOS
+          ? const AdRequest(nonPersonalizedAds: true)
+          : const AdRequest(),
       rewardedAdLoadCallback: RewardedAdLoadCallback(
         onAdLoaded: (ad) => loaded.complete(_GoogleRewardedPlacement(ad)),
         onAdFailedToLoad: (error) => loaded.completeError(error),

@@ -111,6 +111,30 @@ void main() {
     expect(calls, isEmpty);
   });
 
+  Future<AdRequest> requestSentOn(TargetPlatform platform) async {
+    debugDefaultTargetPlatformOverride = platform;
+    final sent = Completer<AdRequest>();
+    messenger.setMockMethodCallHandler(ads, (call) async {
+      if (call.method == 'loadRewardedAd') {
+        sent.complete((call.arguments as Map)['request'] as AdRequest);
+      }
+      return null;
+    });
+    unawaited(GoogleAdsSdk().load('unit-returned-by-server'));
+    return sent.future.timeout(const Duration(seconds: 5));
+  }
+
+  test('iOS rewarded request is non-personalized without ATT', () async {
+    expect(
+      await requestSentOn(TargetPlatform.iOS),
+      const AdRequest(nonPersonalizedAds: true),
+    );
+  });
+
+  test('Android rewarded request is unchanged so UMP decides', () async {
+    expect(await requestSentOn(TargetPlatform.android), const AdRequest());
+  });
+
   test(
     'real rewarded SDK sends exact unit, SSV before show, dispose once',
     () async {
