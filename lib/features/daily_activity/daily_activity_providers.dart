@@ -1,6 +1,7 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../app/dependencies.dart';
+import '../billing/billing_providers.dart';
 import 'product_controller.dart';
 import 'product_repository.dart';
 import '../watch_sync/watch_bridge.dart';
@@ -19,6 +20,24 @@ final productControllerProvider = Provider<ProductController>((ref) {
     ProductRepository(ref.watch(clientProvider)),
     ref.watch(dailyStepsControllerProvider),
     ref.watch(watchSyncServiceProvider),
+  );
+  ref.onDispose(controller.dispose);
+  return controller;
+});
+
+final authenticatedProductControllerProvider = Provider<ProductController?>((
+  ref,
+) {
+  final account = ref.watch(authenticatedAccountProvider);
+  if (account == null) return null;
+  final client = ref.watch(clientProvider);
+  final billing = ref.watch(billingRepositoryProvider);
+  final controller = ProductController(
+    ProductRepository(client, accountId: account, billing: billing),
+    ref.watch(dailyStepsControllerProvider),
+    ref.watch(watchSyncServiceProvider),
+    account: account,
+    isCurrentAccount: () => billing?.isCurrent ?? false,
   );
   ref.onDispose(controller.dispose);
   return controller;

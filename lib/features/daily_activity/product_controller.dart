@@ -6,27 +6,85 @@ import '../quiz/quiz_screen.dart';
 import '../records/records_models.dart';
 import '../wardrobe/wardrobe_models.dart';
 import '../watch_sync/watch_sync_service.dart';
+import '../watch_sync/watch_bridge.dart';
 import 'daily_steps_controller.dart';
 import 'product_repository.dart';
 import 'record_mapping.dart';
 import 'step_upload.dart';
 
 class ProductController extends ChangeNotifier {
-  ProductController(this.repository, this.steps, this.watch);
+  ProductController(
+    this.repository,
+    this.steps,
+    this.watch, {
+    this.account,
+    this.isCurrentAccount,
+  }) : connected = account != null;
   final ProductRepository repository;
   final DailyStepsController steps;
   final WatchSyncService? watch;
-  bool connected = false;
+  final String? account;
+  final bool Function()? isCurrentAccount;
+  bool _disposed = false;
+  bool get _active => !_disposed && (isCurrentAccount?.call() ?? true);
+  bool connected;
   bool busy = false;
+  bool adBusy = false;
+  bool? premiumActive;
+  bool get hasPendingClaim => _pendingClaim != null;
+  DateTime? pendingClaimDate;
+  Future<api.RewardGrant> Function()? _pendingClaim;
+  String? _pendingClaimKey;
+  bool _claimAmbiguous = false;
+  bool get canClaim => _active && !busy && !adBusy && !hasPendingClaim;
+
+  bool beginAd() {
+    if (!canClaim) return false;
+    adBusy = true;
+    notifyListeners();
+    return true;
+  }
+
+  void endAd() {
+    adBusy = false;
+    notifyListeners();
+  }
+
+  Future<void> checkPremium() => _mutate(() async {
+    premiumActive = null;
+    final entitlement = await repository.entitlement();
+    _checkAccount();
+    premiumActive = entitlement.active;
+  });
   String? error;
   api.DailyRecord? today;
+  api.WalletView? wallet;
+  bool get isActive => _active;
   api.ThemeStore? store;
   api.DailyQuiz? quiz;
   final _requests = <String, String>{};
 
+  void _checkAccount() {
+    if (!_active) throw const FormatException('Account changed');
+  }
+
+  @override
+  void notifyListeners() {
+    if (_active) super.notifyListeners();
+  }
+
+  @override
+  void dispose() {
+    _disposed = true;
+    disconnect();
+    _requests.clear();
+    super.dispose();
+  }
+
   void disconnect() {
     connected = false;
     today = null;
+    wallet = null;
     store = null;
     quiz = null;
   }
@@ -35,17 +93,22 @@ class ProductController extends ChangeNotifier {
       _requests.putIfAbsent(key, () => api.Uuid().v4());
 
   Future<void> connect() async {
-    if (busy) return;
+    if (busy || !_active) return;
     busy = true;
     error = null;
     notifyListeners();
     try {
-      await repository.connectDevelopmentUser();
+      if (account == null) await repository.connectDevelopmentUser();
+      _checkAccount();
       connected = true;
       await refresh();
-    } on Exception {
+    } catch (_) {
       disconnect();
-      error = '개발 서버 연결을 확인해 주세요. 테스트 세션이 필요해요.';
+      if (_active) {
+        error = account == null
+            ? '개발 서버 연결을 확인해 주세요. 테스트 세션이 필요해요.'
+            : '기록을 불러오지 못했어요. 연결 상태를 확인해 주세요.';
+      }
     } finally {
       busy = false;
       notifyListeners();
@@ -53,57 +116,88 @@ class ProductController extends ChangeNotifier {
   }
 
   Future<void> refresh() async {
-    today = await repository.day(ProductRepository.today);
-    store = await repository.themes();
-    quiz = await repository.quiz(ProductRepository.today);
+    _checkAccount();
+    final day = await repository.day(ProductRepository.today);
+    _checkAccount();
+    final balance = await repository.wallet();
+    _checkAccount();
+    if (account == null) {
+      final themes = await repository.themes();
+      _checkAccount();
+      final question = await repository.quiz(ProductRepository.today);
+      _checkAccount();
+      store = themes;
+      quiz = question;
+    }
+    today = day;
+    wallet = balance;
     notifyListeners();
   }
 
   Future<void> refreshAfterSuccess() async {
     try {
       await refresh();
-    } on Exception {
+    } catch (_) {
+      if (!_active) return;
       error = '작업은 완료됐지만 최신 화면을 불러오지 못했어요. 다시 동기화해 주세요.';
       notifyListeners();
     }
   }
 
   Future<void> sync() async {
-    if (busy || !connected) return;
+    if (busy || adBusy || hasPendingClaim || !connected || !_active) return;
     busy = true;
     error = null;
     notifyListeners();
     try {
-      await repository.connectDevelopmentUser();
+      if (account == null) await repository.connectDevelopmentUser();
+      _checkAccount();
       await steps.refresh();
+      _checkAccount();
       final observation = steps.result;
-      if (observation != null) {
+      if (observation != null &&
+          (account == null ||
+              observation.status == DailyStepsStatus.available)) {
         await StepUpload(
           repository.client,
           repository.client.auth.authInfo!.authUserId.toString(),
         ).submit(observation);
       }
+      _checkAccount();
       await watch?.resumeAndSync();
+      _checkAccount();
       await refresh();
-    } on Exception {
+    } catch (_) {
       disconnect();
-      error = '동기화를 완료하지 못했어요. 기기의 기록은 유지돼요.';
+      if (_active) error = '동기화를 완료하지 못했어요. 기기의 기록은 유지돼요.';
     } finally {
       busy = false;
       notifyListeners();
     }
   }
 
-  Future<RecordMonth> loadMonth(DateTime date) async => RecordMonth(
-    month: date,
-    days: (await repository.month(date)).map(recordDay).toList(),
-  );
+  Future<RecordMonth> loadMonth(DateTime date) async {
+    _checkAccount();
+    final days = await repository.month(date);
+    _checkAccount();
+    return RecordMonth(month: date, days: days.map(recordDay).toList());
+  }
 
-  Future<RecordDay> loadDay(DateTime date) async =>
-      recordDay(await repository.day(date));
+  Future<RecordDay> loadDay(DateTime date) async {
+    _checkAccount();
+    final day = await repository.day(date);
+    _checkAccount();
+    return recordDay(day);
+  }
 
-  Future<T> _mutate<T>(Future<T> Function() action) async {
-    if (busy) throw const FormatException('Product operation in progress');
+  Future<T> _mutate<T>(
+    Future<T> Function() action, {
+    bool replay = false,
+  }) async {
+    _checkAccount();
+    if (busy || adBusy || (hasPendingClaim && !replay)) {
+      throw const FormatException('Product operation in progress');
+    }
     busy = true;
     notifyListeners();
     try {
@@ -117,25 +211,84 @@ class ProductController extends ChangeNotifier {
   Future<RecordDay> deleteDay(DateTime date) => _mutate(() async {
     final key = 'delete:${ProductRepository.dateKey(date)}';
     final result = await repository.deleteDay(date, request(key));
+    _checkAccount();
     _requests.remove(key);
     await refreshAfterSuccess();
+    _checkAccount();
     return recordDay(result);
   });
 
-  Future<int> claim(RecordDay day) => _mutate(() async {
+  Future<int> claim(RecordDay day) => _claim(day);
+
+  Future<int> claimWithAd(RecordDay day, String intentId) =>
+      _claim(day, intentId: intentId);
+
+  Future<int> claimWithPremium(RecordDay day) => _claim(day, premium: true);
+
+  Future<int> _claim(RecordDay day, {String? intentId, bool premium = false}) {
+    _checkAccount();
+    if (busy || adBusy) {
+      throw const FormatException('Product operation in progress');
+    }
     final date = ProductRepository.dateKey(day.date);
-    final key = 'claim:$date:${day.revision}';
-    final grant = await repository.client.product.claimDay(
-      date,
-      request(key),
-      day.revision,
-    );
-    _requests.remove(key);
+    final key = 'claim:$date:${day.revision}:$intentId:$premium';
+    if (hasPendingClaim) {
+      if (_pendingClaimKey != key) {
+        throw const FormatException('Replay the original claim first');
+      }
+      return retryClaim();
+    }
+    if (premium && premiumActive != true) {
+      throw const FormatException('Fresh entitlement required');
+    }
+    final requestId = request(key);
+    _pendingClaimKey = key;
+    pendingClaimDate = day.date;
+    _pendingClaim = premium
+        ? () => repository.claimWithPremium(date, requestId, day.revision)
+        : intentId == null
+        ? () => repository.claim(date, requestId, day.revision)
+        : () => repository.claimWithAd(date, requestId, day.revision, intentId);
+    return retryClaim();
+  }
+
+  void _clearClaim() {
+    _requests.remove(_pendingClaimKey);
+    _pendingClaimKey = null;
+    _pendingClaim = null;
+    pendingClaimDate = null;
+    _claimAmbiguous = false;
+  }
+
+  Future<int> retryClaim() => _mutate(() async {
+    final api.RewardGrant grant;
+    try {
+      grant = await _pendingClaim!();
+    } on api.ProductException {
+      _checkAccount();
+      _clearClaim();
+      premiumActive = null;
+      rethrow;
+    } on api.BillingException {
+      // Retain the original payload even when a later store observation fails.
+      // A previous ambiguous attempt may already have committed successfully.
+      premiumActive = null;
+      if (!_claimAmbiguous) _clearClaim();
+      rethrow;
+    } catch (_) {
+      _claimAmbiguous = true;
+      rethrow;
+    }
+    _checkAccount();
+    _clearClaim();
+    premiumActive = null;
     today = null;
+    wallet = null;
     notifyListeners();
     await refreshAfterSuccess();
+    _checkAccount();
     return grant.amount;
-  });
+  }, replay: true);
 
   QuizView quizView(api.DailyQuiz value) => QuizView(
     date: value.date,
@@ -149,10 +302,18 @@ class ProductController extends ChangeNotifier {
     fixtureLabel: value.fixtureLabel,
   );
 
-  Future<QuizView> loadQuiz() async =>
-      quizView(await repository.quiz(ProductRepository.today));
+  void _requireFixture() {
+    _checkAccount();
+    if (account != null) throw const FormatException('Fixture unavailable');
+  }
+
+  Future<QuizView> loadQuiz() async {
+    _requireFixture();
+    return quizView(await repository.quiz(ProductRepository.today));
+  }
 
   Future<QuizView> answer(QuizView question, int index) => _mutate(() async {
+    _requireFixture();
     final key = 'quiz:${question.date}:$index';
     quiz = await repository.answer(question.date, index, request(key));
     _requests.remove(key);
@@ -179,13 +340,16 @@ class ProductController extends ChangeNotifier {
     ],
   );
 
-  Future<WardrobeSnapshot> loadWardrobe() async =>
-      wardrobe(await repository.themes());
+  Future<WardrobeSnapshot> loadWardrobe() async {
+    _requireFixture();
+    return wardrobe(await repository.themes());
+  }
 
   Future<WardrobeSnapshot> themeAction(
     WardrobeTheme theme, {
     required bool equip,
   }) => _mutate(() async {
+    _requireFixture();
     final key = '${equip ? 'equip' : 'buy'}:${theme.id}';
     try {
       final confirmed = equip
