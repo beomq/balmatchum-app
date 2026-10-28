@@ -119,9 +119,8 @@ class MeetingPage extends StatelessWidget {
               ? 24.0
               : 32.0;
           return SingleChildScrollView(
-            key: PageStorageKey(
-              onBack == null ? 'meeting_root_scroll' : 'meeting_scroll',
-            ),
+            // Busy callbacks must not replace the focused name field subtree.
+            key: PageStorageKey(key ?? 'meeting_root_scroll'),
             padding: EdgeInsets.fromLTRB(padding, 16, padding, 24),
             child: MediaQuery(
               data: MediaQuery.of(context).copyWith(size: constraints.biggest),
