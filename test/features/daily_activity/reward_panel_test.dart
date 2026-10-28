@@ -4,6 +4,7 @@ import 'dart:ui' as ui;
 
 import 'package:balmatchum_app/features/ads/ads_controller.dart';
 import 'package:balmatchum_app/features/ads/ads_sdk.dart';
+import 'package:balmatchum_app/features/ads/ads_sheet.dart';
 import 'package:balmatchum_app/features/daily_activity/daily_steps_controller.dart';
 import 'package:balmatchum_app/features/daily_activity/product_controller.dart';
 import 'package:balmatchum_app/features/daily_activity/record_mapping.dart';
@@ -18,6 +19,7 @@ import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+import '../ads/ads_fakes.dart' show FakeAdsSdk;
 import 'product_controller_test.dart';
 
 class RewardRepository extends AccountRepository {
@@ -117,6 +119,85 @@ class FailingReload extends RewardRepository {
     final granted = await super.claim(date, requestId, revision);
     failDays = true;
     return granted;
+  }
+}
+
+/// Echoes the requested target like the server. [status] is what the SSV
+/// callback has made of the intent so far.
+class EchoAdsServer implements AdsServer {
+  EchoAdsServer(this.events);
+  final List<String> events;
+  String status = 'pending';
+  String date = '';
+  int revision = 0;
+  @override
+  bool isCurrent = true;
+  @override
+  void close() {}
+  AdIntent get intent => AdIntent(
+    id: 'intent-1',
+    purpose: 'dailyReward',
+    targetDate: date,
+    targetRevision: revision,
+    adUnit: 'unit',
+    userId: 'A',
+    customData: 'intent-1',
+    status: status,
+    createdAt: DateTime.utc(2026),
+    eventExpiresAt: DateTime.utc(2027),
+    acceptUntil: DateTime.utc(2027),
+  );
+  @override
+  Future<AdIntent> create(String purpose, String date, int revision) async {
+    events.add('create');
+    this.date = date;
+    this.revision = revision;
+    return intent;
+  }
+
+  @override
+  Future<AdIntent> get(String id) async {
+    events.add('get');
+    return intent;
+  }
+}
+
+/// Keeps each request's answer like the server's request ledger: the same
+/// request id returns the kept grant and never grants again.
+class LedgerRepository extends RewardRepository {
+  final answers = <String, RewardGrant>{};
+  int grants = 0;
+
+  /// The next grant commits, then its answer is lost on the way back.
+  bool loseNextAnswer = false;
+
+  /// Holds every answer until completed.
+  Completer<void>? hold;
+  @override
+  Future<RewardGrant> claimWithAd(
+    String date,
+    String requestId,
+    int revision,
+    String intentId,
+  ) async {
+    ids.add(requestId);
+    intents.add(intentId);
+    if (hold case final gate?) await gate.future;
+    if (answers[requestId] case final kept?) return kept;
+    grants++;
+    current = current.copyWith(
+      revision: revision + 1,
+      rewardStatus: 'settled',
+      claimablePoints: 0,
+      adClaimablePoints: 0,
+      grantedPoints: current.grantedPoints + 140,
+    );
+    final answer = answers[requestId] = grant(140);
+    if (loseNextAnswer) {
+      loseNextAnswer = false;
+      throw const SocketException('lost response');
+    }
+    return answer;
   }
 }
 
@@ -223,7 +304,7 @@ void main() {
   );
 
   testWidgets(
-    'partial free leaves expired units, verified close requires explicit ad claim',
+    'partial free leaves expired units, a verified ad needs no second tap',
     (tester) async {
       final ads = AdsController(server: TestAdsServer(), sdk: ReadySdk());
       await mount(tester, ads: () async => ads);
@@ -232,22 +313,156 @@ void main() {
       expect(find.byKey(const ValueKey('reward_free_claim')), findsNothing);
       expect(find.byKey(const ValueKey('reward_watch_ad')), findsOneWidget);
       expect(repository.current.rewardStatus, 'adRequired');
+      // Owner decision ⑤: the ad button is the one tap. The server's
+      // verification closes the ad sheet and claims with it.
       await tester.tap(find.byKey(const ValueKey('reward_watch_ad')));
       await tester.pumpAndSettle();
-      await tester.tap(find.byKey(const ValueKey('ads_start')));
-      await tester.pumpAndSettle();
-      expect(ads.status, AdsStatus.verified);
-      expect(repository.intents, isEmpty);
-      await tester.tap(find.byKey(const ValueKey('ads_close')));
-      await tester.pumpAndSettle();
-      expect(repository.intents, isEmpty);
-      await tester.tap(find.byKey(const ValueKey('reward_ad_claim')));
-      await tester.pumpAndSettle();
+      expect(find.byType(AdsSheet), findsNothing);
       expect(repository.intents, ['verified-id']);
+      expect(repository.ids, hasLength(2));
       expect(repository.current.rewardStatus, 'settled');
+      expect(find.byKey(const ValueKey('reward_ad_claim')), findsNothing);
       expect(find.byKey(const ValueKey('reward_watch_ad')), findsNothing);
     },
   );
+
+  /// Swaps in a server ledger that remembers each request's answer.
+  LedgerRepository useLedger() {
+    final ledger = LedgerRepository();
+    product.dispose();
+    repository.client.close();
+    repository = ledger;
+    product = ProductController(ledger, steps, null, account: 'A');
+    return ledger;
+  }
+
+  /// A day past its free window, with an ad the test plays by hand.
+  Future<(EchoAdsServer, FakeAdsSdk, List<String>)> adDay(
+    WidgetTester tester,
+  ) async {
+    repository.current = repository.current.copyWith(
+      rewardStatus: 'adRequired',
+      claimablePoints: 0,
+      adClaimablePoints: 140,
+    );
+    final events = <String>[];
+    final server = EchoAdsServer(events);
+    final sdk = FakeAdsSdk(events);
+    await mount(
+      tester,
+      ads: () async => AdsController(server: server, sdk: sdk),
+    );
+    return (server, sdk, events);
+  }
+
+  Future<void> startAd(WidgetTester tester, List<String> events) async {
+    await tester.tap(find.byKey(const ValueKey('reward_watch_ad')));
+    // The sheet starts the ad itself; there is no 'ads_start' tap.
+    await tester.pump();
+    await tester.pump();
+    expect(events, containsAllInOrder(['prepare', 'create', 'show']));
+    expect(find.byKey(const ValueKey('ads_start')), findsNothing);
+  }
+
+  testWidgets('a completed ad is claimed once, with no second tap', (
+    tester,
+  ) async {
+    final (server, sdk, events) = await adDay(tester);
+    await startAd(tester, events);
+    // The SSV callback verifies the view, then the ad closes.
+    server.status = 'verified';
+    sdk.ad.reward();
+    sdk.ad.dismiss();
+    await tester.pumpAndSettle();
+    expect(find.byType(AdsSheet), findsNothing);
+    expect(repository.intents, ['intent-1']);
+    expect(repository.ids, hasLength(1));
+    expect(repository.current.rewardStatus, 'settled');
+    expect(find.byKey(const ValueKey('reward_ad_claim')), findsNothing);
+  });
+
+  testWidgets('an ad closed before the server verifies it grants nothing', (
+    tester,
+  ) async {
+    final (server, sdk, events) = await adDay(tester);
+    await startAd(tester, events);
+    // Closed early: no SSV callback, so the intent stays pending.
+    sdk.ad.dismiss();
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('ads_status_pending')), findsOneWidget);
+    await tester.tap(find.byKey(const ValueKey('ads_close')));
+    await tester.pumpAndSettle();
+    // A verification arriving after the close changes nothing.
+    server.status = 'verified';
+    await tester.pumpAndSettle();
+    expect(repository.ids, isEmpty);
+    expect(repository.intents, isEmpty);
+    expect(find.byKey(const ValueKey('reward_ad_claim')), findsNothing);
+    expect(find.byKey(const ValueKey('reward_watch_ad')), findsOneWidget);
+  });
+
+  testWidgets(
+    'a lost answer is re-checked with the same request and grants at most once',
+    (tester) async {
+      final ledger = useLedger()..loseNextAnswer = true;
+      final (server, sdk, events) = await adDay(tester);
+      await startAd(tester, events);
+      server.status = 'verified';
+      sdk.ad.reward();
+      sdk.ad.dismiss();
+      await tester.pumpAndSettle();
+      // The grant committed and its answer was lost. The claim stays pending
+      // and nothing sends it again by itself.
+      expect(ledger.grants, 1);
+      expect(ledger.ids, hasLength(1));
+      expect(product.hasPendingClaim, isTrue);
+      expect(find.byKey(const ValueKey('reward_ad_claim')), findsNothing);
+      await tester.pumpAndSettle();
+      expect(ledger.ids, hasLength(1));
+      final recheck = find.byKey(const ValueKey('reward_retry_claim'));
+      await tester.ensureVisible(recheck);
+      await tester.tap(recheck);
+      await tester.pumpAndSettle();
+      // The same request returns the kept grant; no second grant exists.
+      expect(ledger.ids, hasLength(2));
+      expect(ledger.ids.toSet(), hasLength(1));
+      expect(ledger.intents, ['intent-1', 'intent-1']);
+      expect(ledger.grants, 1);
+      expect(product.hasPendingClaim, isFalse);
+    },
+  );
+
+  testWidgets('a double tap and repeated ad events run one ad and one claim', (
+    tester,
+  ) async {
+    final ledger = useLedger();
+    final (server, sdk, events) = await adDay(tester);
+    final watch = find.byKey(const ValueKey('reward_watch_ad'));
+    await tester.tap(watch);
+    await tester.tap(watch, warnIfMissed: false);
+    await tester.pump();
+    await tester.pump();
+    expect(find.byType(AdsSheet), findsOneWidget);
+    expect(events.where((e) => e == 'create'), hasLength(1));
+    // Hold the claim's answer to look at the panel while it is in flight.
+    final answer = ledger.hold = Completer<void>();
+    // An SDK that reports each event twice.
+    server.status = 'verified';
+    sdk.ad.reward();
+    sdk.ad.reward();
+    sdk.ad.dismiss();
+    sdk.ad.dismiss();
+    await tester.pumpAndSettle();
+    expect(events.where((e) => e == 'get'), hasLength(1));
+    expect(ledger.ids, hasLength(1));
+    // No second way to claim while the first one is in flight.
+    expect(find.byKey(const ValueKey('reward_ad_claim')), findsNothing);
+    expect(tester.widget<ButtonStyleButton>(watch).onPressed, isNull);
+    answer.complete();
+    await tester.pumpAndSettle();
+    expect(ledger.ids, hasLength(1));
+    expect(ledger.grants, 1);
+  });
 
   testWidgets('production hides the fixture marker and groups points', (
     tester,
@@ -306,7 +521,9 @@ void main() {
   testWidgets('closing an unverified ad never enables a reward claim', (
     tester,
   ) async {
-    final ads = AdsController(server: TestAdsServer(), sdk: ReadySdk());
+    // Not verified at creation; the stub ad then fails to load.
+    final server = TestAdsServer()..status = 'pending';
+    final ads = AdsController(server: server, sdk: ReadySdk());
     await mount(tester, ads: () async => ads);
     await tester.tap(find.byKey(const ValueKey('reward_watch_ad')));
     await tester.pumpAndSettle();

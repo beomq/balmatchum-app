@@ -6,7 +6,9 @@ import 'package:flutter/material.dart';
 import '../ads/ads_controller.dart';
 import '../ads/ads_session.dart';
 import '../ads/ads_sheet.dart';
-import '../records/product_page.dart' show fixtureLabelsVisible, formatCount;
+import '../first_meeting/meeting_theme.dart';
+import '../records/product_page.dart'
+    show Space, fixtureLabelsVisible, formatCount;
 import '../records/records_models.dart';
 import 'product_controller.dart';
 import 'product_repository.dart';
@@ -19,11 +21,21 @@ class RewardPanel extends StatefulWidget {
     required this.day,
     this.onChanged,
     this.createAds,
+    this.onGranted,
+    this.showRules = true,
   });
   final ProductController controller;
   final RecordDay day;
   final ValueChanged<RecordDay>? onChanged;
   final Future<AdsController?> Function()? createAds;
+
+  /// The home sheet's result view (REW-02) takes over after a grant with the
+  /// amount the server returned. Without it the panel keeps its own notice.
+  final ValueChanged<int>? onGranted;
+
+  /// Past days list the claim rules under the actions; the home sheet moves
+  /// them behind its info button (guide 5.2).
+  final bool showRules;
 
   @override
   State<RewardPanel> createState() => _RewardPanelState();
@@ -112,6 +124,8 @@ class _RewardPanelState extends State<RewardPanel> {
         purpose: 'dailyReward',
         targetDate: ProductRepository.dateKey(day.date),
         targetRevision: day.revision,
+        // The ad button was the ask: play at once, close once verified.
+        autoContinue: true,
       );
       // showAdsSheet cancels on close. Only the earlier verified event counts.
       if (active) setState(() => verifiedIntent = captured);
@@ -122,6 +136,16 @@ class _RewardPanelState extends State<RewardPanel> {
       ads?.dispose();
       widget.controller.endAd();
       if (mounted) setState(() => busy = false);
+    }
+    // Owner decision ⑤ (2026-10-28): a server-verified view is claimed at
+    // once, with the same request the explicit button sent before. A lost
+    // answer leaves that request pending for its same-request check; it is
+    // never sent again from here. An early close never gets here verified.
+    if (captured != null &&
+        verifiedIntent == captured &&
+        active &&
+        widget.controller.canClaim) {
+      await claim(withAd: true);
     }
   }
 
@@ -172,11 +196,14 @@ class _RewardPanelState extends State<RewardPanel> {
           ? await widget.controller.claimWithAd(day, verifiedIntent!)
           : await widget.controller.claim(day);
       if (!active) return;
+      final granted = widget.onGranted;
       setState(() {
-        notice = '$amount포인트를 받았어요.';
+        notice = granted == null ? '$amount포인트를 받았어요.' : null;
         verifiedIntent = null;
         needsReload = true;
       });
+      // Only a confirmed grant reaches this line; the sheet shows its result.
+      granted?.call(amount);
       try {
         await reload();
       } catch (_) {
@@ -231,72 +258,106 @@ class _RewardPanelState extends State<RewardPanel> {
   Widget build(BuildContext context) => ListenableBuilder(
     listenable: widget.controller,
     builder: (context, _) {
-      final enabled =
-          !busy && widget.controller.canClaim && active && !needsReload;
+      final controller = widget.controller;
+      final text = Theme.of(context).textTheme;
+      final enabled = !busy && controller.canClaim && active && !needsReload;
+      final pending = controller.hasPendingClaim;
       final free =
           day.rewardStatus == DayRewardStatus.claimable &&
           (day.claimablePoints ?? 0) > 0;
       final ad = _offersAd(day);
-      final premium = ad && widget.controller.premiumActive == true;
+      final premium = ad && controller.premiumActive == true;
       final freePoints = formatCount(day.claimablePoints ?? 0);
       final adPoints = formatCount(day.adClaimablePoints ?? 0);
-      // One primary button (guide 3.3): the first available claim leads and
-      // the other claims step down to outlined buttons.
-      final primary = widget.controller.hasPendingClaim
+      // The amount leads (REW-01): the free amount, else the ad amount.
+      final points = free
+          ? day.claimablePoints
+          : ad
+          ? day.adClaimablePoints
+          : null;
+      // One primary button (guide 3.3): free, then paid, then the ad itself.
+      final primary = pending
           ? null
           : free
           ? 'free'
           : premium
           ? 'premium'
           : 'ad';
-      Widget claimButton(
+      Widget action(
         String role, {
         required Key key,
         required VoidCallback? onPressed,
         required String label,
-      }) => role == primary
-          ? FilledButton(key: key, onPressed: onPressed, child: Text(label))
-          : OutlinedButton(key: key, onPressed: onPressed, child: Text(label));
+      }) {
+        final child = Text(label, textAlign: TextAlign.center);
+        return role == primary
+            ? FilledButton(
+                key: key,
+                style: _action,
+                onPressed: onPressed,
+                child: child,
+              )
+            : OutlinedButton(
+                key: key,
+                style: _action,
+                onPressed: onPressed,
+                child: child,
+              );
+      }
+
+      final wallet = controller.wallet;
       return Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
+        spacing: Space.s3,
         children: [
-          Text(switch (day.rewardStatus) {
-            DayRewardStatus.pending => '걸음이 확정되면 받을 수 있어요.',
-            DayRewardStatus.claimable =>
-              '무료 수령은 유예 중인 구간만 받을 수 있어요. 만료된 구간은 광고 대상으로 남아요.',
-            DayRewardStatus.adRequired =>
-              '무료 유예가 끝났어요. 미수령 포인트는 광고 확인 후 받을 수 있어요.',
-            DayRewardStatus.paid => '현재 추가로 받을 포인트가 없어요.',
-            DayRewardStatus.legacyPolicyExcluded =>
-              '이전 테스트 정책 기록으로 운영 보상 대상이 아니에요.',
-            DayRewardStatus.futureDate => '미래 날짜의 기록이에요.',
-            DayRewardStatus.canceled => '삭제로 미수령 포인트가 취소됐어요.',
-            DayRewardStatus.expired => '무료 수령 기간이 지났어요.',
-            DayRewardStatus.unconfigured => '포인트 정책이 아직 준비되지 않았어요.',
-          }, key: const ValueKey('reward_status')),
+          if (points != null) ...[
+            Text(
+              '+${formatCount(points)}P',
+              key: const ValueKey('reward_amount'),
+              textAlign: TextAlign.center,
+              style: meetingType(46, 54, FontWeight.w800),
+            ),
+            Text(
+              free ? _basis(day) : '광고를 보면 받을 수 있어요',
+              key: const ValueKey('reward_status'),
+              textAlign: TextAlign.center,
+            ),
+          ] else
+            Text(
+              _statusLine(day),
+              key: const ValueKey('reward_status'),
+              textAlign: TextAlign.center,
+              style: text.titleMedium,
+            ),
+          if (day.grantedPoints > 0)
+            Text(
+              '이미 받은 포인트 ${formatCount(day.grantedPoints)}P',
+              textAlign: TextAlign.center,
+              style: text.bodySmall,
+            ),
           if (fixtureLabelsVisible && day.fixtureLabel != null)
             Text('개발 검증용 · ${day.fixtureLabel}'),
-          Text('받은 포인트 ${formatCount(day.grantedPoints)}P'),
           if (notice != null)
             Text(notice!, key: const ValueKey('reward_notice')),
-          if (widget.controller.hasPendingClaim)
+          if (pending) ...[
             Text(
-              '미확정 수령 날짜 · ${ProductRepository.dateKey(widget.controller.pendingClaimDate!)}',
+              '미확정 수령 날짜 · ${ProductRepository.dateKey(controller.pendingClaimDate!)}',
             ),
-          if (widget.controller.hasPendingClaim)
             FilledButton(
               key: const ValueKey('reward_retry_claim'),
-              onPressed: busy || widget.controller.busy
+              style: _action,
+              onPressed: busy || controller.busy
                   ? null
                   : () => claim(replay: true),
               child: const Text('같은 요청으로 결과 확인'),
             ),
-          if (busy) const Text('처리 중…'),
+          ],
+          if (busy) const Text('처리 중…', textAlign: TextAlign.center),
           // Reloads run on their own; this shows only after one failed.
           if (needsReload && !busy)
             TextButton(
               key: const ValueKey('reward_reload'),
-              onPressed: busy || widget.controller.hasPendingClaim
+              onPressed: busy || pending
                   ? null
                   : () async {
                       try {
@@ -310,11 +371,11 @@ class _RewardPanelState extends State<RewardPanel> {
               child: const Text('다시 시도'),
             ),
           if (free)
-            claimButton(
+            action(
               'free',
               key: const ValueKey('reward_free_claim'),
               onPressed: enabled ? () => claim(withAd: false) : null,
-              label: '무료 ${freePoints}P 받기',
+              label: '${freePoints}P 받기',
             ),
           if (ad) ...[
             // The observation runs on its own; a failed one offers a retry.
@@ -324,37 +385,94 @@ class _RewardPanelState extends State<RewardPanel> {
                 onPressed: enabled ? checkPremium : null,
                 child: const Text('다시 시도'),
               ),
-            if (widget.controller.premiumActive == false)
-              const Text('현재 유효한 구매가 없어요. 무료 또는 광고 수령을 선택할 수 있어요.'),
             if (premium)
-              claimButton(
+              action(
                 'premium',
                 key: const ValueKey('reward_premium_claim'),
                 onPressed: enabled ? () => claim(premium: true) : null,
                 label: '유료 혜택으로 ${adPoints}P 받기',
               ),
-            Text('광고 확인 시 미수령 전체 기본분의 총 2배 · ${adPoints}P'),
-            OutlinedButton(
+            action(
+              'ad',
               key: const ValueKey('reward_watch_ad'),
               onPressed: enabled ? watchAd : null,
-              child: const Text('광고 시청 확인'),
+              label: '광고 보고 2배로 받기 · ${adPoints}P',
             ),
-            if (verifiedIntent != null)
-              claimButton(
-                'ad',
+            // Only when the automatic claim could not start; never alongside
+            // a pending request.
+            if (verifiedIntent != null && !pending)
+              OutlinedButton(
                 key: const ValueKey('reward_ad_claim'),
+                style: _action,
                 onPressed: enabled ? () => claim(withAd: true) : null,
-                label: '확인된 광고로 ${adPoints}P 받기',
+                child: Text('확인된 광고로 ${adPoints}P 받기'),
               ),
           ],
+          if (widget.showRules)
+            for (final line in rewardRules(day))
+              Text(line, style: text.bodySmall),
+          // An unread balance is left out, never shown as 0P.
+          if (wallet != null)
+            Text(
+              '보유 ${formatCount(wallet.balance)}P · 포인트로 꾸미기 아이템을 살 수 있어요',
+              key: const ValueKey('reward_balance'),
+              textAlign: TextAlign.center,
+              style: text.bodySmall,
+            ),
         ],
       );
     },
   );
 }
 
+/// REW-01's 52 pt action height.
+final _action = FilledButton.styleFrom(minimumSize: const Size.fromHeight(52));
+
+/// The server-confirmed steps behind the amount; device steps never stand in.
+String _basis(RecordDay day) {
+  final steps = day.steps;
+  if (steps == null) return '받을 수 있어요';
+  final today =
+      ProductRepository.dateKey(day.date) ==
+      ProductRepository.dateKey(ProductRepository.today);
+  return '${today ? '오늘 ' : ''}${formatCount(steps)}걸음으로 받을 수 있어요';
+}
+
+String _statusLine(RecordDay day) => switch (day.rewardStatus) {
+  DayRewardStatus.pending => '걸음이 확정되면 받을 수 있어요.',
+  DayRewardStatus.claimable ||
+  DayRewardStatus.adRequired ||
+  DayRewardStatus.paid => '현재 추가로 받을 포인트가 없어요.',
+  DayRewardStatus.legacyPolicyExcluded => '이전 테스트 정책 기록으로 운영 보상 대상이 아니에요.',
+  DayRewardStatus.futureDate => '미래 날짜의 기록이에요.',
+  DayRewardStatus.canceled => '삭제로 미수령 포인트가 취소됐어요.',
+  DayRewardStatus.expired => '무료 수령 기간이 지났어요.',
+  DayRewardStatus.unconfigured => '포인트 정책이 아직 준비되지 않았어요.',
+};
+
+/// The claim rules the sheet's info button shows (guide 5.2). They restate
+/// the server policy and change nothing about it.
+List<String> rewardRules(RecordDay day) => [
+  switch (day.rewardStatus) {
+    DayRewardStatus.claimable =>
+      '무료 수령은 유예 중인 구간만 받을 수 있어요. 만료된 구간은 광고 대상으로 남아요.',
+    DayRewardStatus.adRequired => '무료 유예가 끝났어요. 미수령 포인트는 광고 확인 후 받을 수 있어요.',
+    _ => _statusLine(day),
+  },
+  if (_offersAd(day)) ...[
+    '광고 확인 시 미수령 전체 기본분의 총 2배 · ${formatCount(day.adClaimablePoints ?? 0)}P',
+    '광고를 끝까지 보면 서버에서 확인한 뒤 바로 받아요.',
+  ],
+];
+
 /// The ad and paid paths apply only while unclaimed ad-eligible points remain.
 bool _offersAd(RecordDay day) =>
     (day.rewardStatus == DayRewardStatus.claimable ||
         day.rewardStatus == DayRewardStatus.adRequired) &&
     (day.adClaimablePoints ?? 0) > 0;
+
+/// Whether [day] still has something to receive.
+bool hasRewardLeft(RecordDay day) =>
+    (day.rewardStatus == DayRewardStatus.claimable &&
+        (day.claimablePoints ?? 0) > 0) ||
+    _offersAd(day);

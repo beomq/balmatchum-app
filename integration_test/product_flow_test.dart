@@ -131,7 +131,7 @@ void main() {
     await changedTo(
       product,
       () => product.wallet?.balance == 50,
-      () => tapText('무료 50P 받기'),
+      () => tapText('50P 받기'),
     );
     await tester.pumpAndSettle();
     // The reward sheet stays open after a claim; dismiss it via its barrier.
