@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 import 'package:social_signin_kit/social_signin_kit.dart';
 
 import '../../app/dependencies.dart';
+import '../../app/duo_rail.dart';
 import '../daily_activity/daily_steps_controller.dart';
 import '../daily_activity/daily_steps_readout.dart';
 import '../daily_activity/product_controller.dart';
@@ -331,6 +332,38 @@ class _FirstMeetingScreenState extends State<FirstMeetingScreen> {
     );
   }
 
+  /// Same labels and actions as the home header and shortcuts.
+  DuoRailSpec homeRailSpec(FirstMeetingController c) {
+    final quiz = widget.product?.quiz;
+    return DuoRailSpec(
+      tools: [
+        DuoRailItem(
+          key: const ValueKey('duo_rail_settings'),
+          label: c.profileRepository == null ? 'Dev 체험 초기화' : '설정',
+          icon: Image.asset('assets/first_meeting/icons/settings.png'),
+          onPressed: c.profileRepository == null ? reset : settings,
+        ),
+      ],
+      destinations: [
+        for (final (id, label, icon, open) in [
+          ('records', '기록', 'calendar-record', widget.onOpenRecords),
+          ('quiz', '퀴즈', 'question-quiz', widget.onOpenQuiz),
+          ('wardrobe', '꾸미기', 'wardrobe', widget.onOpenWardrobe),
+          ('photo', '사진', 'camera-photo', widget.onOpenPhoto),
+        ])
+          DuoRailItem(
+            key: ValueKey('duo_rail_$id'),
+            label: label,
+            icon: Image.asset('assets/first_meeting/icons/$icon.png'),
+            onPressed: open ?? () => unavailable(label),
+            badgeLabel: id == 'quiz' && quiz != null && quiz.answerIndex == null
+                ? '오늘 퀴즈 미응답'
+                : null,
+          ),
+      ],
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final c = controller;
@@ -344,6 +377,10 @@ class _FirstMeetingScreenState extends State<FirstMeetingScreen> {
       );
     }
     final s = c.state;
+    final railSpec = s.step == FirstMeetingStep.home ? homeRailSpec(c) : null;
+    final railMode = railSpec == null
+        ? null
+        : duoRailMode(MediaQuery.of(context), railSpec);
     return PopScope(
       canPop:
           s.step == FirstMeetingStep.login || s.step == FirstMeetingStep.home,
@@ -362,6 +399,9 @@ class _FirstMeetingScreenState extends State<FirstMeetingScreen> {
                   c.isBusy
               ? null
               : c.back,
+          rail: railSpec != null && railMode != null
+              ? DuoRail(spec: railSpec, mode: railMode)
+              : null,
           children: [
             if (c.hasPendingMutation)
               OutlinedButton(
@@ -406,14 +446,14 @@ class _FirstMeetingScreenState extends State<FirstMeetingScreen> {
                 ),
             ],
             if (c.error != FirstMeetingError.corruption && c.isRestored)
-              ...screen(c),
+              ...screen(c, railMode),
           ],
         ),
       ),
     );
   }
 
-  List<Widget> screen(FirstMeetingController c) {
+  List<Widget> screen(FirstMeetingController c, DuoRailMode? rail) {
     final s = c.state;
     final enabled = !c.isBusy && !c.hasPendingMutation;
     switch (s.step) {
@@ -712,15 +752,16 @@ class _FirstMeetingScreenState extends State<FirstMeetingScreen> {
                     style: Theme.of(context).textTheme.titleLarge,
                   ),
                 ),
-                IconButton(
-                  onPressed: c.profileRepository == null ? reset : settings,
-                  tooltip: c.profileRepository == null ? 'Dev 체험 초기화' : '설정',
-                  icon: Image.asset(
-                    'assets/first_meeting/icons/settings.png',
-                    width: 32,
-                    height: 32,
+                if (rail == null)
+                  IconButton(
+                    onPressed: c.profileRepository == null ? reset : settings,
+                    tooltip: c.profileRepository == null ? 'Dev 체험 초기화' : '설정',
+                    icon: Image.asset(
+                      'assets/first_meeting/icons/settings.png',
+                      width: 32,
+                      height: 32,
+                    ),
                   ),
-                ),
               ],
             ),
             scene: ClipRRect(
@@ -826,83 +867,55 @@ class _FirstMeetingScreenState extends State<FirstMeetingScreen> {
                       ),
                   ],
                   const SizedBox(height: 12),
-                  LayoutBuilder(
-                    builder: (context, bounds) {
-                      final stack =
-                          bounds.maxWidth < 280 ||
-                          MediaQuery.textScalerOf(context).scale(16) > 21;
-                      final actions = [
-                        OutlinedButton(
-                          onPressed:
-                              widget.onOpenRecords ??
-                              () => unavailable('기록 보기'),
-                          child: const Text('기록 보기'),
-                        ),
-                        FilledButton(
-                          onPressed: reward,
-                          child: const Text('포인트 받기'),
-                        ),
-                      ];
-                      return stack
-                          ? Column(
-                              children: [
-                                actions[0],
-                                const SizedBox(height: 8),
-                                actions[1],
-                              ],
-                            )
-                          : Row(
-                              children: [
-                                Expanded(child: actions[0]),
-                                const SizedBox(width: 8),
-                                Expanded(child: actions[1]),
-                              ],
-                            );
-                    },
-                  ),
+                  FilledButton(onPressed: reward, child: const Text('포인트 받기')),
                 ],
               ),
             ),
-            shortcuts: MeetingShortcuts(
-              children: [
-                for (final entry in [
-                  ('기록', 'calendar-record'),
-                  ('퀴즈', 'question-quiz'),
-                  ('꾸미기', 'wardrobe'),
-                  ('사진', 'camera-photo'),
-                ])
-                  OutlinedButton(
-                    style: OutlinedButton.styleFrom(
-                      minimumSize: const Size(72, 80),
-                    ),
-                    onPressed:
-                        switch (entry.$1) {
-                          '사진' => widget.onOpenPhoto,
-                          '기록' => widget.onOpenRecords,
-                          '퀴즈' => widget.onOpenQuiz,
-                          '꾸미기' => widget.onOpenWardrobe,
-                          _ => null,
-                        } ??
-                        () => unavailable(entry.$1),
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Image.asset(
-                          'assets/first_meeting/icons/${entry.$2}.png',
-                          width: 32,
-                          height: 32,
+            shortcuts: rail != null
+                ? null
+                : MeetingShortcuts(
+                    children: [
+                      for (final entry in [
+                        ('기록', 'calendar-record'),
+                        ('퀴즈', 'question-quiz'),
+                        ('꾸미기', 'wardrobe'),
+                        ('사진', 'camera-photo'),
+                      ])
+                        OutlinedButton(
+                          style: OutlinedButton.styleFrom(
+                            minimumSize: const Size(72, 80),
+                          ),
+                          onPressed:
+                              switch (entry.$1) {
+                                '사진' => widget.onOpenPhoto,
+                                '기록' => widget.onOpenRecords,
+                                '퀴즈' => widget.onOpenQuiz,
+                                '꾸미기' => widget.onOpenWardrobe,
+                                _ => null,
+                              } ??
+                              () => unavailable(entry.$1),
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Image.asset(
+                                'assets/first_meeting/icons/${entry.$2}.png',
+                                width: 32,
+                                height: 32,
+                              ),
+                              const SizedBox(height: 8),
+                              Text(entry.$1),
+                              if (entry.$1 == '퀴즈' &&
+                                  widget.product?.quiz != null &&
+                                  widget.product!.quiz!.answerIndex == null)
+                                Semantics(
+                                  label: '오늘 퀴즈 미응답',
+                                  child: const Text('·'),
+                                ),
+                            ],
+                          ),
                         ),
-                        const SizedBox(height: 8),
-                        Text(entry.$1),
-                        if (entry.$1 == '퀴즈' &&
-                            widget.product?.quiz != null &&
-                            widget.product!.quiz!.answerIndex == null)
-                          Semantics(label: '오늘 퀴즈 미응답', child: const Text('·')),
-                      ],
-                    ),
+                    ],
                   ),
-              ],
-            ),
             footer: Text(
               c.profileRepository == null ? 'Dev 체험 · 이 기기에 저장' : '계정에 저장된 친구',
               textAlign: TextAlign.center,

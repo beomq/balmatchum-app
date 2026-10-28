@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
+import '../../app/duo_rail.dart';
 import '../first_meeting/domain/dog_catalog.dart';
 import '../first_meeting/meeting_theme.dart';
 import '../records/product_page.dart';
@@ -196,176 +197,208 @@ class _WardrobeScreenState extends State<WardrobeScreen> {
   });
 
   @override
-  Widget build(BuildContext context) => Scaffold(
-    body: SafeArea(
-      child: LayoutBuilder(
-        builder: (context, bounds) {
-          final w = bounds.maxWidth;
-          final gutter = pageGutter(w);
-          final content = (w - gutter * 2).clamp(0.0, 1200.0);
-          final split = w >= 600;
-          // RESPONSIVE.md 3: when a fixed action would leave no product row,
-          // release it into the single scroll.
-          final pinned =
-              bounds.maxHeight >= 600 &&
-              MediaQuery.textScalerOf(context).scale(1) < 1.5;
-          final previewWidth = w >= 840
-              ? (content * .38).clamp(280.0, 360.0)
-              : 240.0;
-          final s = snapshot;
-          final header = Padding(
-            padding: EdgeInsets.fromLTRB(gutter, Space.s2, gutter, 0),
-            child: ProductTopBar(onBack: widget.onBack, onHome: widget.onHome),
-          );
-          if (s == null) {
-            return Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                header,
-                Padding(
-                  padding: EdgeInsets.symmetric(horizontal: gutter),
-                  child: ProductLoadState(error: loadError, onRetry: load),
-                ),
-              ],
-            );
-          }
-          if (s.equippedThemeId == null) {
-            return Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                header,
-                Padding(
-                  padding: EdgeInsets.all(gutter),
-                  child: ProductLoadState(
-                    error: '작업은 완료됐지만 현재 적용 상태를 확인하지 못했어요.',
-                    onRetry: load,
-                  ),
-                ),
-              ],
-            );
-          }
-          final preview = _Preview(
-            dogAsset: widget.dog.spritePath,
-            outfitLayer: s.outfits?.wornLayer(widget.dog.id),
-            theme: selected,
-            equipped: selected != null && selected!.id == s.equippedThemeId,
-            compact: !split && bounds.maxHeight < 600,
-          );
-          final list = _Catalog(
-            snapshot: s,
-            scope: scope,
-            selectedId: selectedId,
-            onScope: (v) => setState(() => scope = v),
-            onSelect: select,
-            narrow: !split,
-            wide: w >= 840,
-          );
-          final action = _ActionBar(
-            theme: selected,
-            equippedId: s.equippedThemeId,
-            balance: s.balance,
-            busy: busy,
-            error: shelf == _Shelf.theme ? actionError : null,
-            insufficient: shelf == _Shelf.theme && insufficient,
-            onPurchase: confirmPurchase,
-            onEquip: (t) => run(_Shelf.theme, () => widget.equipTheme(t)),
-            onEarnPoints: widget.onHome,
-          );
-          final outfitShelf = OutfitShelf(
-            outfits: s.outfits,
-            breedId: widget.dog.id,
-            balance: s.balance,
-            busy: busy,
-            error: shelf == _Shelf.outfit ? actionError : null,
-            insufficient: shelf == _Shelf.outfit && insufficient,
-            onChange: changeOutfit,
-            onReload: load,
-            onEarnPoints: widget.onHome,
-          );
-          final body = split
-              ? Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    SizedBox(
-                      width: previewWidth,
-                      child: SingleChildScrollView(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.stretch,
-                          children: [
-                            preview,
-                            const SizedBox(height: Space.s3),
-                            action,
-                          ],
+  Widget build(BuildContext context) {
+    final spec = DuoRailSpec(
+      tools: duoBackHome(onBack: widget.onBack, onHome: widget.onHome),
+    );
+    final mode = duoRailMode(MediaQuery.of(context), spec);
+    return Scaffold(
+      body: Stack(
+        fit: StackFit.expand,
+        children: [
+          SafeArea(
+            child: LayoutBuilder(
+              builder: (context, bounds) {
+                final w = bounds.maxWidth;
+                final gutter = pageGutter(w);
+                final content = (w - gutter * 2).clamp(0.0, 1200.0);
+                final split = w >= 600;
+                // RESPONSIVE.md 3: when a fixed action would leave no product row,
+                // release it into the single scroll.
+                final pinned =
+                    bounds.maxHeight >= 600 &&
+                    MediaQuery.textScalerOf(context).scale(1) < 1.5;
+                final previewWidth = w >= 840
+                    ? (content * .38).clamp(280.0, 360.0)
+                    : 240.0;
+                final s = snapshot;
+                final header = mode == null
+                    ? Padding(
+                        padding: EdgeInsets.fromLTRB(
+                          gutter,
+                          Space.s2,
+                          gutter,
+                          0,
+                        ),
+                        child: ProductTopBar(
+                          onBack: widget.onBack,
+                          onHome: widget.onHome,
+                        ),
+                      )
+                    : const SizedBox(height: Space.s2);
+                if (s == null) {
+                  return Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      header,
+                      Padding(
+                        padding: EdgeInsets.symmetric(horizontal: gutter),
+                        child: ProductLoadState(
+                          error: loadError,
+                          onRetry: load,
                         ),
                       ),
-                    ),
-                    const SizedBox(width: Space.s6),
-                    Expanded(
-                      child: SingleChildScrollView(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.stretch,
-                          children: [
-                            list,
-                            const SizedBox(height: Space.s6),
-                            outfitShelf,
-                            const SizedBox(height: Space.s3),
-                          ],
+                    ],
+                  );
+                }
+                if (s.equippedThemeId == null) {
+                  return Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      header,
+                      Padding(
+                        padding: EdgeInsets.all(gutter),
+                        child: ProductLoadState(
+                          error: '작업은 완료됐지만 현재 적용 상태를 확인하지 못했어요.',
+                          onRetry: load,
                         ),
                       ),
-                    ),
-                  ],
-                )
-              : null;
-          return Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              header,
-              Expanded(
-                child: Align(
-                  alignment: Alignment.topCenter,
-                  child: ConstrainedBox(
-                    constraints: const BoxConstraints(maxWidth: 1200),
-                    child: Padding(
-                      padding: EdgeInsets.fromLTRB(gutter, Space.s3, gutter, 0),
-                      child:
-                          body ??
-                          SingleChildScrollView(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.stretch,
-                              children: [
-                                preview,
-                                const SizedBox(height: Space.s3),
-                                list,
-                                const SizedBox(height: Space.s6),
-                                outfitShelf,
-                                const SizedBox(height: Space.s3),
-                                if (!pinned) ...[
-                                  action,
+                    ],
+                  );
+                }
+                final preview = _Preview(
+                  dogAsset: widget.dog.spritePath,
+                  outfitLayer: s.outfits?.wornLayer(widget.dog.id),
+                  theme: selected,
+                  equipped:
+                      selected != null && selected!.id == s.equippedThemeId,
+                  compact: !split && bounds.maxHeight < 600,
+                );
+                final list = _Catalog(
+                  snapshot: s,
+                  scope: scope,
+                  selectedId: selectedId,
+                  onScope: (v) => setState(() => scope = v),
+                  onSelect: select,
+                  narrow: !split,
+                  wide: w >= 840,
+                );
+                final action = _ActionBar(
+                  theme: selected,
+                  equippedId: s.equippedThemeId,
+                  balance: s.balance,
+                  busy: busy,
+                  error: shelf == _Shelf.theme ? actionError : null,
+                  insufficient: shelf == _Shelf.theme && insufficient,
+                  onPurchase: confirmPurchase,
+                  onEquip: (t) => run(_Shelf.theme, () => widget.equipTheme(t)),
+                  onEarnPoints: widget.onHome,
+                );
+                final outfitShelf = OutfitShelf(
+                  outfits: s.outfits,
+                  breedId: widget.dog.id,
+                  balance: s.balance,
+                  busy: busy,
+                  error: shelf == _Shelf.outfit ? actionError : null,
+                  insufficient: shelf == _Shelf.outfit && insufficient,
+                  onChange: changeOutfit,
+                  onReload: load,
+                  onEarnPoints: widget.onHome,
+                );
+                final body = split
+                    ? Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          SizedBox(
+                            width: previewWidth,
+                            child: SingleChildScrollView(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.stretch,
+                                children: [
+                                  preview,
                                   const SizedBox(height: Space.s3),
+                                  action,
                                 ],
-                              ],
+                              ),
                             ),
                           ),
+                          const SizedBox(width: Space.s6),
+                          Expanded(
+                            child: SingleChildScrollView(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.stretch,
+                                children: [
+                                  list,
+                                  const SizedBox(height: Space.s6),
+                                  outfitShelf,
+                                  const SizedBox(height: Space.s3),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ],
+                      )
+                    : null;
+                return Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    header,
+                    Expanded(
+                      child: Align(
+                        alignment: Alignment.topCenter,
+                        child: ConstrainedBox(
+                          constraints: const BoxConstraints(maxWidth: 1200),
+                          child: Padding(
+                            padding: EdgeInsets.fromLTRB(
+                              gutter,
+                              Space.s3,
+                              gutter,
+                              0,
+                            ),
+                            child:
+                                body ??
+                                SingleChildScrollView(
+                                  child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.stretch,
+                                    children: [
+                                      preview,
+                                      const SizedBox(height: Space.s3),
+                                      list,
+                                      const SizedBox(height: Space.s6),
+                                      outfitShelf,
+                                      const SizedBox(height: Space.s3),
+                                      if (!pinned) ...[
+                                        action,
+                                        const SizedBox(height: Space.s3),
+                                      ],
+                                    ],
+                                  ),
+                                ),
+                          ),
+                        ),
+                      ),
                     ),
-                  ),
-                ),
-              ),
-              if (!split && pinned)
-                Padding(
-                  padding: EdgeInsets.fromLTRB(
-                    gutter,
-                    Space.s2,
-                    gutter,
-                    Space.s2,
-                  ),
-                  child: action,
-                ),
-            ],
-          );
-        },
+                    if (!split && pinned)
+                      Padding(
+                        padding: EdgeInsets.fromLTRB(
+                          gutter,
+                          Space.s2,
+                          gutter,
+                          Space.s2,
+                        ),
+                        child: action,
+                      ),
+                  ],
+                );
+              },
+            ),
+          ),
+          if (mode != null) DuoRail(spec: spec, mode: mode),
+        ],
       ),
-    ),
-  );
+    );
+  }
 }
 
 class _Preview extends StatelessWidget {

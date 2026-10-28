@@ -3,6 +3,7 @@ import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
 
+import '../../app/duo_rail.dart';
 import '../first_meeting/meeting_theme.dart';
 import 'photo_editor.dart';
 
@@ -337,88 +338,110 @@ class PhotoScreenState extends State<PhotoScreen> {
   @override
   Widget build(BuildContext context) => AnimatedBuilder(
     animation: editor,
-    builder: (context, _) => PopScope(
-      canPop: leaving,
-      onPopInvokedWithResult: (didPop, result) {
-        if (!didPop) leave(widget.onBack);
-      },
-      child: Scaffold(
-        body: SafeArea(
-          child: LayoutBuilder(
-            builder: (context, bounds) {
-              final padding = bounds.maxWidth < 360
-                  ? 12.0
-                  : bounds.maxWidth < 600
-                  ? 16.0
-                  : bounds.maxWidth < 840
-                  ? 24.0
-                  : 32.0;
-              final wide = bounds.maxWidth >= 840;
-              return SingleChildScrollView(
-                padding: EdgeInsets.fromLTRB(padding, 16, padding, 24),
-                child: Center(
-                  child: ConstrainedBox(
-                    constraints: BoxConstraints(maxWidth: wide ? 1100 : 600),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: [
-                        Row(
-                          children: [
-                            IconButton(
-                              key: const ValueKey('photo_back'),
-                              tooltip: '뒤로',
-                              onPressed: editor.busy
-                                  ? null
-                                  : () => leave(widget.onBack),
-                              icon: Image.asset(
-                                'assets/first_meeting/icons/back.png',
-                                width: 32,
-                                height: 32,
-                                filterQuality: FilterQuality.none,
-                              ),
-                            ),
-                            const Spacer(),
-                            TextButton(
-                              key: const ValueKey('photo_home'),
-                              onPressed: editor.busy
-                                  ? null
-                                  : () => leave(widget.onHome),
-                              child: const Text('홈'),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 18),
-                        Text(
-                          '함께 사진 찍기',
-                          style: Theme.of(context).textTheme.headlineSmall,
-                        ),
-                        const SizedBox(height: 8),
-                        Text('${widget.dogName}를 사진에 담아 보세요.'),
-                        const SizedBox(height: 20),
-                        if (wide)
-                          Row(
-                            crossAxisAlignment: CrossAxisAlignment.start,
+    builder: (context, _) {
+      // Same guards as the top bar, so leaving still asks while editing.
+      final spec = DuoRailSpec(
+        tools: duoBackHome(
+          onBack: editor.busy ? null : () => leave(widget.onBack),
+          onHome: editor.busy ? null : () => leave(widget.onHome),
+        ),
+      );
+      final mode = duoRailMode(MediaQuery.of(context), spec);
+      return PopScope(
+        canPop: leaving,
+        onPopInvokedWithResult: (didPop, result) {
+          if (!didPop) leave(widget.onBack);
+        },
+        child: Scaffold(
+          body: Stack(
+            fit: StackFit.expand,
+            children: [
+              SafeArea(
+                child: LayoutBuilder(
+                  builder: (context, bounds) {
+                    final padding = bounds.maxWidth < 360
+                        ? 12.0
+                        : bounds.maxWidth < 600
+                        ? 16.0
+                        : bounds.maxWidth < 840
+                        ? 24.0
+                        : 32.0;
+                    final wide = bounds.maxWidth >= 840;
+                    return SingleChildScrollView(
+                      padding: EdgeInsets.fromLTRB(padding, 16, padding, 24),
+                      child: Center(
+                        child: ConstrainedBox(
+                          constraints: BoxConstraints(
+                            maxWidth: wide ? 1100 : 600,
+                          ),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
                             children: [
-                              Expanded(flex: 6, child: _preview()),
-                              const SizedBox(width: 24),
-                              Expanded(flex: 4, child: _controls()),
+                              if (mode == null) ...[
+                                Row(
+                                  children: [
+                                    IconButton(
+                                      key: const ValueKey('photo_back'),
+                                      tooltip: '뒤로',
+                                      onPressed: editor.busy
+                                          ? null
+                                          : () => leave(widget.onBack),
+                                      icon: Image.asset(
+                                        'assets/first_meeting/icons/back.png',
+                                        width: 32,
+                                        height: 32,
+                                        filterQuality: FilterQuality.none,
+                                      ),
+                                    ),
+                                    const Spacer(),
+                                    TextButton(
+                                      key: const ValueKey('photo_home'),
+                                      onPressed: editor.busy
+                                          ? null
+                                          : () => leave(widget.onHome),
+                                      child: const Text('홈'),
+                                    ),
+                                  ],
+                                ),
+                                const SizedBox(height: 18),
+                              ],
+                              Text(
+                                '함께 사진 찍기',
+                                style: Theme.of(context)
+                                    .textTheme
+                                    .headlineSmall,
+                              ),
+                              const SizedBox(height: 8),
+                              Text('${widget.dogName}를 사진에 담아 보세요.'),
+                              const SizedBox(height: 20),
+                              if (wide)
+                                Row(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Expanded(flex: 6, child: _preview()),
+                                    const SizedBox(width: 24),
+                                    Expanded(flex: 4, child: _controls()),
+                                  ],
+                                )
+                              else ...[
+                                _preview(),
+                                const SizedBox(height: 20),
+                                _controls(),
+                              ],
                             ],
-                          )
-                        else ...[
-                          _preview(),
-                          const SizedBox(height: 20),
-                          _controls(),
-                        ],
-                      ],
-                    ),
-                  ),
+                          ),
+                        ),
+                      ),
+                    );
+                  },
                 ),
-              );
-            },
+              ),
+              if (mode != null) DuoRail(spec: spec, mode: mode),
+            ],
           ),
         ),
-      ),
-    ),
+      );
+    },
   );
 }
 

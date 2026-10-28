@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../app/duo_rail.dart';
 import '../first_meeting/meeting_theme.dart';
 
 /// Pen semantic variables (2026-09-28 olive palette) the meeting palette
@@ -81,31 +82,50 @@ class ProductPage extends StatelessWidget {
   final double maxWidth;
 
   @override
-  Widget build(BuildContext context) => Scaffold(
-    body: SafeArea(
-      child: LayoutBuilder(
-        builder: (context, bounds) {
-          final gutter = pageGutter(bounds.maxWidth);
-          return SingleChildScrollView(
-            padding: EdgeInsets.fromLTRB(gutter, Space.s2, gutter, Space.s6),
-            child: Center(
-              child: ConstrainedBox(
-                constraints: BoxConstraints(maxWidth: maxWidth),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    ProductTopBar(onBack: onBack, onHome: onHome),
-                    const SizedBox(height: Space.s3),
-                    ...children,
-                  ],
-                ),
-              ),
+  Widget build(BuildContext context) {
+    final spec = DuoRailSpec(
+      tools: duoBackHome(onBack: onBack, onHome: onHome),
+    );
+    final mode = duoRailMode(MediaQuery.of(context), spec);
+    return Scaffold(
+      body: Stack(
+        fit: StackFit.expand,
+        children: [
+          SafeArea(
+            child: LayoutBuilder(
+              builder: (context, bounds) {
+                final gutter = pageGutter(bounds.maxWidth);
+                return SingleChildScrollView(
+                  padding: EdgeInsets.fromLTRB(
+                    gutter,
+                    Space.s2,
+                    gutter,
+                    Space.s6,
+                  ),
+                  child: Center(
+                    child: ConstrainedBox(
+                      constraints: BoxConstraints(maxWidth: maxWidth),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          if (mode == null) ...[
+                            ProductTopBar(onBack: onBack, onHome: onHome),
+                            const SizedBox(height: Space.s3),
+                          ],
+                          ...children,
+                        ],
+                      ),
+                    ),
+                  ),
+                );
+              },
             ),
-          );
-        },
+          ),
+          if (mode != null) DuoRail(spec: spec, mode: mode),
+        ],
       ),
-    ),
-  );
+    );
+  }
 }
 
 /// Loading or failure body with an explicit retry.
