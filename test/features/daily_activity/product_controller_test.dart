@@ -134,6 +134,18 @@ class AccountRepository extends ProductRepository {
     return [record()];
   }
 
+  /// The streak read's answer; null fails it.
+  List<DailyRecord>? recentDays = const [];
+  final dayRanges = <(DateTime, DateTime)>[];
+  @override
+  Future<List<DailyRecord>> days(DateTime from, DateTime to) async {
+    calls.add('days');
+    dayRanges.add((from, to));
+    final value = recentDays;
+    if (value == null) throw Exception('Days offline');
+    return value;
+  }
+
   @override
   Future<DailyRecord> deleteDay(DateTime date, String requestId) async {
     calls.add('delete');

@@ -10,6 +10,7 @@ import '../watch_sync/watch_bridge.dart';
 import 'daily_steps_controller.dart';
 import 'product_repository.dart';
 import 'record_mapping.dart';
+import 'step_streak.dart';
 import 'step_upload.dart';
 
 class ProductController extends ChangeNotifier {
@@ -63,6 +64,10 @@ class ProductController extends ChangeNotifier {
   api.ThemeStore? store;
   api.OutfitStore? outfits;
   api.DailyQuiz? quiz;
+
+  /// Null until read, after a failed read and after a change that can break
+  /// it, so the home never shows an old number.
+  StepStreak? streak;
   final _requests = <String, String>{};
 
   void _checkAccount() {
@@ -89,6 +94,7 @@ class ProductController extends ChangeNotifier {
     store = null;
     outfits = null;
     quiz = null;
+    streak = null;
   }
 
   String request(String key) =>
@@ -194,6 +200,25 @@ class ProductController extends ChangeNotifier {
     }
   }
 
+  /// Reads the last [StepStreak.window] KST days for the home's streak and
+  /// week count. Only reads; a failure leaves no number.
+  Future<void> loadStreak() async {
+    if (!connected || !_active) return;
+    final today = ProductRepository.today;
+    try {
+      final records = await repository.days(
+        today.subtract(const Duration(days: StepStreak.window - 1)),
+        today,
+      );
+      _checkAccount();
+      streak = StepStreak.of(records, today);
+    } catch (_) {
+      if (!_active) return;
+      streak = null;
+    }
+    notifyListeners();
+  }
+
   Future<RecordMonth> loadMonth(DateTime date) async {
     _checkAccount();
     final days = await repository.month(date);
@@ -231,6 +256,8 @@ class ProductController extends ChangeNotifier {
     final result = await repository.deleteDay(date, request(key));
     _checkAccount();
     _requests.remove(key);
+    // A deleted day can break the streak; the next home refresh reads it.
+    streak = null;
     await refreshAfterSuccess();
     _checkAccount();
     return recordDay(result);
