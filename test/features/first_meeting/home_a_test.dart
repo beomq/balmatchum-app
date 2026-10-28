@@ -412,6 +412,49 @@ void main() {
     expect(key('home_tile_records_status'), findsNothing);
   });
 
+  /// The [PixelIcon] inside [scope].
+  String pixel(WidgetTester tester, Finder scope) => tester
+      .widget<PixelIcon>(
+        find.descendant(of: scope, matching: find.byType(PixelIcon)),
+      )
+      .name;
+  Finder chipOf(String label) =>
+      find.ancestor(of: key(label), matching: find.byType(StatusChip));
+
+  testWidgets('chips, the points button and tiles carry the Pen pixel icons', (
+    tester,
+  ) async {
+    final server = HomeServer()
+      ..recentDays = [
+        for (var i = 0; i < 6; i++) record().copyWith(date: dayKey(i)),
+      ];
+    await pumpHome(tester, product: productFor(server));
+    expect(pixel(tester, chipOf('home_streak')), 'goal-target');
+    expect(pixel(tester, chipOf('reward_wallet')), 'points');
+    expect(pixel(tester, key('home_reward')), 'points');
+    final wardrobe = tester.widget<Image>(
+      find.descendant(
+        of: key('home_tile_wardrobe'),
+        matching: find.byType(Image),
+      ),
+    );
+    expect(
+      (wardrobe.image as AssetImage).assetName,
+      endsWith('/decorate-shortcut.png'),
+    );
+    expect(find.byType(Icon), findsNothing);
+  });
+
+  testWidgets('the Duo home rail uses the pixel icons Pen shows', (
+    tester,
+  ) async {
+    useDuoViewport(tester, 'outer portrait');
+    await pumpHome(tester, product: productFor(HomeServer()));
+    expect(pixel(tester, key('duo_rail_settings')), 'settings');
+    expect(pixel(tester, key('duo_rail_wardrobe')), 'decorate-shortcut');
+    expect(find.byType(Icon), findsNothing);
+  });
+
   testWidgets('a signed-in home has no footer line', (tester) async {
     await pumpHome(tester, product: productFor(HomeServer()));
     expect(

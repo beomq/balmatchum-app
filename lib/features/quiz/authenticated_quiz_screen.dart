@@ -353,11 +353,10 @@ class _StatusRow extends StatelessWidget {
           textStyle: meetingType(13.5, 18, FontWeight.w700),
           padding: const EdgeInsets.symmetric(horizontal: Space.s1),
         ),
-        // The pixel caret is not exported yet (guide 9.2).
         child: const Row(
           mainAxisSize: MainAxisSize.min,
           spacing: 2,
-          children: [Text('지난 퀴즈'), Icon(Icons.chevron_right, size: 16)],
+          children: [Text('지난 퀴즈'), PixelIcon('caret-right', size: 16)],
         ),
       ),
     ],

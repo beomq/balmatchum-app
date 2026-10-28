@@ -379,6 +379,31 @@ void main() {
     expect(repository.requests, isEmpty);
   });
 
+  testWidgets('the quiz and its review use pixel icons only', (tester) async {
+    repository.current = repository.current.copyWith(
+      free: question(1, answered: true),
+      extraStatus: 'adRequired',
+      extraRevision: 1,
+    );
+    await mount(tester);
+    String pixel(String key) => tester
+        .widget<PixelIcon>(
+          find.descendant(
+            of: find.byKey(ValueKey(key)),
+            matching: find.byType(PixelIcon),
+          ),
+        )
+        .name;
+    expect(pixel('product_home'), 'home');
+    expect(pixel('quiz_history'), 'caret-right');
+    expect(pixel('quiz_1_info'), 'info');
+    expect(find.byType(Icon), findsNothing);
+    await tester.tap(find.byKey(const ValueKey('quiz_history')));
+    await tester.pumpAndSettle();
+    expect(pixel('quiz_review_close'), 'close-x');
+    expect(find.byType(Icon), findsNothing);
+  });
+
   testWidgets('cancelled sheet cannot unlock', (tester) async {
     repository.current = repository.current.copyWith(
       free: question(1, answered: true),

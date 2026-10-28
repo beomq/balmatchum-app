@@ -180,7 +180,7 @@ class _QuizReviewSheetState extends State<QuizReviewSheet> {
                             borderRadius: BorderRadius.circular(12),
                           ),
                         ),
-                        icon: const Icon(Icons.close, color: MeetingColors.ink),
+                        icon: const PixelIcon('close-x', size: 20),
                       ),
                     ],
                   ),

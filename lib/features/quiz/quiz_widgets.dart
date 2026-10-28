@@ -340,7 +340,7 @@ class _QuizResultState extends State<QuizResult> {
               key: ValueKey('quiz_${id}_info'),
               tooltip: '문제 정보',
               onPressed: () => setState(() => details = !details),
-              icon: const Icon(Icons.info_outline, color: MeetingColors.ink),
+              icon: const PixelIcon('info', size: 20),
             ),
           ],
         ),

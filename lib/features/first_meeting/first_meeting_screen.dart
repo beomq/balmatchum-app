@@ -13,7 +13,8 @@ import '../daily_activity/record_mapping.dart';
 import '../daily_activity/product_repository.dart';
 import '../daily_activity/today_reward_sheet.dart';
 import '../quiz/quiz_controller.dart';
-import '../records/product_page.dart' show fixtureLabelsVisible, formatCount;
+import '../records/product_page.dart'
+    show PixelIcon, fixtureLabelsVisible, formatCount;
 import '../records/status_widgets.dart';
 import '../auth/kakao_auth_service.dart';
 import '../auth/account_deletion_dialog.dart';
@@ -426,7 +427,7 @@ class _FirstMeetingScreenState extends State<FirstMeetingScreen> {
         DuoRailItem(
           key: const ValueKey('duo_rail_settings'),
           label: c.profileRepository == null ? 'Dev 체험 초기화' : '설정',
-          icon: Image.asset('assets/first_meeting/icons/settings.png'),
+          icon: const PixelIcon('settings'),
           onPressed: c.profileRepository == null ? reset : settings,
         ),
       ],
@@ -434,13 +435,14 @@ class _FirstMeetingScreenState extends State<FirstMeetingScreen> {
         for (final (id, label, icon, open) in [
           ('records', '기록', 'calendar-record', widget.onOpenRecords),
           ('quiz', '퀴즈', 'question-quiz', widget.onOpenQuiz),
-          ('wardrobe', '꾸미기', 'wardrobe', widget.onOpenWardrobe),
+          // Pen draws the decorate brush for this destination.
+          ('wardrobe', '꾸미기', 'decorate-shortcut', widget.onOpenWardrobe),
           ('photo', '사진', 'camera-photo', widget.onOpenPhoto),
         ])
           DuoRailItem(
             key: ValueKey('duo_rail_$id'),
             label: label,
-            icon: Image.asset('assets/first_meeting/icons/$icon.png'),
+            icon: PixelIcon(icon),
             onPressed: open ?? () => unavailable(label),
             badgeLabel: id == 'quiz' && quiz != null && quiz.answerIndex == null
                 ? '오늘 퀴즈 미응답'
@@ -887,12 +889,14 @@ class _FirstMeetingScreenState extends State<FirstMeetingScreen> {
                           streak.atLeast
                               ? '${streak.days}일 이상 연속 기록'
                               : '${streak.days}일 연속 기록',
+                          icon: 'goal-target',
                           textKey: const ValueKey('home_streak'),
                         ),
                       if (wallet != null)
                         StatusChip(
                           '${formatCount(wallet.balance)}P'
                           '${fixtureLabelsVisible && wallet.fixtureLabel != null ? ' · 개발 검증용' : ''}',
+                          icon: 'points',
                           textKey: const ValueKey('reward_wallet'),
                         ),
                     ],
@@ -1021,7 +1025,8 @@ class _FirstMeetingScreenState extends State<FirstMeetingScreen> {
                       ),
                       StatusTile(
                         key: const ValueKey('home_tile_wardrobe'),
-                        icon: 'assets/first_meeting/icons/wardrobe.png',
+                        icon:
+                            'assets/first_meeting/icons/decorate-shortcut.png',
                         title: '꾸미기',
                         status: wardrobeStatus(),
                         statusKey: const ValueKey('home_tile_wardrobe_status'),

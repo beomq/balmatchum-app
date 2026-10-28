@@ -81,6 +81,34 @@ void main() {
     expect(koreanHolidayName(DateTime(2027, 1, 2)), isNull);
   });
 
+  testWidgets('the month arrows and home are pixel icons', (tester) async {
+    await tester.pumpWidget(
+      host(
+        RecordsCalendarScreen(
+          initialMonth: DateTime(2027, 1, 15),
+          loadMonth: (month) async => RecordMonth(month: month, days: [day()]),
+          onOpenDay: (_) {},
+          onBack: () {},
+          onHome: () {},
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    String pixel(String key) => tester
+        .widget<PixelIcon>(
+          find.descendant(
+            of: find.byKey(ValueKey(key)),
+            matching: find.byType(PixelIcon),
+          ),
+        )
+        .name;
+    // Pen K6Z5x: back for the previous month, the caret for the next.
+    expect(pixel('records_prev_month'), 'back');
+    expect(pixel('records_next_month'), 'caret-right');
+    expect(pixel('product_home'), 'home');
+    expect(find.byType(Icon), findsNothing);
+  });
+
   testWidgets('calendar loads, fails, retries and opens a day once', (
     tester,
   ) async {

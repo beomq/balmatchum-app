@@ -42,6 +42,24 @@ double pageGutter(double width) => width < 360
     ? 24
     : 32;
 
+/// A pixel icon of `assets/first_meeting/icons/`: the design library's
+/// display/32 PNG drawn with nearest sampling, like the app's other icons.
+class PixelIcon extends StatelessWidget {
+  const PixelIcon(this.name, {this.size = 32, super.key});
+
+  /// The library file name without `.png`, such as `home` or `close-x`.
+  final String name;
+  final double size;
+
+  @override
+  Widget build(BuildContext context) => Image.asset(
+    'assets/first_meeting/icons/$name.png',
+    width: size,
+    height: size,
+    filterQuality: FilterQuality.none,
+  );
+}
+
 /// TopBar back-and-home variant with 44px targets. A [title] sits centered
 /// between them, as Pen `TopBar/Standard` does with its title on.
 class ProductTopBar extends StatelessWidget {
@@ -81,7 +99,7 @@ class ProductTopBar extends StatelessWidget {
           key: const ValueKey('product_home'),
           tooltip: '홈',
           onPressed: onHome,
-          icon: const Icon(Icons.home_outlined, color: MeetingColors.ink),
+          icon: const PixelIcon('home'),
         ),
       ],
     ),

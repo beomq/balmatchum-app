@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../features/first_meeting/meeting_theme.dart';
-import '../features/records/product_page.dart' show ProductColors;
+import '../features/records/product_page.dart' show PixelIcon, ProductColors;
 
 enum DuoRailSide { left, right }
 
@@ -106,7 +106,7 @@ List<DuoRailItem> duoBackHome({
   DuoRailItem(
     key: const ValueKey('duo_rail_home'),
     label: '홈',
-    icon: const Icon(Icons.home_outlined, color: MeetingColors.ink),
+    icon: const PixelIcon('home'),
     onPressed: onHome,
   ),
 ];
