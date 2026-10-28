@@ -1,132 +1,163 @@
 import 'package:flutter/material.dart';
+import 'package:in_app_purchase/in_app_purchase.dart';
 
 import '../../app/dependencies.dart';
+import '../first_meeting/meeting_theme.dart';
+import '../first_meeting/onboarding_widgets.dart' show wrapByWords;
+import '../records/product_page.dart';
 import 'billing_controller.dart';
 import 'billing_disclosure.dart';
 
-class BillingScreen extends StatelessWidget {
+/// 구매 및 복원 (guide 6.6, no Pen design): the benefit lines, a price card
+/// per store product, one purchase button for the chosen product with its
+/// terms right under it, and restore beside the legal links at the bottom.
+class BillingScreen extends StatefulWidget {
   const BillingScreen({
     required this.controller,
+    required this.onBack,
+    required this.onHome,
     this.openUrl = openExternalUrl,
     super.key,
   });
+
+  /// Null without a signed-in account or a store. The page then only says
+  /// where purchases work: signing in builds a new controller, so the page
+  /// has nothing of its own to retry.
   final BillingController? controller;
+  final VoidCallback onBack;
+  final VoidCallback onHome;
   final Future<bool> Function(Uri url) openUrl;
 
   @override
+  State<BillingScreen> createState() => _BillingScreenState();
+}
+
+class _BillingScreenState extends State<BillingScreen> {
+  /// The product picked among several. Nothing is picked for the user while
+  /// the products and the default choice are undecided (guide 9.1 ⑧).
+  String? _picked;
+
+  @override
   Widget build(BuildContext context) {
-    final c = controller;
-    return Scaffold(
-      appBar: AppBar(title: const Text('구매 및 복원')),
-      body: c == null
-          ? const Center(
-              child: Padding(
-                padding: EdgeInsets.all(24),
-                child: Text('로그인한 iPhone 또는 Android 기기에서 구매를 확인해 주세요.'),
-              ),
-            )
-          : ListenableBuilder(
-              listenable: c,
-              builder: (context, _) => SafeArea(
-                child: Center(
-                  child: ConstrainedBox(
-                    constraints: const BoxConstraints(maxWidth: 600),
-                    child: ListView(
-                      padding: const EdgeInsets.all(24),
-                      children: [
-                        Text(
-                          '스토어 구매 관리',
-                          style: Theme.of(context).textTheme.headlineSmall,
-                        ),
-                        const SizedBox(height: 12),
-                        const Text(billingBenefit),
-                        const SizedBox(height: 24),
-                        Semantics(
-                          liveRegion: true,
-                          child: Text(
-                            _status(c),
-                            key: const ValueKey('billing_status'),
-                            style: Theme.of(context).textTheme.titleMedium,
-                          ),
-                        ),
-                        if (c.busy) ...[
-                          const SizedBox(height: 12),
-                          const LinearProgressIndicator(),
-                        ],
-                        if (c.errorCode != null) ...[
-                          const SizedBox(height: 12),
-                          Text(_error(c.errorCode!)),
-                        ],
-                        const SizedBox(height: 24),
-                        for (final product in c.products) ...[
-                          Text(
-                            product.title,
-                            style: Theme.of(context).textTheme.titleLarge,
-                          ),
-                          const SizedBox(height: 8),
-                          Text(
-                            billingTerms(
-                              subscription:
-                                  c.configuration!.products
-                                      .firstWhere(
-                                        (p) => p.productId == product.id,
-                                      )
-                                      .kind ==
-                                  'subscription',
-                              price: product.price,
-                            ),
-                            key: ValueKey('billing_terms_${product.id}'),
-                          ),
-                          const SizedBox(height: 8),
-                          Text(product.description),
-                          const SizedBox(height: 12),
-                          OutlinedButton(
-                            key: ValueKey('billing_buy_${product.id}'),
-                            onPressed: c.canBuy ? () => c.buy(product) : null,
-                            child: Text('${product.price} · 스토어에서 구매'),
-                          ),
-                          const SizedBox(height: 24),
-                        ],
-                        if (c.products.isEmpty && !c.busy)
-                          const Padding(
-                            padding: EdgeInsets.only(bottom: 24),
-                            child: Text(
-                              '구매 가능한 상품을 불러오지 못했어요. 가격은 스토어 연결 후 표시됩니다.',
-                            ),
-                          ),
-                        Text(billingRefund),
-                        const SizedBox(height: 8),
-                        BillingLinks(openUrl: openUrl),
-                        const SizedBox(height: 16),
-                        // Status checks run on their own; only a failure
-                        // offers a retry (guide 3.1, 6.6).
-                        if (c.errorCode != null) ...[
-                          FilledButton(
-                            key: const ValueKey('billing_retry'),
-                            onPressed: c.busy ? null : c.retry,
-                            child: const Text('다시 시도'),
-                          ),
-                          const SizedBox(height: 12),
-                        ],
-                        OutlinedButton(
-                          key: const ValueKey('billing_restore'),
-                          onPressed: c.busy || c.configuration == null
-                              ? null
-                              : c.restore,
-                          child: const Text('스토어 구매 복원'),
-                        ),
-                        const SizedBox(height: 16),
-                        const Text(
-                          '처음 구매한 발맞춤 계정으로 로그인해 주세요.\n구독 변경과 취소는 스토어에서 관리해요.',
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              ),
-            ),
+    final c = widget.controller;
+    if (c == null) {
+      return ProductPage(
+        onBack: widget.onBack,
+        onHome: widget.onHome,
+        children: const [
+          _Title(),
+          SizedBox(height: Space.s3),
+          Text(
+            '로그인한 iPhone 또는 Android 기기에서 구매를 확인해 주세요.',
+            key: ValueKey('billing_unsupported'),
+          ),
+        ],
+      );
+    }
+    return ListenableBuilder(
+      listenable: c,
+      builder: (context, _) => _page(context, c),
     );
   }
+
+  Widget _page(BuildContext context, BillingController c) {
+    final products = c.products;
+    final choice = products.length > 1;
+    // A single product is the purchase itself; among several only a pick.
+    final chosen = choice
+        ? products.where((p) => p.id == _picked).firstOrNull
+        : products.firstOrNull;
+    final error = c.errorCode;
+    return ProductPage(
+      onBack: widget.onBack,
+      onHome: widget.onHome,
+      footer: (gutter) => _Footer(
+        gutter: gutter,
+        // Restore needs the store setup and a store that answers.
+        restore: c.configuration != null && c.phase != BillingPhase.unavailable,
+        onRestore: c.busy ? null : c.restore,
+        openUrl: widget.openUrl,
+      ),
+      children: [
+        const _Title(),
+        const SizedBox(height: Space.s4),
+        const _Benefits(),
+        const SizedBox(height: Space.s6),
+        if (error != null)
+          // A failure is the one state with an action of its own: its cause
+          // in one line and one retry, never a new purchase (6.6 ⑤⑥).
+          Semantics(
+            liveRegion: true,
+            child: ProductLoadState(
+              error: c.busy ? null : _error(error),
+              onRetry: c.retry,
+              retryKey: const ValueKey('billing_retry'),
+            ),
+          )
+        else ...[
+          for (final product in products) ...[
+            _PlanCard(
+              key: ValueKey('billing_plan_${product.id}'),
+              product: product,
+              subscription: _subscription(c, product),
+              choice: choice,
+              selected: product == chosen,
+              // Purchasing, pending and verifying lock the pick as well.
+              onTap: choice && c.canBuy
+                  ? () => setState(() => _picked = product.id)
+                  : null,
+            ),
+            const SizedBox(height: Space.s3),
+          ],
+          Semantics(
+            liveRegion: true,
+            child: Text(_status(c), key: const ValueKey('billing_status')),
+          ),
+          if (c.busy) ...[
+            const SizedBox(height: Space.s2),
+            const LinearProgressIndicator(color: MeetingColors.primary),
+          ],
+          if (products.isNotEmpty) ...[
+            const SizedBox(height: Space.s3),
+            FilledButton(
+              key: ValueKey(
+                chosen == null ? 'billing_buy' : 'billing_buy_${chosen.id}',
+              ),
+              onPressed: chosen != null && c.canBuy
+                  ? () => c.buy(chosen)
+                  : null,
+              child: Text(
+                chosen == null
+                    ? '구매할 상품을 골라 주세요'
+                    : '${chosen.price} · 스토어에서 구매',
+              ),
+            ),
+            const SizedBox(height: Space.s3),
+            // Store-required terms of exactly what the button buys.
+            if (chosen != null) ...[
+              Text(
+                billingTerms(
+                  subscription: _subscription(c, chosen),
+                  price: chosen.price,
+                ),
+                key: ValueKey('billing_terms_${chosen.id}'),
+              ),
+              const SizedBox(height: Space.s2),
+            ],
+            Text(billingRefund),
+            const SizedBox(height: Space.s2),
+            const Text('처음 구매한 발맞춤 계정으로 로그인해 주세요.\n구독 변경과 취소는 스토어에서 관리해요.'),
+          ],
+        ],
+      ],
+    );
+  }
+
+  bool _subscription(BillingController c, ProductDetails product) =>
+      c.configuration!.products
+          .firstWhere((p) => p.productId == product.id)
+          .kind ==
+      'subscription';
 
   String _status(BillingController c) => switch (c.phase) {
     BillingPhase.loading => '상품과 구매 상태를 확인하고 있어요',
@@ -154,4 +185,182 @@ class BillingScreen extends StatelessWidget {
       '아직 유효한 결제가 아니어서 승인을 완료하지 않았어요. 스토어 결제 상태를 확인한 뒤 재시도해 주세요.',
     _ => '구매 상태를 확인하지 못했어요.\n연결을 확인하고 다시 시도해 주세요.',
   };
+}
+
+class _Title extends StatelessWidget {
+  const _Title();
+
+  @override
+  Widget build(BuildContext context) => Semantics(
+    header: true,
+    child: Text('구매 및 복원', style: Theme.of(context).textTheme.headlineSmall),
+  );
+}
+
+/// [billingBenefits], one bulleted line each.
+class _Benefits extends StatelessWidget {
+  const _Benefits();
+
+  @override
+  Widget build(BuildContext context) {
+    final style = Theme.of(context).textTheme.bodyLarge;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      spacing: Space.s2,
+      children: [
+        for (final (i, line) in billingBenefits.indexed)
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.baseline,
+            textBaseline: TextBaseline.alphabetic,
+            spacing: Space.s2,
+            children: [
+              ExcludeSemantics(
+                child: Text(
+                  '•',
+                  style: style?.copyWith(color: MeetingColors.primary),
+                ),
+              ),
+              Expanded(
+                child: Text(
+                  wrapByWords(line),
+                  key: ValueKey('billing_benefit_$i'),
+                  semanticsLabel: line,
+                  style: style,
+                ),
+              ),
+            ],
+          ),
+      ],
+    );
+  }
+}
+
+/// A price card: the store's title and localized price with the plan's
+/// kind. Among several products the cards pick what the button buys, in
+/// the selected look of the goal presets.
+class _PlanCard extends StatelessWidget {
+  const _PlanCard({
+    required this.product,
+    required this.subscription,
+    required this.choice,
+    required this.selected,
+    required this.onTap,
+    super.key,
+  });
+  final ProductDetails product;
+  final bool subscription;
+
+  /// One of several cards to pick from.
+  final bool choice;
+  final bool selected;
+
+  /// Null for a single product and while input is locked.
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final text = Theme.of(context).textTheme;
+    final kind = billingPlanKind(subscription: subscription);
+    return Semantics(
+      container: true,
+      button: choice,
+      enabled: choice ? onTap != null : null,
+      selected: choice ? selected : null,
+      child: Material(
+        color: selected ? MeetingColors.well : MeetingColors.raised,
+        clipBehavior: Clip.antiAlias,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(16),
+          side: selected
+              ? const BorderSide(color: MeetingColors.primaryStrong, width: 2)
+              : const BorderSide(color: MeetingColors.line),
+        ),
+        child: InkWell(
+          onTap: onTap,
+          child: Padding(
+            padding: const EdgeInsets.all(Space.s4),
+            // The price moves under the plan when a narrow card or large
+            // text leaves no room beside it.
+            child: Wrap(
+              alignment: WrapAlignment.spaceBetween,
+              crossAxisAlignment: WrapCrossAlignment.center,
+              spacing: Space.s3,
+              runSpacing: Space.s1,
+              children: [
+                Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  spacing: Space.s1,
+                  children: [
+                    Text(
+                      wrapByWords(product.title),
+                      semanticsLabel: product.title,
+                      style: text.titleMedium,
+                    ),
+                    Text(wrapByWords(kind), semanticsLabel: kind),
+                  ],
+                ),
+                Text(
+                  billingPlanPrice(
+                    subscription: subscription,
+                    price: product.price,
+                  ),
+                  key: ValueKey('billing_price_${product.id}'),
+                  style: text.titleLarge,
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Restore and the legal links as small text actions: a lower rank, not a
+/// smaller target (the theme keeps 44 pt).
+class _Footer extends StatelessWidget {
+  const _Footer({
+    required this.gutter,
+    required this.restore,
+    required this.onRestore,
+    required this.openUrl,
+  });
+  final double gutter;
+
+  /// Whether restore can run here at all.
+  final bool restore;
+
+  /// Null while another store or server request runs.
+  final VoidCallback? onRestore;
+  final Future<bool> Function(Uri url) openUrl;
+
+  @override
+  Widget build(BuildContext context) => Padding(
+    padding: EdgeInsets.fromLTRB(
+      gutter,
+      Space.s2,
+      gutter,
+      Space.s4 + MediaQuery.paddingOf(context).bottom,
+    ),
+    child: TextButtonTheme(
+      data: TextButtonThemeData(
+        style: TextButton.styleFrom(
+          textStyle: meetingType(14, 20, FontWeight.w700),
+        ).merge(Theme.of(context).textButtonTheme.style),
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (restore)
+            TextButton(
+              key: const ValueKey('billing_restore'),
+              onPressed: onRestore,
+              child: const Text('스토어 구매 복원'),
+            ),
+          BillingLinks(openUrl: openUrl),
+        ],
+      ),
+    ),
+  );
 }
