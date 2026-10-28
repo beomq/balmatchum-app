@@ -461,6 +461,37 @@ void main() {
       });
     }
 
+    testWidgets('authenticated method step shows no back anywhere', (
+      tester,
+    ) async {
+      // Given a signed-in account without a profile, which starts at method.
+      final c = FirstMeetingController(
+        storage: MemoryStorage(),
+        profileRepository: Profiles(),
+      );
+      addTearDown(c.dispose);
+      await c.initialize();
+      expect(c.state.step, FirstMeetingStep.method);
+      expect(c.canGoBack, isFalse);
+      // When it shows on the Duo outer panel.
+      useDuoViewport(tester, 'outer portrait');
+      await tester.pumpWidget(duoHost(FirstMeetingScreen(controller: c)));
+      await tester.pumpAndSettle();
+      // Then the column is painted without a back button.
+      expect(find.byType(DuoRail), findsOneWidget);
+      expect(back, findsNothing);
+      expect(topBack, findsNothing);
+      // And a normal iPhone shows no top-bar back either.
+      await tester.pumpWidget(const SizedBox.shrink());
+      final (_, size, padding) = normalIPhones.first;
+      usePadding(tester, size, padding);
+      await tester.pumpWidget(duoHost(FirstMeetingScreen(controller: c)));
+      await tester.pumpAndSettle();
+      expect(find.byType(DuoRail), findsNothing);
+      expect(topBack, findsNothing);
+      expect(tester.takeException(), isNull);
+    });
+
     testWidgets('a busy step disables the rail back like the top bar', (
       tester,
     ) async {

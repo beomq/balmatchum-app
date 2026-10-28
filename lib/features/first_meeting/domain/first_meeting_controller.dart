@@ -42,6 +42,14 @@ class FirstMeetingController extends ChangeNotifier {
   bool _isBusy = false;
   bool get isBusy => _isBusy;
   bool get isRestored => _restored;
+
+  /// Whether [back] moves to another step. The authenticated flow starts at
+  /// method, so there is nothing before it.
+  bool get canGoBack => switch (_state.step) {
+    FirstMeetingStep.login || FirstMeetingStep.home => false,
+    FirstMeetingStep.method => profileRepository == null,
+    _ => true,
+  };
   bool _restored = false;
   bool _corrupt = false;
   Future<void> _tail = Future.value();

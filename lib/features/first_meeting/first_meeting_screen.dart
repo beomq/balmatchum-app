@@ -384,7 +384,7 @@ class _FirstMeetingScreenState extends State<FirstMeetingScreen> {
     final railSpec = switch (s.step) {
       FirstMeetingStep.home => homeRailSpec(c),
       // No back action: the column is painted without buttons.
-      FirstMeetingStep.login => const DuoRailSpec(),
+      _ when !c.canGoBack => const DuoRailSpec(),
       // Same callback and enabled state as the top-bar back.
       _ => DuoRailSpec(tools: [duoBack(c.isBusy ? null : c.back)]),
     };
@@ -402,13 +402,7 @@ class _FirstMeetingScreenState extends State<FirstMeetingScreen> {
           showHeader: s.step != FirstMeetingStep.home,
           wide: s.step == FirstMeetingStep.home,
           // While the rail carries back, the header keeps its empty slot.
-          onBack:
-              railMode != null ||
-                  s.step == FirstMeetingStep.login ||
-                  s.step == FirstMeetingStep.home ||
-                  c.isBusy
-              ? null
-              : c.back,
+          onBack: railMode != null || !c.canGoBack || c.isBusy ? null : c.back,
           rail: railMode == null
               ? null
               : DuoRail(spec: railSpec, mode: railMode),
