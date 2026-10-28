@@ -2,34 +2,54 @@ import 'package:flutter/material.dart';
 
 import 'meeting_theme.dart';
 
+/// The home's `Home/Status Tile` grid (`F9fHc6`): two columns, or one once
+/// the text size no longer fits a status line beside a tile icon.
 class MeetingShortcuts extends StatelessWidget {
   const MeetingShortcuts({required this.children, super.key});
   final List<Widget> children;
+
+  static const _gap = 8.0;
 
   @override
   Widget build(BuildContext context) => LayoutBuilder(
     builder: (context, bounds) {
       final label = TextPainter(
         text: TextSpan(
-          text: '꾸미기',
-          style: Theme.of(context).textTheme.labelLarge,
+          text: '착용 중 · 조끼',
+          style: Theme.of(context).textTheme.bodySmall,
         ),
         textDirection: Directionality.of(context),
         textScaler: MediaQuery.textScalerOf(context),
       )..layout();
-      final minimum = (label.width + 48).clamp(72.0, double.infinity);
+      // Icon 32, its gap 12 and the tile's 12 padding on both sides.
+      final minimum = label.width + 32 + 12 * 3;
       label.dispose();
-      final columns = (bounds.maxWidth - 36) / 4 >= minimum
-          ? 4
-          : (bounds.maxWidth - 12) / 2 >= minimum
-          ? 2
-          : 1;
-      final width = (bounds.maxWidth - 12 * (columns - 1)) / columns;
-      return Wrap(
-        spacing: 12,
-        runSpacing: 12,
+      if ((bounds.maxWidth - _gap) / 2 < minimum) {
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          spacing: _gap,
+          children: children,
+        );
+      }
+      return Column(
+        spacing: _gap,
         children: [
-          for (final child in children) SizedBox(width: width, child: child),
+          for (var i = 0; i < children.length; i += 2)
+            // Both tiles of a row share the taller one's height.
+            IntrinsicHeight(
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Expanded(child: children[i]),
+                  const SizedBox(width: _gap),
+                  Expanded(
+                    child: i + 1 < children.length
+                        ? children[i + 1]
+                        : const SizedBox.shrink(),
+                  ),
+                ],
+              ),
+            ),
         ],
       );
     },
@@ -42,7 +62,7 @@ class MeetingHomeLayout extends StatelessWidget {
     required this.scene,
     required this.status,
     required this.shortcuts,
-    required this.footer,
+    this.footer,
     super.key,
   });
   final Widget header;
@@ -51,7 +71,9 @@ class MeetingHomeLayout extends StatelessWidget {
 
   /// Null while the Duo side rail carries the shortcuts.
   final Widget? shortcuts;
-  final Widget footer;
+
+  /// Only the Dev local flow says where it saves; Pen home A has no footer.
+  final Widget? footer;
 
   @override
   Widget build(BuildContext context) => LayoutBuilder(
@@ -91,8 +113,10 @@ class MeetingHomeLayout extends StatelessWidget {
                 const SizedBox(height: 16),
                 details,
               ],
-              const SizedBox(height: 16),
-              footer,
+              if (footer case final footer?) ...[
+                const SizedBox(height: 16),
+                footer,
+              ],
             ],
           ),
         ),

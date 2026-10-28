@@ -96,8 +96,8 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
-    await tester.ensureVisible(find.text('포인트 받기'));
-    await tester.tap(find.text('포인트 받기'));
+    await tester.ensureVisible(find.byKey(const ValueKey('home_reward')));
+    await tester.tap(find.byKey(const ValueKey('home_reward')));
     await tester.pumpAndSettle();
     expect(find.textContaining('포함되지 않은 기능'), findsOneWidget);
     await tester.tap(find.text('확인'));
