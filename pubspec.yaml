@@ -49,6 +49,7 @@ flutter:
   assets:
     - assets/fonts/LICENSE-Pretendard.txt
     - assets/fonts/LICENSE-Galmuri.txt
+    - assets/brand/balmatchum_splash.png
     - assets/first_meeting/
     - assets/first_meeting/dogs/
     - assets/first_meeting/icons/
