@@ -76,6 +76,7 @@ final routerProvider = Provider<GoRouter>((ref) {
                     deleteDay: ref.read(productControllerProvider).deleteDay,
                     claimDay: ref.read(productControllerProvider).claim,
                     rewardController: ref.read(productControllerProvider),
+                    dogAsset: controller.state.candidate!.spritePath,
                     onBack: () => context.pop(),
                     onHome: () => context.go('/'),
                   ),
@@ -202,6 +203,7 @@ final routerProvider = Provider<GoRouter>((ref) {
             builder: (context, state) => AuthenticatedQuizScreen(
               key: ObjectKey(authenticated),
               controller: ref.read(authenticatedQuizControllerProvider)!,
+              dogAsset: authenticated!.state.candidate!.spritePath,
               onBack: () => context.pop(),
               onHome: () => context.go('/'),
             ),
@@ -276,6 +278,7 @@ final routerProvider = Provider<GoRouter>((ref) {
                   rewardController: ref.read(
                     authenticatedProductControllerProvider,
                   ),
+                  dogAsset: authenticated!.state.candidate!.spritePath,
                   onBack: () => context.pop(),
                   onHome: () => context.go('/'),
                 ),

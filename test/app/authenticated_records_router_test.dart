@@ -171,6 +171,11 @@ void main() {
       router.go('/records/2026-10-15');
       await tester.pumpAndSettle();
       expect(find.byType(RecordDayScreen), findsOneWidget);
+      // Sub screens take the user's own sprite from the router (guide 3.6).
+      expect(
+        tester.widget<RecordDayScreen>(find.byType(RecordDayScreen)).dogAsset,
+        meeting.state.candidate!.spritePath,
+      );
       expect(find.byKey(const ValueKey('reward_free_claim')), findsOneWidget);
       await capture(tester, boundary, 'records-day');
       await tester.ensureVisible(
@@ -188,6 +193,14 @@ void main() {
       router.go('/quiz');
       await tester.pumpAndSettle();
       expect(find.byType(AuthenticatedQuizScreen), findsOneWidget);
+      expect(
+        tester
+            .widget<AuthenticatedQuizScreen>(
+              find.byType(AuthenticatedQuizScreen),
+            )
+            .dogAsset,
+        meeting.state.candidate!.spritePath,
+      );
       expect(find.byKey(const ValueKey('quiz_1_submit')), findsOneWidget);
       container.updateOverrides([
         authenticatedMeetingControllerProvider.overrideWithValue(null),

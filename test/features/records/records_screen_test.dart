@@ -4,6 +4,7 @@ import 'package:balmatchum_app/features/first_meeting/meeting_theme.dart';
 import 'package:balmatchum_app/features/records/product_page.dart';
 import 'package:balmatchum_app/features/records/records_models.dart';
 import 'package:balmatchum_app/features/records/records_screen.dart';
+import 'package:balmatchum_app/features/wardrobe/dog_sprite.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -60,6 +61,7 @@ RecordDayScreen dayScreen({
   DeleteRecordDay? delete,
   ClaimRecordDay? claim,
   ValueChanged<RecordDay>? changed,
+  String? dog,
 }) => RecordDayScreen(
   date: date,
   loadDay: load,
@@ -68,6 +70,7 @@ RecordDayScreen dayScreen({
   onDayChanged: changed,
   onBack: () {},
   onHome: () {},
+  dogAsset: dog,
 );
 
 void main() {
@@ -157,6 +160,31 @@ void main() {
     );
     await tester.pumpAndSettle();
     expect(find.byKey(const ValueKey('product_fixture_badge')), findsOneWidget);
+  });
+
+  testWidgets('the own companion sits with a recorded day only', (
+    tester,
+  ) async {
+    const dog = 'assets/first_meeting/dogs/pug.png';
+    await tester.pumpWidget(
+      host(dayScreen(load: (_) async => day(), dog: dog)),
+    );
+    await tester.pumpAndSettle();
+    final sprite = find.descendant(
+      of: find.byKey(const ValueKey('records_day_dog')),
+      matching: find.byType(DogSprite),
+    );
+    expect(tester.widget<DogSprite>(sprite).asset, dog);
+    await tester.pumpWidget(
+      host(
+        KeyedSubtree(
+          key: const ValueKey('deleted'),
+          child: dayScreen(load: (_) async => deleted(), dog: dog),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('records_day_dog')), findsNothing);
   });
 
   testWidgets('calendar hides routes when a stored day contains coordinates', (

@@ -8,6 +8,7 @@ import 'package:balmatchum_app/features/quiz/authenticated_quiz_screen.dart';
 import 'package:balmatchum_app/features/ads/ads_controller.dart';
 import 'package:balmatchum_app/features/first_meeting/meeting_theme.dart';
 import 'package:balmatchum_app/features/records/product_page.dart';
+import 'package:balmatchum_app/features/wardrobe/dog_sprite.dart';
 import 'package:balmatchum_client/balmatchum_client.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
@@ -340,6 +341,54 @@ void main() {
     addTearDown(() => debugFixtureLabelsVisible = null);
     await mount(tester);
     expect(find.byKey(const ValueKey('product_fixture_badge')), findsOneWidget);
+  });
+
+  testWidgets('the own companion joins a result and the empty state', (
+    tester,
+  ) async {
+    const dog = 'assets/first_meeting/dogs/pug.png';
+    Future<void> show(String key) async {
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: meetingTheme(),
+          home: AuthenticatedQuizScreen(
+            key: ValueKey(key),
+            controller: controller,
+            onBack: () {},
+            onHome: () {},
+            dogAsset: dog,
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+    }
+
+    String shown(String key) => tester
+        .widget<DogSprite>(
+          find.descendant(
+            of: find.byKey(ValueKey(key)),
+            matching: find.byType(DogSprite),
+          ),
+        )
+        .asset;
+
+    await show('open');
+    expect(find.byKey(const ValueKey('quiz_1_dog')), findsNothing);
+    repository.current = repository.current.copyWith(
+      free: question(1, answered: true),
+      extraStatus: 'adRequired',
+      extraRevision: 1,
+    );
+    await show('answered');
+    expect(shown('quiz_1_dog'), dog);
+    repository.current = QuizToday(
+      premiumStatus: 'notChecked',
+      date: '2026-10-19',
+      status: 'contentUnavailable',
+      extraStatus: 'contentUnavailable',
+    );
+    await show('empty');
+    expect(shown('quiz_empty_dog'), dog);
   });
 
   for (final status in ['contentUnavailable', 'exhausted']) {

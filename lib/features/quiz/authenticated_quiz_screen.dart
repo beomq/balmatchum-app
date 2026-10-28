@@ -7,6 +7,7 @@ import '../ads/ads_controller.dart';
 import '../ads/ads_session.dart';
 import '../ads/ads_sheet.dart';
 import '../records/product_page.dart';
+import '../wardrobe/dog_sprite.dart';
 import 'quiz_controller.dart';
 
 /// The legacy development quiz screen remains separate from this API.
@@ -17,12 +18,15 @@ class AuthenticatedQuizScreen extends StatefulWidget {
     required this.onBack,
     required this.onHome,
     this.createAds,
+    this.dogAsset,
   });
   final QuizController controller;
   final VoidCallback onBack;
   final VoidCallback onHome;
   final Future<AdsController?> Function()? createAds;
 
+  /// The user's own companion sprite for results and the empty state (3.6).
+  final String? dogAsset;
   @override
   State<AuthenticatedQuizScreen> createState() =>
       _AuthenticatedQuizScreenState();
@@ -160,17 +164,29 @@ class _AuthenticatedQuizScreenState extends State<AuthenticatedQuizScreen> {
                 onPressed: enabled ? controller.checkPremium : null,
                 child: const Text('다시 시도'),
               ),
-            if (today.status != 'ready')
+            if (today.status != 'ready') ...[
+              if (widget.dogAsset case final dog?
+                  when today.status == 'contentUnavailable' ||
+                      today.status == 'exhausted')
+                Center(
+                  child: SizedBox.square(
+                    key: const ValueKey('quiz_empty_dog'),
+                    dimension: DogSpriteSize.emptyState,
+                    child: DogSprite(asset: dog),
+                  ),
+                ),
               Text(
                 quizError(today.status),
                 key: ValueKey('quiz_status_${today.status}'),
               ),
+            ],
             if (today.free != null)
               _QuestionCard(
                 key: ValueKey(today.free!.assignmentId),
                 question: today.free!,
                 enabled: enabled,
                 onSubmit: controller.answer,
+                dogAsset: widget.dogAsset,
               ),
             const SizedBox(height: Space.s4),
             Text('추가 퀴즈', style: Theme.of(context).textTheme.titleLarge),
@@ -181,6 +197,7 @@ class _AuthenticatedQuizScreenState extends State<AuthenticatedQuizScreen> {
                 question: today.extra!,
                 enabled: enabled,
                 onSubmit: controller.answer,
+                dogAsset: widget.dogAsset,
               )
             else ...[
               Text(switch (today.extraStatus) {
@@ -231,11 +248,14 @@ class _QuestionCard extends StatefulWidget {
     required this.question,
     this.enabled = false,
     this.onSubmit,
+    this.dogAsset,
   });
   final QuizQuestion question;
   final bool enabled;
   final Future<void> Function(QuizQuestion, int)? onSubmit;
 
+  /// Shown beside today's result; history reviews pass none.
+  final String? dogAsset;
   @override
   State<_QuestionCard> createState() => _QuestionCardState();
 }
@@ -300,9 +320,23 @@ class _QuestionCardState extends State<_QuestionCard> {
             child: const Text('답 제출하기'),
           ),
         if (answered) ...[
-          Text(
-            q.answerIndex == q.correctIndex ? '정답이에요' : '아쉽지만 오답이에요',
-            style: Theme.of(context).textTheme.titleMedium,
+          Row(
+            children: [
+              if (widget.dogAsset case final dog?) ...[
+                SizedBox.square(
+                  key: ValueKey('quiz_${q.assignmentId}_dog'),
+                  dimension: DogSpriteSize.companion,
+                  child: DogSprite(asset: dog),
+                ),
+                const SizedBox(width: Space.s3),
+              ],
+              Expanded(
+                child: Text(
+                  q.answerIndex == q.correctIndex ? '정답이에요' : '아쉽지만 오답이에요',
+                  style: Theme.of(context).textTheme.titleMedium,
+                ),
+              ),
+            ],
           ),
           if (q.explanation != null) Text(q.explanation!),
           const SizedBox(height: Space.s2),
