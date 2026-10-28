@@ -360,6 +360,7 @@ class RecordDayScreen extends StatefulWidget {
 
   final DateTime date;
   final bool isToday;
+
   final LoadRecordDay loadDay;
   final DeleteRecordDay deleteDay;
   final ClaimRecordDay claimDay;
@@ -493,7 +494,7 @@ class _RecordDayScreenState extends State<RecordDayScreen> {
           const SizedBox(height: Space.s1),
           Text(holiday, style: const TextStyle(color: ProductColors.error)),
         ],
-        if (day?.fixtureLabel != null) ...[
+        if (fixtureLabelsVisible && day?.fixtureLabel != null) ...[
           const SizedBox(height: Space.s2),
           FixtureBadge(day!.fixtureLabel!),
         ],
@@ -577,7 +578,7 @@ class _RewardBody extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final granted = day.grantedPoints > 0
-        ? '받은 포인트 ${formatCount(day.grantedPoints)}'
+        ? '받은 포인트 ${formatCount(day.grantedPoints)}P'
         : null;
     final status = switch (day.rewardStatus) {
       DayRewardStatus.pending => '걸음이 확정되면 받을 수 있어요.',

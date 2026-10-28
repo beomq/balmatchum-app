@@ -22,6 +22,7 @@ class AuthenticatedQuizScreen extends StatefulWidget {
   final VoidCallback onBack;
   final VoidCallback onHome;
   final Future<AdsController?> Function()? createAds;
+
   @override
   State<AuthenticatedQuizScreen> createState() =>
       _AuthenticatedQuizScreenState();
@@ -125,32 +126,40 @@ class _AuthenticatedQuizScreenState extends State<AuthenticatedQuizScreen> {
               onPressed: controller.busy ? null : controller.retry,
               child: const Text('같은 요청으로 결과 확인'),
             )
-          else
+          // Loads run on their own; a retry shows only after one failed (3.1).
+          else if (!controller.busy &&
+              (controller.needsRefresh || today == null))
             TextButton(
               key: const ValueKey('quiz_reload'),
-              onPressed: controller.busy || adOpen ? null : controller.load,
-              child: const Text('오늘 상태 다시 조회'),
+              onPressed: adOpen ? null : controller.load,
+              child: const Text('다시 시도'),
             ),
           if (today == null && controller.notice == null)
             const Text('오늘의 퀴즈를 불러오고 있어요.'),
           if (today != null) ...[
-            Text(
-              controller.premiumError == 'checking'
-                  ? '유료 혜택을 확인하고 있어요.'
-                  : controller.premiumError != null
-                  ? '유료 혜택을 확인하지 못했어요. 다시 확인해 주세요.'
-                  : switch (today.premiumStatus) {
-                      'active' => '유효한 구매를 확인했어요.',
-                      'inactive' => '현재 유효한 구매가 없어요.',
-                      _ => '유료 혜택을 아직 확인하지 않았어요.',
-                    },
-              key: const ValueKey('quiz_premium_status'),
-            ),
-            OutlinedButton(
-              key: const ValueKey('quiz_check_premium'),
-              onPressed: enabled ? controller.checkPremium : null,
-              child: const Text('유료 혜택 새로 확인'),
-            ),
+            // The paid benefit is observed on its own (3.1): nothing to say
+            // before an observation, and only a failure offers a retry.
+            if (controller.premiumError != null ||
+                today.premiumStatus != 'notChecked')
+              Text(
+                controller.premiumError == 'checking'
+                    ? '유료 혜택을 확인하고 있어요.'
+                    : controller.premiumError != null
+                    ? '유료 혜택을 확인하지 못했어요. 다시 확인해 주세요.'
+                    : switch (today.premiumStatus) {
+                        'active' => '유효한 구매를 확인했어요.',
+                        'inactive' => '현재 유효한 구매가 없어요.',
+                        _ => '유료 혜택을 아직 확인하지 않았어요.',
+                      },
+                key: const ValueKey('quiz_premium_status'),
+              ),
+            if (controller.premiumError != null &&
+                controller.premiumError != 'checking')
+              OutlinedButton(
+                key: const ValueKey('quiz_check_premium'),
+                onPressed: enabled ? controller.checkPremium : null,
+                child: const Text('다시 시도'),
+              ),
             if (today.status != 'ready')
               Text(
                 quizError(today.status),
@@ -226,6 +235,7 @@ class _QuestionCard extends StatefulWidget {
   final QuizQuestion question;
   final bool enabled;
   final Future<void> Function(QuizQuestion, int)? onSubmit;
+
   @override
   State<_QuestionCard> createState() => _QuestionCardState();
 }
@@ -239,7 +249,7 @@ class _QuestionCardState extends State<_QuestionCard> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        if (q.fixtureLabel != null) ...[
+        if (fixtureLabelsVisible && q.fixtureLabel != null) ...[
           FixtureBadge(q.fixtureLabel!),
           const Text('테스트 문항이며 운영 포인트에 포함되지 않아요.'),
         ],
@@ -299,7 +309,7 @@ class _QuestionCardState extends State<_QuestionCard> {
           if (q.source != null) SelectableText('출처 · ${q.source}'),
           Text('검토일 ${q.reviewedAt} · ${q.reviewedBy}'),
           Text(
-            '이 문제의 기존 지급 기록 ${q.awardedPoints}P · 복습은 추가 지급 없음',
+            '이 문제의 기존 지급 기록 ${formatCount(q.awardedPoints)}P · 복습은 추가 지급 없음',
             key: ValueKey('quiz_${q.assignmentId}_past_points'),
           ),
         ],
@@ -416,7 +426,7 @@ class _QuizHistoryScreenState extends State<QuizHistoryScreen> {
             key: ValueKey('quiz_history_${q.assignmentId}'),
             title: Text(q.question),
             subtitle: Text(
-              '${q.date} · ${q.slot == 'free' ? '무료' : '추가'} · 기존 ${q.awardedPoints}P',
+              '${q.date} · ${q.slot == 'free' ? '무료' : '추가'} · 기존 ${formatCount(q.awardedPoints)}P',
             ),
             trailing: const Icon(Icons.chevron_right),
             onTap: busy ? null : () => open(q.assignmentId),

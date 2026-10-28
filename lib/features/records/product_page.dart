@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart' show appFlavor;
 
 import '../../app/duo_rail.dart';
 import '../first_meeting/meeting_theme.dart';
@@ -189,8 +190,18 @@ class ProductPanel extends StatelessWidget {
   );
 }
 
+/// Development fixture markers belong to the dev flavor only. Production
+/// builds hide the marker and keep the fixture data itself (guide 3.1).
+bool get fixtureLabelsVisible =>
+    debugFixtureLabelsVisible ?? appFlavor == 'dev';
+
+/// Test override for [fixtureLabelsVisible]; null follows the build flavor.
+@visibleForTesting
+bool? debugFixtureLabelsVisible;
+
 /// Marks server content or amounts that are development fixtures, so they
-/// are never mistaken for operating values.
+/// are never mistaken for operating values. Callers draw it only while
+/// [fixtureLabelsVisible].
 class FixtureBadge extends StatelessWidget {
   const FixtureBadge(this.label, {super.key});
   final String label;

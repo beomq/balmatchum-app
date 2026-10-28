@@ -17,6 +17,7 @@ import 'package:flutter_test/flutter_test.dart';
 import '../daily_activity/paid_reward_test.dart';
 import '../quiz/paid_quiz_test.dart';
 import '../quiz/authenticated_quiz_test.dart' show question;
+import 'billing_http_harness.dart' show presentBilling;
 
 void main() {
   for (final width in [390.0, 1440.0]) {
@@ -32,8 +33,9 @@ void main() {
               ))
               .load();
         });
-        final rewardRepo = PaidRewards();
-        final quizRepo = PaidQuizzes();
+        final billing = presentBilling();
+        final rewardRepo = PaidRewards(billing: billing);
+        final quizRepo = PaidQuizzes(billing: billing);
         quizRepo.current = quizRepo.current.copyWith(
           free: question(1, answered: true),
           extraStatus: 'adRequired',
@@ -56,6 +58,7 @@ void main() {
           steps.dispose();
           rewardRepo.client.close();
           quizRepo.client.close();
+          billing.client.close();
         });
         final theme = dark
             ? ThemeData(brightness: Brightness.dark, fontFamily: 'Pretendard')
@@ -93,10 +96,11 @@ void main() {
             ),
           );
           await tester.pumpAndSettle();
-          final check = find.byKey(ValueKey('${surface}_check_premium'));
-          await tester.ensureVisible(check);
-          await tester.tap(check);
-          await tester.pumpAndSettle();
+          // Entry observes the benefit by itself (guide 3.1).
+          expect(
+            find.byKey(ValueKey('${surface}_check_premium')),
+            findsNothing,
+          );
           expect(
             find.byKey(
               ValueKey(

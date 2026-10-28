@@ -9,6 +9,7 @@ import 'package:balmatchum_app/features/daily_activity/product_controller.dart';
 import 'package:balmatchum_app/features/daily_activity/record_mapping.dart';
 import 'package:balmatchum_app/features/daily_activity/reward_panel.dart';
 import 'package:balmatchum_app/features/first_meeting/meeting_theme.dart';
+import 'package:balmatchum_app/features/records/product_page.dart';
 import 'package:balmatchum_app/features/records/records_models.dart';
 import 'package:balmatchum_app/features/watch_sync/watch_bridge.dart';
 import 'package:balmatchum_client/balmatchum_client.dart';
@@ -20,6 +21,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'product_controller_test.dart';
 
 class RewardRepository extends AccountRepository {
+  RewardRepository({super.billing});
   DailyRecord current = record().copyWith(
     claimablePoints: 20,
     adClaimablePoints: 180,
@@ -99,6 +101,23 @@ class TestAdsServer implements AdsServer {
       );
   @override
   Future<AdIntent> get(String id) => create('dailyReward', '2026-10-15', 1);
+}
+
+/// The claim lands, then every later read fails until [failDays] clears.
+class FailingReload extends RewardRepository {
+  bool failDays = false;
+  @override
+  Future<DailyRecord> day(DateTime date) async {
+    if (failDays) throw const SocketException('offline');
+    return super.day(date);
+  }
+
+  @override
+  Future<RewardGrant> claim(String date, String requestId, int revision) async {
+    final granted = await super.claim(date, requestId, revision);
+    failDays = true;
+    return granted;
+  }
 }
 
 class ReadySdk implements AdsSdk {
@@ -229,6 +248,60 @@ void main() {
       expect(find.byKey(const ValueKey('reward_watch_ad')), findsNothing);
     },
   );
+
+  testWidgets('production hides the fixture marker and groups points', (
+    tester,
+  ) async {
+    repository.current = repository.current.copyWith(
+      fixtureLabel: 'development-fixture-v1-not-production',
+      grantedPoints: 12345,
+    );
+    await mount(tester);
+    await tester.pumpAndSettle();
+    expect(find.textContaining('개발 검증용'), findsNothing);
+    expect(find.textContaining('12,345P'), findsOneWidget);
+    debugFixtureLabelsVisible = true;
+    addTearDown(() => debugFixtureLabelsVisible = null);
+    await mount(tester);
+    await tester.pumpAndSettle();
+    expect(find.textContaining('개발 검증용'), findsOneWidget);
+  });
+
+  testWidgets('the reload retry shows only after an automatic reload fails', (
+    tester,
+  ) async {
+    final flaky = FailingReload();
+    final reloading = ProductController(flaky, steps, null, account: 'A');
+    addTearDown(() {
+      reloading.dispose();
+      flaky.client.close();
+    });
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: meetingTheme(),
+        home: Scaffold(
+          body: SingleChildScrollView(
+            child: RewardPanel(
+              controller: reloading,
+              day: recordDay(flaky.current),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    final reload = find.byKey(const ValueKey('reward_reload'));
+    expect(reload, findsNothing);
+    await tester.tap(find.byKey(const ValueKey('reward_free_claim')));
+    await tester.pumpAndSettle();
+    expect(reload, findsOneWidget);
+    flaky.failDays = false;
+    await tester.ensureVisible(reload);
+    await tester.tap(reload);
+    await tester.pumpAndSettle();
+    expect(reload, findsNothing);
+    expect(find.byKey(const ValueKey('reward_watch_ad')), findsOneWidget);
+  });
 
   testWidgets('closing an unverified ad never enables a reward claim', (
     tester,

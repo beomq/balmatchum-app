@@ -108,6 +108,7 @@ class MeetingPage extends StatelessWidget {
     this.wide = false,
     this.showHeader = true,
     this.rail,
+    this.onRefresh,
     super.key,
   });
   final List<Widget> children;
@@ -117,6 +118,10 @@ class MeetingPage extends StatelessWidget {
 
   /// Duo side-column rail, painted outside the SafeArea.
   final Widget? rail;
+
+  /// Pull-to-refresh, given only by the home; onboarding keeps a plain
+  /// scroll (guide 3.1).
+  final RefreshCallback? onRefresh;
 
   @override
   Widget build(BuildContext context) => Scaffold(
@@ -133,10 +138,14 @@ class MeetingPage extends StatelessWidget {
                   : constraints.maxWidth < 840
                   ? 24.0
                   : 32.0;
-              return SingleChildScrollView(
+              final scroll = SingleChildScrollView(
                 // Busy callbacks must not replace the focused name field subtree.
                 key: PageStorageKey(key ?? 'meeting_root_scroll'),
                 padding: EdgeInsets.fromLTRB(padding, 16, padding, 24),
+                // A short home must still be pullable.
+                physics: onRefresh == null
+                    ? null
+                    : const AlwaysScrollableScrollPhysics(),
                 child: MediaQuery(
                   data: MediaQuery.of(context)
                       .copyWith(size: constraints.biggest),
@@ -174,6 +183,13 @@ class MeetingPage extends StatelessWidget {
                   ),
                 ),
               );
+              return switch (onRefresh) {
+                final refresh? => RefreshIndicator(
+                  onRefresh: refresh,
+                  child: scroll,
+                ),
+                null => scroll,
+              };
             },
           ),
         ),

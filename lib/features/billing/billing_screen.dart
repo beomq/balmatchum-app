@@ -98,14 +98,16 @@ class BillingScreen extends StatelessWidget {
                         const SizedBox(height: 8),
                         BillingLinks(openUrl: openUrl),
                         const SizedBox(height: 16),
-                        FilledButton(
-                          key: const ValueKey('billing_retry'),
-                          onPressed: c.busy ? null : c.retry,
-                          child: Text(
-                            c.errorCode == null ? '구매 상태 새로 확인' : '구매 확인 재시도',
+                        // Status checks run on their own; only a failure
+                        // offers a retry (guide 3.1, 6.6).
+                        if (c.errorCode != null) ...[
+                          FilledButton(
+                            key: const ValueKey('billing_retry'),
+                            onPressed: c.busy ? null : c.retry,
+                            child: const Text('다시 시도'),
                           ),
-                        ),
-                        const SizedBox(height: 12),
+                          const SizedBox(height: 12),
+                        ],
                         OutlinedButton(
                           key: const ValueKey('billing_restore'),
                           onPressed: c.busy || c.configuration == null

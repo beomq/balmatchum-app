@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:balmatchum_app/features/first_meeting/meeting_theme.dart';
+import 'package:balmatchum_app/features/records/product_page.dart';
 import 'package:balmatchum_app/features/records/records_models.dart';
 import 'package:balmatchum_app/features/records/records_screen.dart';
 import 'package:flutter/material.dart';
@@ -139,16 +140,24 @@ void main() {
       // Then steps and rewards remain usable without any route surface.
       expect(find.text('4,200걸음'), findsOneWidget);
       expect(find.text('4포인트를 받을 수 있어요.'), findsOneWidget);
-      expect(
-        find.byKey(const ValueKey('product_fixture_badge')),
-        findsOneWidget,
-      );
+      // A production build never shows the development fixture marker.
+      expect(find.byKey(const ValueKey('product_fixture_badge')), findsNothing);
       expect(find.byKey(const ValueKey('records_route_map')), findsNothing);
       expect(find.byKey(const ValueKey('records_naver_map')), findsNothing);
       expect(find.textContaining('GPS'), findsNothing);
       expect(find.byKey(const ValueKey('records_claim')), findsOneWidget);
     },
   );
+
+  testWidgets('only the dev build marks a fixture day', (tester) async {
+    debugFixtureLabelsVisible = true;
+    addTearDown(() => debugFixtureLabelsVisible = null);
+    await tester.pumpWidget(
+      host(dayScreen(load: (_) async => day(fixture: 'dev-fixture-v1'))),
+    );
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('product_fixture_badge')), findsOneWidget);
+  });
 
   testWidgets('calendar hides routes when a stored day contains coordinates', (
     tester,

@@ -58,6 +58,48 @@ void main() {
     },
   );
 
+  testWidgets('settings keep deletion red at the bottom with no primary', (
+    tester,
+  ) async {
+    final c = FirstMeetingController(
+      storage: MemoryStorage(),
+      profileRepository: Profiles()..current = view(),
+    );
+    addTearDown(c.dispose);
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: meetingTheme(),
+        home: FirstMeetingScreen(controller: c, onDeleteAccount: () async {}),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.byTooltip('설정'));
+    await tester.pumpAndSettle();
+    // Two equal saves never compete as primaries (guide 3.3).
+    expect(
+      find.descendant(
+        of: find.byType(BottomSheet),
+        matching: find.byType(FilledButton),
+      ),
+      findsNothing,
+    );
+    final delete = find.byKey(const ValueKey('settings_delete_account'));
+    await tester.ensureVisible(delete);
+    final ink = tester.widget<Material>(
+      find.descendant(of: delete, matching: find.byType(Material)),
+    );
+    expect(ink.textStyle?.color, MeetingColors.error);
+    expect(
+      tester.getRect(delete).top,
+      greaterThanOrEqualTo(
+        tester
+            .getRect(find.byKey(const ValueKey('settings_privacy_policy')))
+            .bottom,
+      ),
+    );
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
+
   for (final width in [320.0, 390.0, 768.0]) {
     testWidgets('settings save retry and logout at width $width', (
       tester,

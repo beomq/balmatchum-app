@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:balmatchum_app/features/first_meeting/domain/dog_catalog.dart';
 import 'package:balmatchum_app/features/first_meeting/meeting_theme.dart';
+import 'package:balmatchum_app/features/records/product_page.dart';
 import 'package:balmatchum_app/features/wardrobe/wardrobe_models.dart';
 import 'package:balmatchum_app/features/wardrobe/wardrobe_screen.dart';
 import 'package:flutter/material.dart';
@@ -436,6 +437,29 @@ void main() {
       expect(previewOutfit, findsNothing);
     });
   }
+
+  testWidgets('the background action alone is primary; markers stay dev-only', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      host(screen(load: () async => snap(fixture: 'dev-fixture-v1'))),
+    );
+    await tester.pumpAndSettle();
+    await tester.ensureVisible(outfitAction);
+    expect(tester.widget(outfitAction), isA<OutlinedButton>());
+    expect(
+      tester.widgetList(find.byType(FilledButton)).length,
+      lessThanOrEqualTo(1),
+    );
+    expect(find.byKey(const ValueKey('product_fixture_badge')), findsNothing);
+    debugFixtureLabelsVisible = true;
+    addTearDown(() => debugFixtureLabelsVisible = null);
+    await tester.pumpWidget(
+      host(screen(load: () async => snap(fixture: 'dev-fixture-v1'))),
+    );
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('product_fixture_badge')), findsOneWidget);
+  });
 
   testWidgets('vest above the balance cannot be bought', (tester) async {
     await tester.pumpWidget(host(screen(load: () async => snap(balance: 2))));

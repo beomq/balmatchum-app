@@ -533,7 +533,7 @@ class _Catalog extends StatelessWidget {
             ),
           ],
         ),
-        if (snapshot.fixtureLabel != null) ...[
+        if (fixtureLabelsVisible && snapshot.fixtureLabel != null) ...[
           const SizedBox(height: Space.s2),
           FixtureBadge(snapshot.fixtureLabel!),
         ],

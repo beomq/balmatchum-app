@@ -109,7 +109,19 @@ void main() {
     expect(product.store?.balance, 10);
     expect(product.wallet?.balance, 0);
     await tester.pumpAndSettle();
-    await changedTo(product, () => !product.busy, () => tapText('서버 동기화'));
+    // Sync has no button; a pull runs the home's refresh (guide 3.1).
+    await changedTo(
+      product,
+      () => !product.busy && product.today?.steps == 5000,
+      () async {
+        await tester.fling(
+          find.byType(RefreshIndicator),
+          const Offset(0, 400),
+          1000,
+        );
+        await tester.pump();
+      },
+    );
     expect(product.error, isNull);
     expect(product.today?.steps, 5000);
     await tester.pumpAndSettle();
@@ -119,7 +131,7 @@ void main() {
     await changedTo(
       product,
       () => product.wallet?.balance == 50,
-      () => tapText('무료 50 P 받기'),
+      () => tapText('무료 50P 받기'),
     );
     await tester.pumpAndSettle();
     // The reward sheet stays open after a claim; dismiss it via its barrier.
