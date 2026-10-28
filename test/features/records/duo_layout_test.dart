@@ -1,6 +1,9 @@
+import 'package:balmatchum_app/app/duo_rail.dart';
+import 'package:balmatchum_app/features/first_meeting/domain/dog_catalog.dart';
 import 'package:balmatchum_app/features/quiz/quiz_screen.dart';
 import 'package:balmatchum_app/features/records/records_models.dart';
 import 'package:balmatchum_app/features/records/records_screen.dart';
+import 'package:balmatchum_app/features/wardrobe/wardrobe_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -101,4 +104,100 @@ void main() {
       expect(tester.takeException(), isNull);
     });
   }
+
+  group('Duo side rail', () {
+    final screens = <(String, Widget Function(VoidCallback, VoidCallback))>[
+      (
+        'calendar',
+        (back, home) => RecordsCalendarScreen(
+          initialMonth: date,
+          loadMonth: (month) async => RecordMonth(month: month, days: [day()]),
+          onOpenDay: (_) {},
+          onBack: back,
+          onHome: home,
+        ),
+      ),
+      (
+        'day detail',
+        (back, home) => RecordDayScreen(
+          date: date,
+          loadDay: (_) async => day(),
+          deleteDay: (_) async => throw StateError('no delete'),
+          claimDay: (_) async => throw StateError('no claim'),
+          onBack: back,
+          onHome: home,
+        ),
+      ),
+      (
+        'quiz',
+        (back, home) => DailyQuizScreen(
+          loadQuiz: () async => quiz,
+          submitAnswer: (_, i) async => answered(i),
+          onBack: back,
+          onHome: home,
+        ),
+      ),
+      (
+        'wardrobe',
+        (back, home) => WardrobeScreen(
+          dog: FirstMeetingCatalog.byId('shih-tzu'),
+          loadWardrobe: () async => snap(),
+          purchaseTheme: (_) async => throw StateError('no purchase'),
+          equipTheme: (_) async => throw StateError('no equip'),
+          changeOutfit: (_, _) async => throw StateError('no change'),
+          onBack: back,
+          onHome: home,
+        ),
+      ),
+    ];
+
+    for (final (name, build) in screens) {
+      testWidgets('$name moves back and home to the outer portrait rail', (
+        tester,
+      ) async {
+        // Given the measured outer portrait insets.
+        useDuoViewport(tester, 'outer portrait');
+        final taps = <String>[];
+        // When the screen is shown.
+        await tester.pumpWidget(
+          duoHost(build(() => taps.add('back'), () => taps.add('home'))),
+        );
+        await tester.pumpAndSettle();
+        // Then the top bar is gone and the rail closes the column bottom.
+        expect(find.byKey(const ValueKey('product_back')), findsNothing);
+        expect(find.byKey(const ValueKey('product_home')), findsNothing);
+        final back = find.byKey(const ValueKey('duo_rail_back'));
+        final home = find.byKey(const ValueKey('duo_rail_home'));
+        expect(tester.getRect(back).center.dx, closeTo(418, 1));
+        expect(tester.getRect(back).top, closeTo(542, 1));
+        expect(tester.getRect(home).bottom, closeTo(642, 1));
+        await tester.tap(back);
+        await tester.tap(home);
+        expect(taps, ['back', 'home']);
+        expect(tester.takeException(), isNull);
+      });
+
+      testWidgets('$name keeps its top bar on a normal iPhone', (tester) async {
+        // Given an ordinary iPhone portrait safe area.
+        tester.view.devicePixelRatio = 3;
+        tester.view.physicalSize = const Size(390, 844) * 3;
+        tester.view.padding = const FakeViewPadding(top: 177, bottom: 102);
+        addTearDown(tester.view.reset);
+        // When the screen is shown.
+        await tester.pumpWidget(duoHost(build(() {}, () {})));
+        await tester.pumpAndSettle();
+        // Then no rail is drawn and the top bar stays reachable.
+        expect(find.byType(DuoRail), findsNothing);
+        expect(
+          find.byKey(const ValueKey('product_back')).hitTestable(),
+          findsOneWidget,
+        );
+        expect(
+          find.byKey(const ValueKey('product_home')).hitTestable(),
+          findsOneWidget,
+        );
+        expect(tester.takeException(), isNull);
+      });
+    }
+  });
 }

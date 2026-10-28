@@ -11,6 +11,7 @@ import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+import '../../support/duo_viewports.dart';
 import 'photo_editor_test.dart' show FakePhotoAdapter, photoFixture;
 
 class PendingPhotoAdapter extends FakePhotoAdapter {
@@ -263,4 +264,68 @@ void main() {
       await tester.pumpWidget(const SizedBox.shrink());
     });
   }
+
+  testWidgets('Duo rail replaces the photo top bar and keeps its guards', (
+    tester,
+  ) async {
+    // Given the measured outer portrait insets and an idle editor.
+    useDuoViewport(tester, 'outer portrait');
+    final adapter = PendingPhotoAdapter();
+    var back = 0;
+    var home = 0;
+    await tester.runAsync(
+      () => tester.pumpWidget(
+        duoHost(
+          PhotoScreen(
+            dogAssetPath: 'assets/first_meeting/dogs/pug.png',
+            dogName: '콩이',
+            adapter: adapter,
+            onBack: () => back++,
+            onHome: () => home++,
+          ),
+        ),
+      ),
+    );
+    final state = tester.state<PhotoScreenState>(find.byType(PhotoScreen));
+    await tester.runAsync(() => idle(state));
+    await tester.pumpAndSettle();
+    final railBack = find.byKey(const ValueKey('duo_rail_back'));
+    final railHome = find.byKey(const ValueKey('duo_rail_home'));
+    VoidCallback? action(Finder button) =>
+        tester.widget<IconButton>(button).onPressed;
+    expect(find.byKey(const ValueKey('photo_back')), findsNothing);
+    expect(find.byKey(const ValueKey('photo_home')), findsNothing);
+    expect(railBack.hitTestable(), findsOneWidget);
+    // When a pick is pending, both rail buttons are disabled.
+    adapter.pendingPick = Completer<Uint8List?>();
+    final picking = state.editor.pick(PhotoSource.gallery);
+    await tester.pump();
+    expect(state.editor.busy, isTrue);
+    expect(action(railBack), isNull);
+    expect(action(railHome), isNull);
+    adapter.pendingPick!.complete(null);
+    await picking;
+    adapter.pendingPick = null;
+    await tester.pump();
+    expect(action(railBack), isNotNull);
+    // Then leaving an edited photo through the rail still asks first.
+    adapter.next = await tester.runAsync(photoFixture);
+    await tester.runAsync(() => state.editor.pick(PhotoSource.gallery));
+    await tester.pumpAndSettle();
+    expect(state.editor.photo, isNotNull);
+    await tester.tap(railBack);
+    await tester.pumpAndSettle();
+    expect(find.byType(AlertDialog), findsOneWidget);
+    await tester.tap(find.text('계속 편집'));
+    await tester.pumpAndSettle();
+    expect(back, 0);
+    await tester.tap(railHome);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('나가기'));
+    await tester.pumpAndSettle();
+    expect(home, 1);
+    expect(back, 0);
+    expect(tester.takeException(), isNull);
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
 }
