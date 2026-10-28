@@ -138,7 +138,9 @@ void main() {
     await tester.tap(find.text('이름과 성별 저장'));
     await tester.pumpAndSettle();
     await binding.takeScreenshot('meeting-native-goal');
-    await tester.tap(find.text('목표 저장하고 홈 보기'));
+    final start = find.byKey(const ValueKey('meeting_goal_start'));
+    await tester.ensureVisible(start);
+    await tester.tap(start);
     await tester.pumpAndSettle();
     expect(c.state.isComplete, isTrue);
     await binding.takeScreenshot('meeting-native-home');

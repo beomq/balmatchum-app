@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 
 import 'meeting_theme.dart';
@@ -133,12 +135,21 @@ class MeetingPage extends StatelessWidget {
     this.showHeader = true,
     this.rail,
     this.onRefresh,
+    this.header,
+    this.footer,
     super.key,
   });
   final List<Widget> children;
   final VoidCallback? onBack;
   final bool wide;
   final bool showHeader;
+
+  /// Replaces the back slot, as the goal step's step bar does (guide 4.4-1).
+  final Widget? header;
+
+  /// Sits at the bottom of a short page and follows the children on a long
+  /// one, as the goal step's start button does (guide 4.4-6).
+  final Widget? footer;
 
   /// Duo side-column rail, painted outside the SafeArea.
   final Widget? rail;
@@ -162,10 +173,44 @@ class MeetingPage extends StatelessWidget {
                   : constraints.maxWidth < 840
                   ? 24.0
                   : 32.0;
+              const top = 16.0;
+              const bottom = 24.0;
+              final content = Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  // The slot stays while the rail or a busy step
+                  // hides back, so the focused name field never moves.
+                  if (showHeader) ...[
+                    header ??
+                        SizedBox(
+                          height: 48,
+                          child: Align(
+                            alignment: Alignment.centerLeft,
+                            child: onBack == null
+                                ? const SizedBox.shrink()
+                                : IconButton(
+                                    key: const ValueKey('meeting_back'),
+                                    tooltip: '이전 단계',
+                                    onPressed: onBack,
+                                    icon: Image.asset(
+                                      'assets/first_meeting/icons/back.png',
+                                      width: 32,
+                                      height: 32,
+                                      filterQuality: FilterQuality.none,
+                                    ),
+                                  ),
+                          ),
+                        ),
+                    SizedBox(height: header == null ? 18 : 16),
+                  ],
+                  ...children,
+                ],
+              );
+              final footer = this.footer;
               final scroll = SingleChildScrollView(
                 // Busy callbacks must not replace the focused name field subtree.
                 key: PageStorageKey(key ?? 'meeting_root_scroll'),
-                padding: EdgeInsets.fromLTRB(padding, 16, padding, 24),
+                padding: EdgeInsets.fromLTRB(padding, top, padding, bottom),
                 // A short home must still be pullable.
                 physics: onRefresh == null
                     ? null
@@ -175,36 +220,30 @@ class MeetingPage extends StatelessWidget {
                       .copyWith(size: constraints.biggest),
                   child: Center(
                     child: ConstrainedBox(
-                      constraints: BoxConstraints(maxWidth: wide ? 960 : 480),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.stretch,
-                        children: [
-                          // The slot stays while the rail or a busy step
-                          // hides back, so the focused name field never moves.
-                          if (showHeader)
-                            SizedBox(
-                              height: 48,
-                              child: Align(
-                                alignment: Alignment.centerLeft,
-                                child: onBack == null
-                                    ? const SizedBox.shrink()
-                                    : IconButton(
-                                        key: const ValueKey('meeting_back'),
-                                        tooltip: '이전 단계',
-                                        onPressed: onBack,
-                                        icon: Image.asset(
-                                          'assets/first_meeting/icons/back.png',
-                                          width: 32,
-                                          height: 32,
-                                          filterQuality: FilterQuality.none,
-                                        ),
-                                      ),
+                      constraints: BoxConstraints(
+                        maxWidth: wide ? 960 : 480,
+                        // The page fills the viewport so a footer can rest at
+                        // its bottom; no intrinsic pass is needed.
+                        minHeight: footer == null
+                            ? 0
+                            : math.max(
+                                0.0,
+                                constraints.maxHeight - top - bottom,
                               ),
-                            ),
-                          if (showHeader) const SizedBox(height: 18),
-                          ...children,
-                        ],
                       ),
+                      child: footer == null
+                          ? content
+                          : Column(
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              crossAxisAlignment: CrossAxisAlignment.stretch,
+                              children: [
+                                content,
+                                Padding(
+                                  padding: const EdgeInsets.only(top: 16),
+                                  child: footer,
+                                ),
+                              ],
+                            ),
                     ),
                   ),
                 ),

@@ -75,7 +75,7 @@ void main() {
         final control = switch (stage) {
           'catalog' => find.byKey(const ValueKey('breed_pager_next')),
           'name' => find.text('이름과 성별 저장'),
-          'goal' => find.text('목표 저장하고 홈 보기'),
+          'goal' => find.byKey(const ValueKey('meeting_goal_start')),
           _ => throw StateError('Unknown fixture stage'),
         };
         await tester.ensureVisible(control);
