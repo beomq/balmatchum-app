@@ -156,8 +156,10 @@ void main() {
             await tester.pumpAndSettle();
             expect(profiles.current!.name, '코코');
           } else {
-            await tester.ensureVisible(find.text('이름과 성별 저장'));
-            await tester.tap(find.text('이름과 성별 저장'));
+            // The save is named after the name now, so it is found by key.
+            final save = find.byKey(const ValueKey('meeting_name_submit'));
+            await tester.ensureVisible(save);
+            await tester.tap(save);
             await tester.pumpAndSettle();
             expect(c.state.name, '코코');
             expect(c.state.step, FirstMeetingStep.goal);
@@ -198,7 +200,22 @@ void main() {
           matching: find.byType(EditableText),
         );
         expect(railBack, findsOneWidget);
-        final place = tester.getRect(field);
+        // The field's place on the page, apart from the page's scroll: the
+        // dog stage sits above the field, so an open keyboard may scroll the
+        // page to keep the field in view, but the back slot must not move it.
+        final page = find.ancestor(
+          of: field,
+          matching: find.byType(Scrollable),
+        );
+        Rect onPage() => tester
+            .getRect(field)
+            .shift(
+              Offset(
+                0,
+                tester.state<ScrollableState>(page.first).position.pixels,
+              ),
+            );
+        final place = onPage();
 
         // When the field takes focus and the keyboard inset hides the rail.
         await tester.showKeyboard(field);
@@ -216,13 +233,18 @@ void main() {
             reason: reason,
           );
           // A dropped or resized back slot would move the field under the IME.
-          expect(tester.getRect(field), place, reason: reason);
+          expect(onPage(), place, reason: reason);
           expect(tester.takeException(), isNull);
         }
 
         expect(railBack, findsNothing);
         expect(topBack, findsOneWidget);
         expectSameField('keyboard opened');
+        // And once the page has scrolled, the field is in view above the
+        // keyboard, still the same session in the same place on the page.
+        await tester.pumpAndSettle();
+        expect(field.hitTestable(), findsOneWidget);
+        expectSameField('keyboard settled');
 
         // And the IME composes, commits and deletes across busy frames.
         Future<void> compose(Iterable<TextEditingValue> edits) async {

@@ -320,6 +320,7 @@ class _FirstMeetingScreenState extends State<FirstMeetingScreen> {
     final onboardingStep = shown
         ? switch (s.step) {
             FirstMeetingStep.catalog => 1,
+            FirstMeetingStep.name => 2,
             FirstMeetingStep.goal => 3,
             _ => null,
           }
@@ -338,7 +339,7 @@ class _FirstMeetingScreenState extends State<FirstMeetingScreen> {
           showHeader: s.step != FirstMeetingStep.home,
           wide: s.step == FirstMeetingStep.home,
           onBack: onBack,
-          // Pen ONB-06 and ONB-09: back sits in the n/3 step bar and the
+          // Pen ONB-06, 08 and 09: back sits in the n/3 step bar and the
           // main action at the bottom; the save result and retry stay above
           // the content.
           header: onboardingStep == null
@@ -352,6 +353,7 @@ class _FirstMeetingScreenState extends State<FirstMeetingScreen> {
               ? null
               : switch (s.step) {
                   FirstMeetingStep.catalog => catalogFooter(c),
+                  FirstMeetingStep.name => nameFooter(c),
                   FirstMeetingStep.goal => goalFooter(c),
                   _ => null,
                 },
@@ -567,100 +569,54 @@ class _FirstMeetingScreenState extends State<FirstMeetingScreen> {
           ),
         ];
       case FirstMeetingStep.name:
+        final breed = s.candidate!;
         return [
-          const MeetingHeading('이름을 지어 주세요', '이름을 짓고 암컷·수컷을 선택해 주세요.'),
-          const Text('강아지 이름'),
-          const SizedBox(height: 8),
+          const MeetingHeading(
+            '이름을 지어 주세요',
+            '부르기 쉬운 이름이 좋아요. 나중에 설정에서 바꿀 수 있어요.',
+          ),
+          // The stage, the count and the save listen to the name controller
+          // itself, so they follow every IME edit; the field below is never
+          // rebuilt for them (guide 4.3-6).
+          ValueListenableBuilder<TextEditingValue>(
+            valueListenable: name,
+            builder: (context, value, _) => DogNameStage(
+              sprite: breed.spritePath,
+              line: _nameLine(value.text),
+              note: '${breed.name} · 품종은 이후 바꿀 수 없어요',
+              lineKey: const ValueKey('meeting_name_line'),
+              noteKey: const ValueKey('meeting_name_breed'),
+            ),
+          ),
+          const SizedBox(height: OnboardingMetrics.section),
+          Text('강아지 이름', style: meetingType(14, 20, FontWeight.w700)),
+          const SizedBox(height: Space.s2),
           TextField(
             key: const ValueKey('meeting_name'),
             controller: name,
             onChanged: (value) => unawaited(c.updateName(value)),
             decoration: const InputDecoration(
-              hintText: '강아지 이름',
-              helperText: '한글·영문·숫자·공백 1–12글자',
-              helperMaxLines: 3,
-            ),
-          ),
-          const SizedBox(height: 20),
-          const Text('강아지 성별'),
-          const SizedBox(height: 10),
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              for (final sex in DogSex.values) ...[
-                if (sex == DogSex.male) const SizedBox(width: 12),
-                Expanded(
-                  child: Semantics(
-                    selected: s.sex == sex,
-                    button: true,
-                    child: InkWell(
-                      onTap: enabled ? () => c.updateSex(sex) : null,
-                      child: Container(
-                        constraints: const BoxConstraints(minHeight: 120),
-                        padding: const EdgeInsets.all(14),
-                        decoration: BoxDecoration(
-                          color: s.sex == sex
-                              ? MeetingColors.soft
-                              : MeetingColors.well,
-                          borderRadius: BorderRadius.circular(12),
-                          border: Border.all(
-                            color: s.sex == sex
-                                ? MeetingColors.primary
-                                : MeetingColors.line,
-                            width: s.sex == sex ? 2 : 1,
-                          ),
-                        ),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Image.asset(
-                              'assets/first_meeting/icons/${sex.name}.png',
-                              width: 32,
-                              height: 32,
-                            ),
-                            const SizedBox(height: 6),
-                            Text(sex == DogSex.female ? '암컷' : '수컷'),
-                            Text(
-                              s.sex == sex ? '선택됨' : '선택하기',
-                              style: Theme.of(context).textTheme.bodySmall,
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-                  ),
+              hintText: '한글·영문·숫자로 지어 주세요',
+              focusedBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.all(Radius.circular(12)),
+                borderSide: BorderSide(
+                  color: MeetingColors.primaryStrong,
+                  width: 2,
                 ),
-              ],
-            ],
-          ),
-          const SizedBox(height: 20),
-          Container(
-            padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              color: MeetingColors.soft,
-              borderRadius: BorderRadius.circular(16),
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text('선택한 친구', style: Theme.of(context).textTheme.bodySmall),
-                const SizedBox(height: 6),
-                Text(
-                  s.candidate!.name,
-                  style: Theme.of(context).textTheme.titleLarge,
-                ),
-              ],
+              ),
             ),
           ),
-          const SizedBox(height: 20),
-          FilledButton(
-            onPressed:
-                enabled &&
-                    s.sex != null &&
-                    FirstMeetingController.isValidName(name.text)
-                ? c.submitName
-                : null,
-            child: const Text('이름과 성별 저장'),
+          const SizedBox(height: Space.s2),
+          ValueListenableBuilder<TextEditingValue>(
+            valueListenable: name,
+            builder: (context, value, _) => nameHelp(value.text),
+          ),
+          const SizedBox(height: OnboardingMetrics.section),
+          Text('성별', style: meetingType(14, 20, FontWeight.w700)),
+          const SizedBox(height: Space.s2),
+          SexSegment(
+            value: s.sex,
+            onChanged: enabled ? (sex) => unawaited(c.updateSex(sex)) : null,
           ),
         ];
       case FirstMeetingStep.goal:
@@ -996,6 +952,55 @@ class _FirstMeetingScreenState extends State<FirstMeetingScreen> {
     );
   }
 
+  /// "12자까지" and the count under the name field, with the same trim and
+  /// character rule as the save (guide 4.3-3). A too-long name turns both
+  /// red; other characters say which ones are allowed.
+  Widget nameHelp(String text) {
+    const most = FirstMeetingController.maxNameLength;
+    final count = FirstMeetingController.normalizeName(text).characters.length;
+    final tooLong = count > most;
+    final wrong =
+        !tooLong && count > 0 && !FirstMeetingController.isValidName(text);
+    final color = tooLong || wrong ? MeetingColors.error : MeetingColors.muted;
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      spacing: Space.s2,
+      children: [
+        Expanded(
+          child: Text(
+            wrong ? '한글·영문·숫자·공백만 쓸 수 있어요' : '$most자까지 쓸 수 있어요',
+            key: const ValueKey('meeting_name_help'),
+            style: Theme.of(context).textTheme.bodySmall
+                ?.copyWith(color: color),
+          ),
+        ),
+        Text(
+          '$count/$most',
+          key: const ValueKey('meeting_name_count'),
+          semanticsLabel: '$most자 중 $count자',
+          style: meetingType(12, 17, FontWeight.w700, color),
+        ),
+      ],
+    );
+  }
+
+  /// The save under the name step, named after the typed name (guide 4.3-5).
+  /// A valid name, a chosen sex and no save in flight enable it; the label
+  /// and the check follow the name controller like the stage does.
+  Widget nameFooter(FirstMeetingController c) {
+    final ready = !c.isBusy && !c.hasPendingMutation && c.state.sex != null;
+    return ValueListenableBuilder<TextEditingValue>(
+      valueListenable: name,
+      builder: (context, value, _) => FilledButton(
+        key: const ValueKey('meeting_name_submit'),
+        onPressed: ready && FirstMeetingController.isValidName(value.text)
+            ? c.submitName
+            : null,
+        child: Text(_nameSave(value.text)),
+      ),
+    );
+  }
+
   /// The no-penalty note and the start under the goal step (guide 4.4-6).
   /// The start saves through the existing complete path with the draft the
   /// queued saves left, once.
@@ -1167,6 +1172,21 @@ String _withWa(String name) {
   if (value.isEmpty) return name;
   return '$value${_batchim(value) == 0 ? '와' : '과'}';
 }
+
+/// `{value}야` after a vowel, `{value}이야` after a consonant.
+String _withIya(String value) => '$value${_batchim(value) == 0 ? '야' : '이야'}';
+
+/// The companion introducing itself with the typed name (guide 4.3-2), or
+/// asking for one while the name is empty or breaks the rule.
+String _nameLine(String input) => FirstMeetingController.isValidName(input)
+    ? '안녕, 나는 ${_withIya(FirstMeetingController.normalizeName(input))}!'
+    : '안녕, 내 이름을 지어 줘!';
+
+/// The name step's save label: the typed name with 로 or 으로, or a neutral
+/// label while the name is empty or breaks the rule.
+String _nameSave(String input) => FirstMeetingController.isValidName(input)
+    ? '${_withRo(FirstMeetingController.normalizeName(input))} 정할게요'
+    : '이름을 정할게요';
 
 /// `{value}로` after a vowel or ㄹ, `{value}으로` after another consonant.
 String _withRo(String value) =>

@@ -24,6 +24,10 @@ abstract final class MeetingColors {
   /// Pen literal without a variable: the centered breed card's shadow, ink
   /// at 12% (ONB-06 `Breed Card Main`).
   static const cardShadow = Color(0x1F50301E);
+
+  /// Pen literal without a variable: the breed note on the name step's dog
+  /// stage, white at 80% (ONB-08 `Name Stage Caption`).
+  static const stageNote = Color(0xCCFFFFFF);
 }
 
 const _font = 'Pretendard';

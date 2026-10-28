@@ -57,11 +57,15 @@ class FirstMeetingController extends ChangeNotifier {
   String? _pendingGroupId;
   DateTime? _pendingFirstMet;
 
+  /// The most characters a name keeps; the name step counts with the same
+  /// trim and character rule (guide 4.3-3).
+  static const maxNameLength = 12;
+
   static String normalizeName(String input) => input.trim();
   static bool isValidName(String input) {
     final name = normalizeName(input);
     return name.isNotEmpty &&
-        name.characters.length <= 12 &&
+        name.characters.length <= maxNameLength &&
         name.runes.every(
           (rune) =>
               rune == 32 ||
