@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../records/product_page.dart'
     show PixelIcon, ProductColors, Space, formatCount;
 import '../wardrobe/dog_sprite.dart';
+import 'domain/first_meeting.dart';
 import 'meeting_theme.dart';
 
 /// Pen values of ONB-09 (`Ao2Ri`) that the spacing scale does not hold.
@@ -20,6 +21,17 @@ abstract final class OnboardingMetrics {
   static const cardInset = 14.0;
   static const dog = 120.0;
   static const dogGap = 6.0;
+
+  /// ONB-08 (`L1bJd9`): the gap between the name step's sections, the dog
+  /// stage and the sex segment.
+  static const section = 14.0;
+  static const stage = 212.0;
+  static const stageRadius = 20.0;
+  static const stageDog = 180.0;
+  static const segmentRadius = 12.0;
+  static const segmentOption = 44.0;
+  static const segmentOptionRadius = 8.0;
+  static const sexIcon = 20.0;
 }
 
 /// `Onboarding/Step Nav` (`OKEkN`): back, one segment per step and
@@ -394,29 +406,237 @@ class DogSpeechPreview extends StatelessWidget {
         dimension: OnboardingMetrics.dog,
         child: DogSprite(asset: sprite),
       ),
-      Flexible(
-        child: DecoratedBox(
-          decoration: BoxDecoration(
-            color: MeetingColors.raised,
-            borderRadius: BorderRadius.circular(12),
-          ),
-          child: Padding(
-            padding: const EdgeInsets.symmetric(
-              horizontal: OnboardingMetrics.cardInset,
-              vertical: OnboardingMetrics.gap,
+      Flexible(child: SpeechBubble(line, lineKey: lineKey)),
+    ],
+  );
+}
+
+/// The companion's line on a raised bubble in Galmuri (Pen `Shared/Home
+/// Speech`, `40f12cf158cd`), shared by the name and goal steps.
+class SpeechBubble extends StatelessWidget {
+  const SpeechBubble(this.line, {this.lineKey, this.semanticsLabel, super.key});
+
+  final String line;
+  final Key? lineKey;
+
+  /// What assistive technology reads when [line] carries layout characters.
+  final String? semanticsLabel;
+
+  @override
+  Widget build(BuildContext context) => DecoratedBox(
+    decoration: BoxDecoration(
+      color: MeetingColors.raised,
+      borderRadius: BorderRadius.circular(12),
+    ),
+    child: Padding(
+      padding: const EdgeInsets.symmetric(
+        horizontal: OnboardingMetrics.cardInset,
+        vertical: OnboardingMetrics.gap,
+      ),
+      child: Text(
+        line,
+        key: lineKey,
+        semanticsLabel: semanticsLabel,
+        style: meetingType(
+          14,
+          20,
+          FontWeight.w400,
+        ).copyWith(fontFamily: 'Galmuri11'),
+      ),
+    ),
+  );
+}
+
+/// Joins each word's letters with WORD JOINER so a line wraps between words
+/// only; Flutter otherwise breaks Korean between any two syllables, which
+/// would split a name from its particle ("코코 / 야!").
+String wrapByWords(String line) =>
+    line.split(' ').map((word) => word.characters.join('\u2060')).join(' ');
+
+/// ONB-08 `Name Dog Stage`: the chosen breed's sprite at the right, its line
+/// at the top left and the breed note at the bottom left, on the record-soft
+/// stage. The stage keeps its Pen height and grows only when the text needs
+/// more.
+class DogNameStage extends StatelessWidget {
+  const DogNameStage({
+    required this.sprite,
+    required this.line,
+    required this.note,
+    this.lineKey,
+    this.noteKey,
+    super.key,
+  });
+
+  final String sprite;
+  final String line;
+  final String note;
+  final Key? lineKey;
+  final Key? noteKey;
+
+  @override
+  Widget build(BuildContext context) => DecoratedBox(
+    decoration: BoxDecoration(
+      color: ProductColors.recordSoft,
+      borderRadius: BorderRadius.circular(OnboardingMetrics.stageRadius),
+    ),
+    child: LayoutBuilder(
+      builder: (context, bounds) {
+        final dog = (bounds.maxWidth / 2).clamp(
+          OnboardingMetrics.dog,
+          OnboardingMetrics.stageDog,
+        );
+        return Stack(
+          children: [
+            Positioned(
+              right: Space.s6,
+              bottom: Space.s1,
+              width: dog,
+              height: dog,
+              child: DogSprite(asset: sprite),
             ),
-            child: Text(
-              line,
-              key: lineKey,
-              style: meetingType(
-                14,
-                20,
-                FontWeight.w400,
-              ).copyWith(fontFamily: 'Galmuri11'),
+            ConstrainedBox(
+              constraints: const BoxConstraints(
+                minWidth: double.infinity,
+                minHeight: OnboardingMetrics.stage,
+              ),
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(
+                  Space.s4,
+                  Space.s4,
+                  Space.s4,
+                  Space.s3,
+                ),
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  spacing: Space.s2,
+                  children: [
+                    // The bubble stays clear of the dog's head.
+                    ConstrainedBox(
+                      constraints: BoxConstraints(
+                        maxWidth: bounds.maxWidth - dog - Space.s4 - Space.s6,
+                      ),
+                      child: SpeechBubble(
+                        wrapByWords(line),
+                        lineKey: lineKey,
+                        semanticsLabel: line,
+                      ),
+                    ),
+                    DecoratedBox(
+                      decoration: BoxDecoration(
+                        color: MeetingColors.stageNote,
+                        borderRadius: BorderRadius.circular(999),
+                      ),
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: OnboardingMetrics.gap,
+                          vertical: Space.s1,
+                        ),
+                        child: Text(
+                          note,
+                          key: noteKey,
+                          style: meetingType(
+                            12,
+                            16,
+                            FontWeight.w700,
+                            MeetingColors.muted,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        );
+      },
+    ),
+  );
+}
+
+/// ONB-08 `Name Sex Segment`: 암컷 and 수컷 side by side with their icons.
+/// Nothing is chosen until the user picks one (guide 4.3-4); a null
+/// [onChanged] locks both while a save runs.
+class SexSegment extends StatelessWidget {
+  const SexSegment({required this.value, required this.onChanged, super.key});
+
+  final DogSex? value;
+  final ValueChanged<DogSex>? onChanged;
+
+  @override
+  Widget build(BuildContext context) => DecoratedBox(
+    decoration: BoxDecoration(
+      color: MeetingColors.raised,
+      borderRadius: BorderRadius.circular(OnboardingMetrics.segmentRadius),
+      border: Border.all(color: MeetingColors.line),
+    ),
+    child: Padding(
+      padding: const EdgeInsets.all(Space.s1),
+      child: Row(
+        spacing: Space.s1,
+        children: [
+          for (final sex in DogSex.values)
+            Expanded(
+              child: _SexOption(sex: sex, segment: this),
+            ),
+        ],
+      ),
+    ),
+  );
+}
+
+class _SexOption extends StatelessWidget {
+  const _SexOption({required this.sex, required this.segment});
+
+  final DogSex sex;
+  final SexSegment segment;
+
+  @override
+  Widget build(BuildContext context) {
+    final selected = segment.value == sex;
+    final onChanged = segment.onChanged;
+    return Semantics(
+      selected: selected,
+      button: true,
+      child: Material(
+        color: selected ? MeetingColors.soft : Colors.transparent,
+        borderRadius: BorderRadius.circular(
+          OnboardingMetrics.segmentOptionRadius,
+        ),
+        child: InkWell(
+          key: ValueKey('meeting_sex_${sex.name}'),
+          onTap: onChanged == null ? null : () => onChanged(sex),
+          borderRadius: BorderRadius.circular(
+            OnboardingMetrics.segmentOptionRadius,
+          ),
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(
+              minHeight: OnboardingMetrics.segmentOption,
+            ),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              spacing: OnboardingMetrics.dogGap,
+              children: [
+                PixelIcon(sex.name, size: OnboardingMetrics.sexIcon),
+                Flexible(
+                  child: Text(
+                    sex == DogSex.female ? '암컷' : '수컷',
+                    style: meetingType(
+                      14.5,
+                      20,
+                      selected ? FontWeight.w800 : FontWeight.w600,
+                      selected
+                          ? MeetingColors.primaryStrong
+                          : MeetingColors.muted,
+                    ),
+                  ),
+                ),
+              ],
             ),
           ),
         ),
       ),
-    ],
-  );
+    );
+  }
 }

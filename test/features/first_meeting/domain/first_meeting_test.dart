@@ -242,6 +242,33 @@ void main() {
     expect(c.state.goalInput, '5500');
   });
 
+  test('the catalog can switch to the questions, later steps cannot', () async {
+    final s = MemoryStorage();
+    final c = await create(s);
+    await c.enter();
+    await c.chooseCatalog();
+    // From the catalog, the questions start at the first one.
+    await c.chooseRecommendation();
+    expect(c.state.step, FirstMeetingStep.question);
+    expect(c.state.questionIndex, 0);
+    // Answers given before reopen their results instead.
+    for (var i = 0; i < 3; i++) {
+      await c.answer(false);
+    }
+    expect(c.state.step, FirstMeetingStep.results);
+    await c.chooseCatalog();
+    await c.chooseRecommendation();
+    expect(c.state.step, FirstMeetingStep.results);
+    // Past the choice, the name step neither moves nor saves.
+    await c.chooseCatalog();
+    await c.selectBreed('pug');
+    await c.confirmCandidate();
+    final writes = s.writes;
+    await c.chooseRecommendation();
+    expect(c.state.step, FirstMeetingStep.name);
+    expect(s.writes, writes);
+  });
+
   test(
     'serialized repeated commits and restart preserve the atomic meeting',
     () async {

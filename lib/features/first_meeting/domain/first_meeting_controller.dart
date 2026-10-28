@@ -57,11 +57,15 @@ class FirstMeetingController extends ChangeNotifier {
   String? _pendingGroupId;
   DateTime? _pendingFirstMet;
 
+  /// The most characters a name keeps; the name step counts with the same
+  /// trim and character rule (guide 4.3-3).
+  static const maxNameLength = 12;
+
   static String normalizeName(String input) => input.trim();
   static bool isValidName(String input) {
     final name = normalizeName(input);
     return name.isNotEmpty &&
-        name.characters.length <= 12 &&
+        name.characters.length <= maxNameLength &&
         name.runes.every(
           (rune) =>
               rune == 32 ||
@@ -263,7 +267,12 @@ class FirstMeetingController extends ChangeNotifier {
   });
 
   Future<void> chooseRecommendation() => _run(() async {
-    if (_at(FirstMeetingStep.method)) {
+    // The catalog offers the questions too (guide 4.2-6).
+    if (_canEdit() &&
+        [
+          FirstMeetingStep.method,
+          FirstMeetingStep.catalog,
+        ].contains(_state.step)) {
       await _save(
         _state.copyWith(
           step: _state.representativeBreedId == null

@@ -74,7 +74,7 @@ void main() {
         // Then the final control is reachable without a layout exception.
         final control = switch (stage) {
           'catalog' => find.byKey(const ValueKey('breed_pager_next')),
-          'name' => find.text('이름과 성별 저장'),
+          'name' => find.byKey(const ValueKey('meeting_name_submit')),
           'goal' => find.byKey(const ValueKey('meeting_goal_start')),
           _ => throw StateError('Unknown fixture stage'),
         };

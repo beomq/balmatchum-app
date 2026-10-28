@@ -20,6 +20,14 @@ abstract final class MeetingColors {
   /// and the unselected sex choice well (ONB-08).
   static const stage = Color(0xFFE8EFE5);
   static const well = Color(0xFFFFF9F0);
+
+  /// Pen literal without a variable: the centered breed card's shadow, ink
+  /// at 12% (ONB-06 `Breed Card Main`).
+  static const cardShadow = Color(0x1F50301E);
+
+  /// Pen literal without a variable: the breed note on the name step's dog
+  /// stage, white at 80% (ONB-08 `Name Stage Caption`).
+  static const stageNote = Color(0xCCFFFFFF);
 }
 
 const _font = 'Pretendard';

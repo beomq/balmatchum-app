@@ -48,6 +48,9 @@ void main() {
     expect(tester.widget<Text>(position).data, '1 / 30');
     // When G5's first breed is selected from its tab.
     final breed = FirstMeetingCatalog.groups[4].breeds.first;
+    // The named tabs scroll sideways, so G5 is brought into the strip first.
+    await tester.ensureVisible(find.byKey(const ValueKey('breed_group_G5')));
+    await tester.pumpAndSettle();
     await tester.tap(find.byKey(const ValueKey('breed_group_G5')));
     await tester.pumpAndSettle();
     await tester.tap(find.byKey(ValueKey('breed_${breed.id}')));
@@ -253,8 +256,9 @@ void main() {
         await tester.ensureVisible(find.text('암컷'));
         await tester.tap(find.text('암컷'));
         await tester.pumpAndSettle();
-        await tester.ensureVisible(find.text('이름과 성별 저장'));
-        await tester.tap(find.text('이름과 성별 저장'));
+        final save = find.byKey(const ValueKey('meeting_name_submit'));
+        await tester.ensureVisible(save);
+        await tester.tap(save);
         await tester.pumpAndSettle();
         expect(c.state.step, FirstMeetingStep.goal);
         final start = find.byKey(const ValueKey('meeting_goal_start'));
