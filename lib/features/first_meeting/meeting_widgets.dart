@@ -48,7 +48,9 @@ class MeetingHomeLayout extends StatelessWidget {
   final Widget header;
   final Widget scene;
   final Widget status;
-  final Widget shortcuts;
+
+  /// Null while the Duo side rail carries the shortcuts.
+  final Widget? shortcuts;
   final Widget footer;
 
   @override
@@ -59,7 +61,13 @@ class MeetingHomeLayout extends StatelessWidget {
           (bounds.maxWidth - 24) * .45 >= 300;
       final details = Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [status, const SizedBox(height: 16), shortcuts],
+        children: [
+          status,
+          if (shortcuts case final shortcuts?) ...[
+            const SizedBox(height: 16),
+            shortcuts,
+          ],
+        ],
       );
       return Center(
         child: ConstrainedBox(
@@ -99,6 +107,7 @@ class MeetingPage extends StatelessWidget {
     this.onBack,
     this.wide = false,
     this.showHeader = true,
+    this.rail,
     super.key,
   });
   final List<Widget> children;
@@ -106,60 +115,70 @@ class MeetingPage extends StatelessWidget {
   final bool wide;
   final bool showHeader;
 
+  /// Duo side-column rail, painted outside the SafeArea.
+  final Widget? rail;
+
   @override
   Widget build(BuildContext context) => Scaffold(
-    body: SafeArea(
-      child: LayoutBuilder(
-        builder: (context, constraints) {
-          final padding = constraints.maxWidth < 360
-              ? 12.0
-              : constraints.maxWidth < 600
-              ? 16.0
-              : constraints.maxWidth < 840
-              ? 24.0
-              : 32.0;
-          return SingleChildScrollView(
-            // Busy callbacks must not replace the focused name field subtree.
-            key: PageStorageKey(key ?? 'meeting_root_scroll'),
-            padding: EdgeInsets.fromLTRB(padding, 16, padding, 24),
-            child: MediaQuery(
-              data: MediaQuery.of(context).copyWith(size: constraints.biggest),
-              child: Center(
-                child: ConstrainedBox(
-                  constraints: BoxConstraints(maxWidth: wide ? 960 : 480),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      if (showHeader)
-                        SizedBox(
-                          height: 48,
-                          child: Align(
-                            alignment: Alignment.centerLeft,
-                            child: onBack == null
-                                ? const SizedBox.shrink()
-                                : IconButton(
-                                    key: const ValueKey('meeting_back'),
-                                    tooltip: '이전 단계',
-                                    onPressed: onBack,
-                                    icon: Image.asset(
-                                      'assets/first_meeting/icons/back.png',
-                                      width: 32,
-                                      height: 32,
-                                      filterQuality: FilterQuality.none,
-                                    ),
-                                  ),
-                          ),
-                        ),
-                      if (showHeader) const SizedBox(height: 18),
-                      ...children,
-                    ],
+    body: Stack(
+      fit: StackFit.expand,
+      children: [
+        SafeArea(
+          child: LayoutBuilder(
+            builder: (context, constraints) {
+              final padding = constraints.maxWidth < 360
+                  ? 12.0
+                  : constraints.maxWidth < 600
+                  ? 16.0
+                  : constraints.maxWidth < 840
+                  ? 24.0
+                  : 32.0;
+              return SingleChildScrollView(
+                // Busy callbacks must not replace the focused name field subtree.
+                key: PageStorageKey(key ?? 'meeting_root_scroll'),
+                padding: EdgeInsets.fromLTRB(padding, 16, padding, 24),
+                child: MediaQuery(
+                  data: MediaQuery.of(context)
+                      .copyWith(size: constraints.biggest),
+                  child: Center(
+                    child: ConstrainedBox(
+                      constraints: BoxConstraints(maxWidth: wide ? 960 : 480),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          if (showHeader)
+                            SizedBox(
+                              height: 48,
+                              child: Align(
+                                alignment: Alignment.centerLeft,
+                                child: onBack == null
+                                    ? const SizedBox.shrink()
+                                    : IconButton(
+                                        key: const ValueKey('meeting_back'),
+                                        tooltip: '이전 단계',
+                                        onPressed: onBack,
+                                        icon: Image.asset(
+                                          'assets/first_meeting/icons/back.png',
+                                          width: 32,
+                                          height: 32,
+                                          filterQuality: FilterQuality.none,
+                                        ),
+                                      ),
+                              ),
+                            ),
+                          if (showHeader) const SizedBox(height: 18),
+                          ...children,
+                        ],
+                      ),
+                    ),
                   ),
                 ),
-              ),
-            ),
-          );
-        },
-      ),
+              );
+            },
+          ),
+        ),
+        ?rail,
+      ],
     ),
   );
 }
