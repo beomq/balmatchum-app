@@ -1,8 +1,6 @@
 name: Deploy Dev to Play internal
 
 on:
-  push:
-    branches: [develop]
   workflow_dispatch:
     inputs:
       version_code:

@@ -2,7 +2,7 @@ name: Apple signed delivery
 
 on:
   push:
-    branches: [develop, main, chore/cicd-validation]
+    branches: [main, chore/cicd-validation]
   workflow_dispatch:
     inputs:
       target:

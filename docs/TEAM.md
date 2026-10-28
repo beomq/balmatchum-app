@@ -75,6 +75,10 @@ API가 바뀌면 앱 어댑터·테스트를 갱신하고 실제 서버 URL 및 
 새 통합 SHA의 원격 결과는 별도로 확인합니다. YAML actionlint 통과는 원격 실행
 성공이 아니며 검증 전 CI가 녹색이라고 가정하거나 검사를 약화하지 않습니다.
 
+`develop` push/병합은 CI만 실행합니다. Dev 배포 빌드는
+[수동 실행 명령](PLAY_DEV_DEPLOY.md#dev-수동-실행)으로만 시작합니다.
+`main`의 Production 배포 동작은 유지합니다.
+
 ## 후속 후보의 경계
 
 현재 범위는 최소 초기화·연결·CI입니다. Sentry, Fastlane, 기능 공개 예약/feature flag,

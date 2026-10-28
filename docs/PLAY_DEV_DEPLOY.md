@@ -1,8 +1,8 @@
-# Play 자동 draft 업로드
+# Play draft 업로드와 Dev 수동 빌드
 
 ## 대상과 활성화
 
-- `deploy-dev.yml`: develop push → play-dev → com.beomq.balmatchum.dev / internal.
+- `deploy-dev.yml`: develop의 수동 `workflow_dispatch` → play-dev → com.beomq.balmatchum.dev / internal.
 - `deploy-prod.yml`: main push → play-prod → com.beomq.balmatchum / internal.
 - 두 경로 모두 draft 업로드만 수행한다. 테스터 rollout과 completed release는
   자동화하지 않는다. 사용자가 2026-09-29 Google의 자동 심사 처리는 허용했다.
@@ -10,6 +10,24 @@
 - 현재 구현 브랜치는 chore/cicd-validation이다. 이 브랜치 push는 Play 업로드를 하지 않는다.
   **develop 병합은 별도 승인 필요**하며 이 작업에서 병합하지 않는다. Prod 경로도 main에
   승인된 변경이 반영돼야 활성화된다. 검증을 위해 환경 branch trust를 확장하지 않는다.
+
+## Dev 수동 실행
+
+`develop` push/병합은 CI만 실행하고 Dev 배포 빌드는 자동으로 시작하지 않는다.
+소유자 결정은 "Dev 자동배포: Dev 자동 배포 끄기 (추천)"이다.
+앱 저장소에서 필요한 Dev 빌드만 명시적으로 실행한다.
+
+```sh
+gh workflow run deploy-dev.yml --ref develop -f release_status=draft
+gh workflow run apple-upload.yml --ref develop -f target=dev
+```
+
+첫 명령은 Dev AAB 서명 빌드 후 Play internal에 draft로 업로드한다.
+두 번째 명령은 기존 수동 실행의 verify 모드를 유지한다. Dev iOS/watch 서명
+archive·IPA를 만들고 artifact로 보관하지만 TestFlight에는 업로드하지 않는다.
+`APPLE_UPLOAD_ENABLED=true`여도 수동 Apple 실행은 verify다.
+`main`의 Play/Apple Production push 트리거와 업로드 활성화 조건,
+`chore/cicd-validation`의 Apple 검증 트리거는 유지한다.
 
 ## 버전 코드 정책
 
@@ -52,7 +70,8 @@ API 권한 확인이 남아 있어 Prod 경로는 준비된 구현이지 현재 
 validate 응답이 60초를 초과한 실제 실패에 따라 해당 요청만 최대 300초를 허용한다.
 자동 재시도는 하지 않는다.
 
-수동 workflow_dispatch는 해당 앱의 허용 브랜치에서만 복구용으로 사용할 수 있다.
+수동 workflow_dispatch는 해당 앱의 허용 브랜치에서 실행한다. Dev는 수동 실행이
+기본이며 Prod의 수동 복구 경로는 유지한다.
 실패 시 ref/package/track → 환경과 OIDC → Play 등록/권한 → 사용된 버전 코드 →
 서명 순으로 확인한다. 성공 로그의 정확한 versionCode와 Console draft 상태를 확인한다.
 draft 성공은 설치 또는 공개 출시 완료가 아니다.
