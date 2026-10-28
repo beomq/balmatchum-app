@@ -147,6 +147,8 @@ class _AuthenticatedQuizScreenState extends State<AuthenticatedQuizScreen> {
       return ProductPage(
         onBack: widget.onBack,
         onHome: widget.onHome,
+        // In the top bar as Pen `pJMis` (owner feedback 2026-10-28).
+        title: '오늘의 퀴즈',
         centerFooter: empty,
         footer: switch ((today, question)) {
           (null, _) => null,
@@ -172,8 +174,6 @@ class _AuthenticatedQuizScreenState extends State<AuthenticatedQuizScreen> {
           _ => (gutter) => _Hint(gutter: gutter, dogAsset: widget.dogAsset),
         },
         children: [
-          Text('오늘의 퀴즈', style: Theme.of(context).textTheme.headlineSmall),
-          const SizedBox(height: Space.s2),
           _StatusRow(
             chip: today == null ? null : chip(today, question),
             onReview: adOpen ? null : openReview,

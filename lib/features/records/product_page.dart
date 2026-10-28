@@ -42,11 +42,18 @@ double pageGutter(double width) => width < 360
     ? 24
     : 32;
 
-/// TopBar back-and-home variant: 44px targets, no centered duplicate title.
+/// TopBar back-and-home variant with 44px targets. A [title] sits centered
+/// between them, as Pen `TopBar/Standard` does with its title on.
 class ProductTopBar extends StatelessWidget {
-  const ProductTopBar({required this.onBack, required this.onHome, super.key});
+  const ProductTopBar({
+    required this.onBack,
+    required this.onHome,
+    this.title,
+    super.key,
+  });
   final VoidCallback onBack;
   final VoidCallback onHome;
+  final String? title;
 
   @override
   Widget build(BuildContext context) => SizedBox(
@@ -64,7 +71,12 @@ class ProductTopBar extends StatelessWidget {
             filterQuality: FilterQuality.none,
           ),
         ),
-        const Spacer(),
+        if (title case final title?)
+          // Between equal buttons, so centered on the page and never under
+          // either button.
+          Expanded(child: ProductTitle(title, textAlign: TextAlign.center))
+        else
+          const Spacer(),
         IconButton(
           key: const ValueKey('product_home'),
           tooltip: '홈',
@@ -76,6 +88,26 @@ class ProductTopBar extends StatelessWidget {
   );
 }
 
+/// `TopBar/Standard` title: 18/700 ink on one line, announced as a header.
+class ProductTitle extends StatelessWidget {
+  const ProductTitle(this.title, {this.textAlign = TextAlign.start, super.key});
+  final String title;
+  final TextAlign textAlign;
+
+  @override
+  Widget build(BuildContext context) => Semantics(
+    header: true,
+    child: Text(
+      title,
+      key: const ValueKey('product_title'),
+      textAlign: textAlign,
+      maxLines: 1,
+      overflow: TextOverflow.ellipsis,
+      style: meetingType(18, 24, FontWeight.w700),
+    ),
+  );
+}
+
 /// Scrolling single-column page with the shared gutter and max width.
 class ProductPage extends StatelessWidget {
   const ProductPage({
@@ -83,6 +115,7 @@ class ProductPage extends StatelessWidget {
     required this.onHome,
     required this.children,
     this.maxWidth = 640,
+    this.title,
     this.footer,
     this.centerFooter = false,
     super.key,
@@ -91,6 +124,11 @@ class ProductPage extends StatelessWidget {
   final VoidCallback onHome;
   final List<Widget> children;
   final double maxWidth;
+
+  /// In the top bar between back and home. With the Duo rail, which takes
+  /// back and home, it keeps the bar's row on its own at the start (Pen
+  /// `n6oQN3`).
+  final String? title;
 
   /// The rest of a page that fills the screen: below [children], at the
   /// bottom edge, or in the middle of the space left when [centerFooter].
@@ -123,7 +161,20 @@ class ProductPage extends StatelessWidget {
                       crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
                         if (mode == null) ...[
-                          ProductTopBar(onBack: onBack, onHome: onHome),
+                          ProductTopBar(
+                            onBack: onBack,
+                            onHome: onHome,
+                            title: title,
+                          ),
+                          const SizedBox(height: Space.s3),
+                        ] else if (title case final title?) ...[
+                          SizedBox(
+                            height: 48,
+                            child: Align(
+                              alignment: AlignmentDirectional.centerStart,
+                              child: ProductTitle(title),
+                            ),
+                          ),
                           const SizedBox(height: Space.s3),
                         ],
                         ...children,

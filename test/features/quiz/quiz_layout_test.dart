@@ -6,6 +6,7 @@ import 'package:balmatchum_app/features/quiz/quiz_review_sheet.dart';
 import 'package:balmatchum_app/features/records/product_page.dart';
 import 'package:balmatchum_client/balmatchum_client.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import '../../support/duo_viewports.dart';
@@ -149,6 +150,60 @@ void main() {
       expect(review.hitTestable(), findsOneWidget);
     },
   );
+
+  /// The page title is a header and appears once: no second heading below.
+  void expectOneHeaderTitle(WidgetTester tester) {
+    final title = find.byKey(const ValueKey('product_title'));
+    expect(tester.getSemantics(title), isSemantics(isHeader: true));
+    final text = tester.widget<ProductPage>(find.byType(ProductPage)).title!;
+    expect(find.text(text), findsOneWidget);
+    expect(
+      tester.renderObject<RenderParagraph>(title).didExceedMaxLines,
+      isFalse,
+    );
+  }
+
+  for (final (size, scale) in const [
+    (Size(390, 844), 1.0),
+    (Size(320, 568), 1.15),
+  ]) {
+    testWidgets('the title is centered between back and home $size ${scale}x', (
+      tester,
+    ) async {
+      useSize(tester, size);
+      final semantics = tester.ensureSemantics();
+      await mount(tester, textScale: scale);
+      final title = rect(tester, 'product_title');
+      final back = rect(tester, 'product_back');
+      final home = rect(tester, 'product_home');
+      // One row with the buttons, between them and never under either.
+      expect(title.center.dy, moreOrLessEquals(back.center.dy, epsilon: 1));
+      expect(title.left, greaterThanOrEqualTo(back.right));
+      expect(title.right, lessThanOrEqualTo(home.left));
+      expect(title.center.dx, moreOrLessEquals(size.width / 2, epsilon: 1));
+      expect(back.bottom, lessThanOrEqualTo(rect(tester, 'quiz_chip').top));
+      expectOneHeaderTitle(tester);
+      semantics.dispose();
+    });
+  }
+
+  testWidgets('on the Duo outer screen the title keeps the bar row alone', (
+    tester,
+  ) async {
+    useDuoViewport(tester, 'outer portrait');
+    final semantics = tester.ensureSemantics();
+    await mount(tester, textScale: 1.15);
+    // Back and home are in the rail (Pen n6oQN3); the title starts the page.
+    expect(find.byType(ProductTopBar), findsNothing);
+    expect(find.byKey(const ValueKey('duo_rail_back')), findsOneWidget);
+    expect(find.byKey(const ValueKey('duo_rail_home')), findsOneWidget);
+    final title = rect(tester, 'product_title');
+    expect(title.left, moreOrLessEquals(pageGutter(382), epsilon: 1));
+    expect(title.right, lessThanOrEqualTo(382));
+    expect(title.bottom, lessThanOrEqualTo(rect(tester, 'quiz_chip').top));
+    expectOneHeaderTitle(tester);
+    semantics.dispose();
+  });
 
   for (final viewport in duoViewports.keys) {
     testWidgets('the quiz and its review fit Duo $viewport', (tester) async {
