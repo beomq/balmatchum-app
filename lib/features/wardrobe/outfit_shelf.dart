@@ -81,7 +81,7 @@ class OutfitShelf extends StatelessWidget {
     final short = !item.owned && balance != null && item.price > balance!;
     final status = item.owned
         ? (worn ? '보유 · 착용 중' : '보유')
-        : '미보유 · ${formatCount(item.price)}포인트';
+        : '미보유 · ${formatCount(item.price)}P';
     final (String label, VoidCallback? onPressed) = !wearable
         ? (item.owned ? '입히기' : '구매하기', null)
         : worn

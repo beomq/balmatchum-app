@@ -85,7 +85,7 @@ void main() {
     expect(find.byKey(const ValueKey('product_fixture_badge')), findsNothing);
     expect(
       tester.widget<Text>(find.byKey(const ValueKey('wardrobe_balance'))).data,
-      '보유 42포인트',
+      '42P',
     );
     expect(repository.calls, isNot(contains('dev')));
     await tester.pumpWidget(const SizedBox.shrink());

@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:balmatchum_app/app/duo_rail.dart';
 import 'package:balmatchum_app/features/first_meeting/domain/dog_catalog.dart';
 import 'package:balmatchum_app/features/first_meeting/meeting_theme.dart';
 import 'package:balmatchum_app/features/records/product_page.dart';
@@ -7,6 +8,8 @@ import 'package:balmatchum_app/features/wardrobe/wardrobe_models.dart';
 import 'package:balmatchum_app/features/wardrobe/wardrobe_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+
+import '../../support/duo_viewports.dart';
 
 const sunny = WardrobeTheme(
   id: 'sunny',
@@ -136,9 +139,25 @@ String caption(WidgetTester t) => t
     .widget<Text>(find.byKey(const ValueKey('wardrobe_preview_caption')))
     .data!;
 
+/// The preview tag's state: `trial`, `equipped` (what the server applied)
+/// or `none`.
+Finder previewState(String state) =>
+    find.byKey(ValueKey('wardrobe_preview_$state'));
+
+Finder tile(String id) => find.byKey(ValueKey('wardrobe_tile_$id'));
+
+Finder wornBadge(String id) =>
+    find.byKey(ValueKey('wardrobe_theme_equipped_$id'));
+
+BorderSide tileSide(WidgetTester t, String id) =>
+    (t.widget<Material>(tile(id)).shape! as RoundedRectangleBorder).side;
+
+String statusText(WidgetTester t, String id) =>
+    t.widget<Text>(find.byKey(ValueKey('wardrobe_theme_status_$id'))).data!;
+
+final digit = RegExp(r'\d');
+
 Future<void> buyNight(WidgetTester tester) async {
-  await tester.tap(find.byKey(const ValueKey('wardrobe_scope_store')));
-  await tester.pumpAndSettle();
   await tester.tap(find.byKey(const ValueKey('wardrobe_theme_night')));
   await tester.pump();
   await tester.tap(find.byKey(const ValueKey('wardrobe_action')));
@@ -190,7 +209,8 @@ void main() {
     await tester.tap(find.byKey(const ValueKey('product_retry')));
     await tester.pumpAndSettle();
     expect(loads, 2);
-    expect(caption(tester), '실제 적용 상태');
+    expect(previewState('equipped'), findsOneWidget);
+    expect(caption(tester), contains(sunny.name));
     expect(
       find.byKey(const ValueKey('wardrobe_preview_bg_sunny')),
       findsOneWidget,
@@ -218,7 +238,8 @@ void main() {
     expect(find.byKey(const ValueKey('product_fixture_badge')), findsNothing);
     await tester.tap(find.byKey(const ValueKey('wardrobe_theme_plain')));
     await tester.pump();
-    expect(caption(tester), '보유함 · 실제 적용 전');
+    expect(previewState('trial'), findsOneWidget);
+    expect(caption(tester), contains(plain.name));
     // No approved image: the server colour is shown, not a generated asset.
     expect(
       find.byKey(const ValueKey('wardrobe_preview_color_plain')),
@@ -232,8 +253,15 @@ void main() {
     pending.complete(snap(equipped: 'plain'));
     await tester.pumpAndSettle();
     expect(equips, ['plain']);
-    expect(caption(tester), '실제 적용 상태');
-    expect(find.text('착용 중'), findsOneWidget);
+    expect(previewState('equipped'), findsOneWidget);
+    expect(wornBadge('plain'), findsOneWidget);
+    expect(wornBadge('sunny'), findsNothing);
+    expect(
+      tester
+          .widget<FilledButton>(find.byKey(const ValueKey('wardrobe_action')))
+          .onPressed,
+      isNull,
+    );
   });
 
   testWidgets('purchase needs confirmation and does not equip', (tester) async {
@@ -269,11 +297,9 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
-    await tester.tap(find.byKey(const ValueKey('wardrobe_scope_store')));
-    await tester.pumpAndSettle();
     await tester.tap(find.byKey(const ValueKey('wardrobe_theme_night')));
     await tester.pump();
-    expect(caption(tester), '미리보기 · 실제 적용 전');
+    expect(previewState('trial'), findsOneWidget);
     await tester.tap(find.byKey(const ValueKey('wardrobe_action')));
     await tester.pumpAndSettle();
     await tester.tap(find.byKey(const ValueKey('wardrobe_purchase_cancel')));
@@ -287,7 +313,7 @@ void main() {
     expect(equips, 0);
     expect(find.text('착용하기'), findsOneWidget);
     expect(find.text('구매 완료 · 아직 적용 전'), findsOneWidget);
-    expect(find.text('보유 200포인트'), findsOneWidget);
+    expect(balanceText(tester), '200P');
   });
 
   testWidgets('unknown price and balance are never invented', (tester) async {
@@ -295,10 +321,12 @@ void main() {
       host(screen(load: () async => snap(balance: null))),
     );
     await tester.pumpAndSettle();
-    expect(find.text('포인트 확인 전'), findsOneWidget);
-    await tester.tap(find.byKey(const ValueKey('wardrobe_scope_store')));
-    await tester.pumpAndSettle();
-    expect(find.textContaining('가격 확인 전'), findsOneWidget);
+    expect(balanceText(tester), isNot(contains(digit)));
+    expect(statusText(tester, 'snow'), isNot(contains(digit)));
+    expect(
+      find.descendant(of: tile('snow'), matching: find.byType(PixelIcon)),
+      findsNothing,
+    );
     await tester.tap(find.byKey(const ValueKey('wardrobe_theme_snow')));
     await tester.pump();
     final action = tester.widget<FilledButton>(
@@ -320,8 +348,6 @@ void main() {
         ),
       ),
     );
-    await tester.pumpAndSettle();
-    await tester.tap(find.byKey(const ValueKey('wardrobe_scope_store')));
     await tester.pumpAndSettle();
     await tester.tap(find.byKey(const ValueKey('wardrobe_theme_night')));
     await tester.pump();
@@ -360,11 +386,10 @@ void main() {
     await buyNight(tester);
     expect(loads, 2);
     expect(purchases, ['night']);
-    expect(caption(tester), '보유함 · 실제 적용 전');
-    expect(
-      tester.widget<Text>(find.byKey(const ValueKey('wardrobe_balance'))).data,
-      '보유 200포인트',
-    );
+    expect(previewState('trial'), findsOneWidget);
+    // Owned now: the tile shows ownership instead of a price.
+    expect(statusText(tester, 'night'), isNot(contains(digit)));
+    expect(balanceText(tester), '200P');
   });
 
   testWidgets('unconfirmed purchase result blocks another purchase', (
@@ -493,7 +518,7 @@ void main() {
     await confirmVestPurchase(tester);
     expect(changes, [OutfitChange.purchase]);
     expect(previewOutfit, findsNothing);
-    expect(balanceText(tester), '보유 497포인트');
+    expect(balanceText(tester), '497P');
     expect(tester.widget<ButtonStyleButton>(outfitAction).onPressed, isNotNull);
   });
 
@@ -609,7 +634,7 @@ void main() {
     expect(changes, [OutfitChange.purchase]);
     expect(loads, 2);
     expect(find.byKey(const ValueKey('wardrobe_outfit_error')), findsOneWidget);
-    expect(balanceText(tester), '보유 497포인트');
+    expect(balanceText(tester), '497P');
     expect(previewOutfit, findsNothing);
   });
 
@@ -631,5 +656,233 @@ void main() {
     await tester.pumpAndSettle();
     expect(loads, 2);
     expect(outfitAction, findsOneWidget);
+  });
+  group('shop (guide 7.6)', () {
+    Future<void> pumpAt(
+      WidgetTester tester,
+      Size size, {
+      EdgeInsets padding = EdgeInsets.zero,
+      double scale = 1,
+    }) async {
+      tester.view.devicePixelRatio = 3;
+      tester.view.physicalSize = size * 3;
+      tester.view.padding = FakeViewPadding(
+        left: padding.left * 3,
+        top: padding.top * 3,
+        right: padding.right * 3,
+        bottom: padding.bottom * 3,
+      );
+      addTearDown(tester.view.reset);
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: meetingTheme(),
+          builder: (context, child) => MediaQuery(
+            data: MediaQuery.of(context)
+                .copyWith(textScaler: TextScaler.linear(scale)),
+            child: child!,
+          ),
+          home: screen(load: () async => snap()),
+        ),
+      );
+      await tester.pumpAndSettle();
+    }
+
+    List<Rect> tileRects(WidgetTester tester) => [
+      for (final t in snap().themes) tester.getRect(tile(t.id)),
+    ];
+
+    for (final size in const [Size(390, 844), Size(402, 874)]) {
+      testWidgets('a ${size.width.toInt()} pt phone shows three tiles a row', (
+        tester,
+      ) async {
+        await pumpAt(
+          tester,
+          size,
+          padding: const EdgeInsets.only(top: 47, bottom: 34),
+        );
+        final rects = tileRects(tester);
+        expect(rects[1].top, rects[0].top);
+        expect(rects[2].top, rects[0].top);
+        expect(rects[3].top, greaterThan(rects[0].bottom));
+        expect(rects[1].width, closeTo(rects[0].width, 0.01));
+        expect(rects[2].width, closeTo(rects[0].width, 0.01));
+        expect(tester.takeException(), isNull);
+      });
+    }
+
+    testWidgets('a 320 pt screen is not forced into three a row', (
+      tester,
+    ) async {
+      await pumpAt(
+        tester,
+        const Size(320, 568),
+        padding: const EdgeInsets.only(top: 20),
+      );
+      final rects = tileRects(tester);
+      expect(rects[1].top, rects[0].top);
+      expect(rects[2].top, greaterThan(rects[0].bottom));
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('the Duo outer display keeps three a row left of the rail', (
+      tester,
+    ) async {
+      useDuoViewport(tester, 'outer portrait');
+      await tester.pumpWidget(duoHost(screen(load: () async => snap())));
+      await tester.pumpAndSettle();
+      expect(find.byType(DuoRail), findsOneWidget);
+      final rects = tileRects(tester);
+      expect(rects[2].top, rects[0].top);
+      expect(rects[3].top, greaterThan(rects[0].bottom));
+      for (final rect in rects) {
+        expect(rect.right, lessThanOrEqualTo(382));
+      }
+      for (final key in ['wardrobe_preview', 'wardrobe_action']) {
+        expect(
+          tester.getRect(find.byKey(ValueKey(key))).right,
+          lessThanOrEqualTo(382),
+        );
+      }
+      expect(tester.takeException(), isNull);
+    });
+
+    for (final (size, padding) in const [
+      (Size(320, 568), EdgeInsets.only(top: 20)),
+      (Size(402, 874), EdgeInsets.only(top: 62, bottom: 34)),
+    ]) {
+      testWidgets(
+        '${size.width.toInt()} pt at the 1.15x text cap scrolls to every row',
+        (tester) async {
+          await pumpAt(tester, size, padding: padding, scale: 1.15);
+          for (final key in [
+            'wardrobe_theme_snow',
+            'wardrobe_outfit_action_vest-low-v',
+            'wardrobe_action',
+          ]) {
+            final target = find.byKey(ValueKey(key));
+            await tester.ensureVisible(target);
+            await tester.pumpAndSettle();
+            expect(target.hitTestable(), findsOneWidget, reason: key);
+          }
+          expect(tester.takeException(), isNull);
+        },
+      );
+    }
+
+    testWidgets('the selection outline and the worn badge are separate', (
+      tester,
+    ) async {
+      final semantics = tester.ensureSemantics();
+      await tester.pumpWidget(host(screen(load: () async => snap())));
+      await tester.pumpAndSettle();
+      // The applied theme starts selected and worn.
+      expect(tileSide(tester, 'sunny').width, 2);
+      expect(wornBadge('sunny'), findsOneWidget);
+      await tester.tap(find.byKey(const ValueKey('wardrobe_theme_night')));
+      await tester.pump();
+      expect(
+        tileSide(tester, 'night'),
+        const BorderSide(color: MeetingColors.primaryStrong, width: 2),
+      );
+      for (final id in ['sunny', 'plain', 'snow']) {
+        expect(tileSide(tester, id).width, 1, reason: id);
+      }
+      expect(wornBadge('sunny'), findsOneWidget);
+      expect(wornBadge('night'), findsNothing);
+      expect(
+        tester.getSemantics(find.byKey(const ValueKey('wardrobe_theme_night'))),
+        isSemantics(isButton: true, isSelected: true),
+      );
+      expect(
+        tester.getSemantics(find.byKey(const ValueKey('wardrobe_theme_sunny'))),
+        isSemantics(isButton: true, isSelected: false),
+      );
+      semantics.dispose();
+    });
+
+    testWidgets('tiles show a price, ownership or an unknown price', (
+      tester,
+    ) async {
+      await tester.pumpWidget(host(screen(load: () async => snap())));
+      await tester.pumpAndSettle();
+      Finder pointIcon(String id) =>
+          find.descendant(of: tile(id), matching: find.byType(PixelIcon));
+      expect(statusText(tester, 'night'), contains(formatCount(store.price!)));
+      expect(pointIcon('night'), findsOneWidget);
+      for (final id in ['sunny', 'plain', 'snow']) {
+        expect(statusText(tester, id), isNot(contains(digit)), reason: id);
+        expect(pointIcon(id), findsNothing, reason: id);
+      }
+      expect(statusText(tester, 'plain'), statusText(tester, 'sunny'));
+      expect(statusText(tester, 'snow'), isNot(statusText(tester, 'sunny')));
+      final counts = tester
+          .widget<Text>(find.byKey(const ValueKey('wardrobe_theme_counts')))
+          .data!;
+      // All four from the server list, two of them owned.
+      expect(RegExp(r'\d+').allMatches(counts).map((m) => m[0]), ['4', '2']);
+    });
+
+    testWidgets('the preview names the pick and carries the balance chip', (
+      tester,
+    ) async {
+      await tester.pumpWidget(host(screen(load: () async => snap())));
+      await tester.pumpAndSettle();
+      expect(previewState('equipped'), findsOneWidget);
+      await tester.tap(find.byKey(const ValueKey('wardrobe_theme_night')));
+      await tester.pump();
+      expect(previewState('trial'), findsOneWidget);
+      expect(caption(tester), contains(store.name));
+      expect(balanceText(tester), contains(formatCount(500)));
+      final preview = tester.getRect(
+        find.byKey(const ValueKey('wardrobe_preview')),
+      );
+      final chip = tester.getRect(
+        find.byKey(const ValueKey('wardrobe_balance_chip')),
+      );
+      final tag = tester.getRect(previewState('trial'));
+      expect(chip.top - preview.top, closeTo(Space.s3, 0.5));
+      expect(preview.right - chip.right, closeTo(Space.s3, 0.5));
+      expect(tag.left - preview.left, closeTo(Space.s3, 0.5));
+      expect(tag.right, lessThan(chip.left));
+      // Picking the applied theme again shows the server state.
+      await tester.tap(find.byKey(const ValueKey('wardrobe_theme_sunny')));
+      await tester.pump();
+      expect(previewState('equipped'), findsOneWidget);
+    });
+
+    testWidgets('tiles and the preview draw a theme the same way', (
+      tester,
+    ) async {
+      await tester.pumpWidget(host(screen(load: () async => snap())));
+      await tester.pumpAndSettle();
+      final tileImage = tester.widget<Image>(
+        find.byKey(const ValueKey('wardrobe_tile_bg_sunny')),
+      );
+      final previewImage = tester.widget<Image>(
+        find.byKey(const ValueKey('wardrobe_preview_bg_sunny')),
+      );
+      expect(
+        tileImage.image,
+        const AssetImage('assets/first_meeting/sunny.png'),
+      );
+      expect(previewImage.image, tileImage.image);
+      // Without an approved picture both use the server colour.
+      expect(
+        find.byKey(const ValueKey('wardrobe_tile_bg_plain')),
+        findsNothing,
+      );
+      await tester.tap(find.byKey(const ValueKey('wardrobe_theme_plain')));
+      await tester.pump();
+      for (final key in [
+        'wardrobe_tile_color_plain',
+        'wardrobe_preview_color_plain',
+      ]) {
+        expect(
+          tester.widget<ColoredBox>(find.byKey(ValueKey(key))).color,
+          Color(plain.colorValue),
+          reason: key,
+        );
+      }
+    });
   });
 }

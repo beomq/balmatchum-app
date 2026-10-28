@@ -146,8 +146,6 @@ void main() {
       () => tapText('꾸미기'),
     );
     await tester.pumpAndSettle();
-    await tapText('상점');
-    await tester.pumpAndSettle();
     final cloudy = find.byKey(const ValueKey('wardrobe_theme_cloudy'));
     await tester.ensureVisible(cloudy);
     await tester.tap(cloudy);
