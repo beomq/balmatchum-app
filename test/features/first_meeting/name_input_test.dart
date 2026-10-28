@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:balmatchum_app/features/first_meeting/domain/first_meeting.dart';
 import 'package:balmatchum_app/features/first_meeting/first_meeting_screen.dart';
 import 'package:balmatchum_app/features/first_meeting/meeting_theme.dart';
+import 'package:balmatchum_app/features/settings/settings_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -93,12 +94,14 @@ void main() {
           await tester.pumpWidget(
             MaterialApp(
               theme: meetingTheme().copyWith(platform: platform),
-              home: FirstMeetingScreen(controller: c),
+              home: settings
+                  ? SettingsScreen(controller: c, onBack: () {}, onHome: () {})
+                  : FirstMeetingScreen(controller: c),
             ),
           );
           await tester.pumpAndSettle();
           if (settings) {
-            await tester.tap(find.byTooltip('설정'));
+            await tester.tap(find.byKey(const ValueKey('settings_profile')));
             await tester.pumpAndSettle();
           }
           final field = find.byKey(

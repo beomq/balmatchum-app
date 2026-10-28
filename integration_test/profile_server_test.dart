@@ -3,8 +3,8 @@ import 'package:balmatchum_app/features/daily_activity/dev_test_session.dart';
 import 'package:balmatchum_app/features/first_meeting/data/first_meeting_file_storage.dart';
 import 'package:balmatchum_app/features/first_meeting/data/profile_repository.dart';
 import 'package:balmatchum_app/features/first_meeting/domain/first_meeting.dart';
-import 'package:balmatchum_app/features/first_meeting/first_meeting_screen.dart';
 import 'package:balmatchum_app/features/first_meeting/meeting_theme.dart';
+import 'package:balmatchum_app/features/settings/settings_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -46,23 +46,28 @@ void main() {
     await tester.pumpWidget(
       MaterialApp(
         theme: meetingTheme(),
-        home: FirstMeetingScreen(controller: controller),
+        home: SettingsScreen(
+          controller: controller,
+          onBack: () {},
+          onHome: () {},
+        ),
       ),
     );
     await tester.pumpAndSettle();
-    await tester.tap(find.byTooltip('설정'));
+    await tester.tap(find.byKey(const ValueKey('settings_profile')));
     await tester.pumpAndSettle();
     await tester.enterText(find.byKey(const ValueKey('settings_name')), '구름');
-    await tester.tap(find.text('이름 저장'));
+    await tester.tap(find.byKey(const ValueKey('settings_name_save')));
     await tester.runAsync(() async {
       // Controller commands serialize with the UI mutation already submitted.
       await controller.initialize();
     });
     await tester.pumpAndSettle();
     expect(controller.state.name, '구름');
+    await tester.tap(find.byKey(const ValueKey('settings_goal_row')));
+    await tester.pumpAndSettle();
     await tester.enterText(find.byKey(const ValueKey('settings_goal')), '7000');
-    await tester.ensureVisible(find.text('목표 저장'));
-    await tester.tap(find.text('목표 저장'));
+    await tester.tap(find.byKey(const ValueKey('settings_goal_save')));
     await tester.runAsync(() => controller.initialize());
     await tester.pumpAndSettle();
     expect(controller.state.goal, 7000);

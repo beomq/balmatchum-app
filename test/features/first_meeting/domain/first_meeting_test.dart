@@ -303,4 +303,15 @@ void main() {
       }
     },
   );
+
+  test('days together count the first meeting KST date as day one', () {
+    // 2026-10-18 00:00 KST.
+    final state = FirstMeetingState(
+      firstMetAtUTC: DateTime.utc(2026, 10, 17, 15),
+    );
+    expect(state.daysTogether(DateTime.utc(2026, 10, 18, 14, 59)), 1);
+    expect(state.daysTogether(DateTime.utc(2026, 10, 18, 15)), 2);
+    expect(state.daysTogether(DateTime.utc(2026, 11, 1, 15)), 16);
+    expect(FirstMeetingState().daysTogether(DateTime.utc(2026)), isNull);
+  });
 }

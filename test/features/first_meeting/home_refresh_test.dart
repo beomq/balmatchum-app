@@ -188,11 +188,6 @@ void main() {
     final wallet = find.byKey(const ValueKey('reward_wallet'));
     expect(tester.widget<Text>(wallet).data, '12,345P');
     expect(find.textContaining('Dev 체험'), findsNothing);
-    await tester.tap(find.byTooltip('설정'));
-    await tester.pumpAndSettle();
-    expect(find.textContaining('Dev 체험'), findsNothing);
-    await tester.tapAt(const Offset(8, 8));
-    await tester.pumpAndSettle();
     // Before today's record arrives the fallback is an account message.
     product.today = null;
     final reward = find.byKey(const ValueKey('home_reward'));

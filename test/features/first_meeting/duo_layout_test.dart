@@ -8,6 +8,7 @@ import 'package:balmatchum_app/features/daily_activity/product_controller.dart';
 import 'package:balmatchum_app/features/first_meeting/domain/first_meeting.dart';
 import 'package:balmatchum_app/features/first_meeting/first_meeting_screen.dart';
 import 'package:balmatchum_app/features/first_meeting/meeting_widgets.dart';
+import 'package:balmatchum_app/features/settings/settings_pages.dart';
 import 'package:balmatchum_app/features/watch_sync/watch_bridge.dart';
 import 'package:balmatchum_client/balmatchum_client.dart' as api;
 import 'package:flutter/material.dart';
@@ -129,18 +130,14 @@ void main() {
     testWidgets('settings privacy link fits Duo ${viewport.key}', (
       tester,
     ) async {
-      // Given an authenticated home with a successful URL launcher.
+      // Given settings > service info with a successful URL launcher.
       useDuoViewport(tester, viewport.key);
       final opened = <Uri>[];
-      final c = FirstMeetingController(
-        storage: MemoryStorage(),
-        profileRepository: Profiles()..current = view(),
-      );
-      addTearDown(c.dispose);
       await tester.pumpWidget(
         duoHost(
-          FirstMeetingScreen(
-            controller: c,
+          ServiceInfoScreen(
+            onBack: () {},
+            onHome: () {},
             openUrl: (uri) async {
               opened.add(uri);
               return true;
@@ -149,9 +146,7 @@ void main() {
         ),
       );
       await tester.pumpAndSettle();
-      // When settings opens and its privacy link is activated.
-      await tester.tap(find.byTooltip('설정'));
-      await tester.pumpAndSettle();
+      // When its privacy link is activated.
       final policy = find.byKey(const ValueKey('settings_privacy_policy'));
       await tester.ensureVisible(policy);
       expect(policy.hitTestable(), findsOneWidget);

@@ -61,6 +61,19 @@ class FirstMeetingState {
   int get currentQuestion => questionIndex;
   String? get breedId => candidateBreedId;
 
+  /// Days together on [now], counting the first meeting's KST date as day 1;
+  /// null before the meeting completes. The home header and settings share it.
+  int? daysTogether(DateTime now) {
+    final met = firstMetAtUTC;
+    if (met == null) return null;
+    DateTime kstDate(DateTime time) {
+      final kst = time.toUtc().add(const Duration(hours: 9));
+      return DateTime.utc(kst.year, kst.month, kst.day);
+    }
+
+    return kstDate(now).difference(kstDate(met)).inDays + 1;
+  }
+
   DogBreed? get representative => representativeBreedId == null
       ? null
       : FirstMeetingCatalog.byId(representativeBreedId!);
