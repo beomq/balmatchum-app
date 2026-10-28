@@ -263,7 +263,12 @@ class FirstMeetingController extends ChangeNotifier {
   });
 
   Future<void> chooseRecommendation() => _run(() async {
-    if (_at(FirstMeetingStep.method)) {
+    // The catalog offers the questions too (guide 4.2-6).
+    if (_canEdit() &&
+        [
+          FirstMeetingStep.method,
+          FirstMeetingStep.catalog,
+        ].contains(_state.step)) {
       await _save(
         _state.copyWith(
           step: _state.representativeBreedId == null

@@ -66,6 +66,11 @@ class _FirstMeetingScreenState extends State<FirstMeetingScreen> {
   /// controller turns busy queues nothing (guide 4.4-6).
   Future<void>? starting;
 
+  /// The catalog step's centered card, shared by the pager and the bottom
+  /// button so both name one breed (guide 4.2-5). Null outside the step, so
+  /// every visit opens at the previous candidate.
+  int? catalogIndex;
+
   @override
   void initState() {
     super.initState();
@@ -125,7 +130,11 @@ class _FirstMeetingScreenState extends State<FirstMeetingScreen> {
       WidgetsBinding.instance.addPostFrameCallback((_) => changed());
       return;
     }
-    setState(() {});
+    setState(() {
+      if (controller?.state.step != FirstMeetingStep.catalog) {
+        catalogIndex = null;
+      }
+    });
     enterHome();
   }
 
@@ -306,10 +315,15 @@ class _FirstMeetingScreenState extends State<FirstMeetingScreen> {
     final railMode = duoRailMode(MediaQuery.of(context), railSpec);
     // While the rail carries back, the header keeps its empty slot.
     final onBack = railMode != null || !c.canGoBack || c.isBusy ? null : c.back;
-    final goalStep =
-        s.step == FirstMeetingStep.goal &&
-        c.error != FirstMeetingError.corruption &&
-        c.isRestored;
+    final shown = c.error != FirstMeetingError.corruption && c.isRestored;
+    // The user-facing three steps; the confirm step between keeps its page.
+    final onboardingStep = shown
+        ? switch (s.step) {
+            FirstMeetingStep.catalog => 1,
+            FirstMeetingStep.goal => 3,
+            _ => null,
+          }
+        : null;
     return PopScope(
       canPop:
           s.step == FirstMeetingStep.login || s.step == FirstMeetingStep.home,
@@ -324,12 +338,23 @@ class _FirstMeetingScreenState extends State<FirstMeetingScreen> {
           showHeader: s.step != FirstMeetingStep.home,
           wide: s.step == FirstMeetingStep.home,
           onBack: onBack,
-          // Pen ONB-09: back sits in the 3/3 step bar and the start at the
-          // bottom; the save result and retry stay above the content.
-          header: goalStep
-              ? OnboardingStepNav(step: 3, total: 3, onBack: onBack)
-              : null,
-          footer: goalStep ? goalFooter(c) : null,
+          // Pen ONB-06 and ONB-09: back sits in the n/3 step bar and the
+          // main action at the bottom; the save result and retry stay above
+          // the content.
+          header: onboardingStep == null
+              ? null
+              : OnboardingStepNav(
+                  step: onboardingStep,
+                  total: 3,
+                  onBack: onBack,
+                ),
+          footer: !shown
+              ? null
+              : switch (s.step) {
+                  FirstMeetingStep.catalog => catalogFooter(c),
+                  FirstMeetingStep.goal => goalFooter(c),
+                  _ => null,
+                },
           rail: railMode == null
               ? null
               : DuoRail(spec: railSpec, mode: railMode),
@@ -496,14 +521,12 @@ class _FirstMeetingScreenState extends State<FirstMeetingScreen> {
         ];
       case FirstMeetingStep.catalog:
         return [
-          const MeetingHeading('30종 직접 고르기', '넘겨 보고 카드를 누르면 최종 확인으로 이동'),
+          const MeetingHeading('어떤 친구와 걸을까요?', '넘겨 보고 마음에 드는 친구를 골라 주세요.'),
           BreedPager(
-            initialBreedId: s.candidateOrigin == CandidateOrigin.catalog
-                ? s.candidateBreedId
-                : null,
+            index: catalogShown(s),
             enabled: enabled,
-            onSelect: (breed) =>
-                c.selectCandidate(breed.id, origin: CandidateOrigin.catalog),
+            onChanged: (index) => setState(() => catalogIndex = index),
+            onSelect: (breed) => pickBreed(c, breed),
           ),
         ];
       case FirstMeetingStep.confirm:
@@ -930,6 +953,49 @@ class _FirstMeetingScreenState extends State<FirstMeetingScreen> {
     }
   }
 
+  /// The card the catalog shows: the one moved to in this visit, else the
+  /// previous catalog candidate, else G1's first.
+  int catalogShown(FirstMeetingState s) =>
+      catalogIndex ??
+      BreedPager.indexOf(
+        s.candidateOrigin == CandidateOrigin.catalog
+            ? s.candidateBreedId
+            : null,
+      );
+
+  /// A tap on the centered card and the bottom button both land here. The
+  /// controller saves only while the catalog step is current, so a second
+  /// tap queued behind the first saves nothing.
+  void pickBreed(FirstMeetingController c, DogBreed breed) =>
+      unawaited(c.selectCandidate(breed.id, origin: CandidateOrigin.catalog));
+
+  /// The pick named after the centered breed and the recommendation under
+  /// the catalog (guide 4.2-5, 4.2-6).
+  Widget catalogFooter(FirstMeetingController c) {
+    final enabled = !c.isBusy && !c.hasPendingMutation;
+    final breed = FirstMeetingCatalog.breeds[catalogShown(c.state)];
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      spacing: Space.s1,
+      children: [
+        FilledButton(
+          key: const ValueKey('breed_choose'),
+          onPressed: enabled ? () => pickBreed(c, breed) : null,
+          child: Text('${_withRo(breed.name)} 할게요'),
+        ),
+        TextButton(
+          key: const ValueKey('breed_recommend'),
+          onPressed: enabled
+              ? () =>
+                    unawaited(c.chooseMethod(FirstMeetingMethod.recommendation))
+              : null,
+          style: TextButton.styleFrom(foregroundColor: MeetingColors.muted),
+          child: const Text('성향으로 추천받기'),
+        ),
+      ],
+    );
+  }
+
   /// The no-penalty note and the start under the goal step (guide 4.4-6).
   /// The start saves through the existing complete path with the draft the
   /// queued saves left, once.
@@ -1077,15 +1143,34 @@ String _bubble(HomeGoal goal, HomeReward point) {
   return '오늘도 네 옆에서 걸을게';
 }
 
-/// `{name}와` or `{name}과` by the name's last sound. Digits are read in
-/// Korean; other characters take 와.
+/// The final consonant of [value]'s last sound as a jongseong index: 0 for
+/// none, 8 for ㄹ. Digits are read in Korean; other characters count as
+/// ending in a vowel.
+int _batchim(String value) {
+  final last = value.codeUnitAt(value.length - 1);
+  if (last >= 0xAC00 && last <= 0xD7A3) return (last - 0xAC00) % 28;
+  // 영 일 삼 육 칠 팔 end in ㅇ ㄹ ㅁ ㄱ ㄹ ㄹ; 이 사 오 구 in a vowel.
+  return const {
+        '0': 21,
+        '1': 8,
+        '3': 16,
+        '6': 1,
+        '7': 8,
+        '8': 8,
+      }[String.fromCharCode(last)] ??
+      0;
+}
+
+/// `{name}와` or `{name}과` by the name's last sound.
 String _withWa(String name) {
   final value = name.trimRight();
   if (value.isEmpty) return name;
-  final last = value.codeUnitAt(value.length - 1);
-  final closed = last >= 0xAC00 && last <= 0xD7A3
-      ? (last - 0xAC00) % 28 != 0
-      // 영 일 삼 육 칠 팔 end in a consonant; 이 사 오 구 do not.
-      : '013678'.contains(String.fromCharCode(last));
-  return '$value${closed ? '과' : '와'}';
+  return '$value${_batchim(value) == 0 ? '와' : '과'}';
 }
+
+/// `{value}로` after a vowel or ㄹ, `{value}으로` after another consonant.
+String _withRo(String value) =>
+    '$value${switch (_batchim(value)) {
+      0 || 8 => '로',
+      _ => '으로',
+    }}';
