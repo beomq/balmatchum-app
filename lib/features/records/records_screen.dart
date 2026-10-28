@@ -6,6 +6,7 @@ import 'package:world_holidays/world_holidays.dart';
 import '../first_meeting/meeting_theme.dart';
 import '../daily_activity/product_controller.dart';
 import '../daily_activity/reward_panel.dart';
+import '../wardrobe/dog_sprite.dart';
 import 'product_page.dart';
 import 'records_models.dart';
 
@@ -355,11 +356,15 @@ class RecordDayScreen extends StatefulWidget {
     this.onDayChanged,
     this.isToday = false,
     this.holidayName = koreanHolidayName,
+    this.dogAsset,
     super.key,
   });
 
   final DateTime date;
   final bool isToday;
+
+  /// The user's own companion sprite, passed by the router (guide 3.6).
+  final String? dogAsset;
   final LoadRecordDay loadDay;
   final DeleteRecordDay deleteDay;
   final ClaimRecordDay claimDay;
@@ -493,7 +498,7 @@ class _RecordDayScreenState extends State<RecordDayScreen> {
           const SizedBox(height: Space.s1),
           Text(holiday, style: const TextStyle(color: ProductColors.error)),
         ],
-        if (day?.fixtureLabel != null) ...[
+        if (fixtureLabelsVisible && day?.fixtureLabel != null) ...[
           const SizedBox(height: Space.s2),
           FixtureBadge(day!.fixtureLabel!),
         ],
@@ -529,6 +534,18 @@ class _RecordDayScreenState extends State<RecordDayScreen> {
                   )
                 : const Text('이 날짜의 걸음을 확인할 수 없어요. 0걸음과는 달라요.'),
           ),
+          if (widget.dogAsset case final dog?) ...[
+            const SizedBox(height: Space.s3),
+            Align(
+              alignment: Alignment.centerLeft,
+              child: SizedBox.square(
+                key: const ValueKey('records_day_dog'),
+                // Pen record day: the companion sits under the steps card.
+                dimension: DogSpriteSize.companion,
+                child: DogSprite(asset: dog),
+              ),
+            ),
+          ],
           const SizedBox(height: Space.s3),
           _Section(
             title: '포인트',
@@ -577,7 +594,7 @@ class _RewardBody extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final granted = day.grantedPoints > 0
-        ? '받은 포인트 ${formatCount(day.grantedPoints)}'
+        ? '받은 포인트 ${formatCount(day.grantedPoints)}P'
         : null;
     final status = switch (day.rewardStatus) {
       DayRewardStatus.pending => '걸음이 확정되면 받을 수 있어요.',

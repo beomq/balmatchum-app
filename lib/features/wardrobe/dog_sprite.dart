@@ -1,5 +1,12 @@
 import 'package:flutter/material.dart';
 
+/// Pen sizes of the companion outside home (guide 3.6): beside a result or a
+/// record, and over an empty state.
+abstract final class DogSpriteSize {
+  static const companion = 72.0;
+  static const emptyState = 140.0;
+}
+
 /// The companion's approved sprite with an optional worn layer.
 ///
 /// A layer shares its sprite's exact canvas, so it is pinned to the box the

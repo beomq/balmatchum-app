@@ -78,7 +78,7 @@ OutfitStore outfitStore({
 );
 
 class AccountRepository extends ProductRepository {
-  AccountRepository() : super(Client('http://localhost/'));
+  AccountRepository({super.billing}) : super(Client('http://localhost/'));
   Completer<DailyRecord>? pending;
   bool failRead = false;
   bool failThemes = false;

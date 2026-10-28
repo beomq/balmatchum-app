@@ -12,6 +12,7 @@ import '../daily_activity/product_controller.dart';
 import '../daily_activity/record_mapping.dart';
 import '../daily_activity/reward_panel.dart';
 import '../daily_activity/product_repository.dart';
+import '../records/product_page.dart' show fixtureLabelsVisible, formatCount;
 import '../auth/kakao_auth_service.dart';
 import '../auth/account_deletion_dialog.dart';
 import '../wardrobe/dog_sprite.dart';
@@ -57,14 +58,37 @@ class _FirstMeetingScreenState extends State<FirstMeetingScreen> {
   final name = TextEditingController();
   final goal = TextEditingController();
   final pageStorage = PageStorageBucket();
+  late final AppLifecycleListener lifecycle;
+
+  /// The home's entry refresh already ran for the current product.
+  bool homeRefreshed = false;
 
   @override
   void initState() {
     super.initState();
     widget.dailySteps?.addListener(changed);
     widget.product?.addListener(changed);
-    if (widget.product?.account != null) unawaited(widget.product!.connect());
+    // Coming back to the app refreshes the home like a pull (guide 3.1).
+    lifecycle = AppLifecycleListener(
+      onShow: () {
+        if (controller?.state.step == FirstMeetingStep.home) {
+          unawaited(refreshHome());
+        }
+      },
+    );
     unawaited(load());
+  }
+
+  @override
+  void didUpdateWidget(FirstMeetingScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.product != widget.product) {
+      oldWidget.product?.removeListener(changed);
+      widget.product?.addListener(changed);
+      // The router hands over the product once the first meeting completes.
+      homeRefreshed = false;
+      enterHome();
+    }
   }
 
   Future<void> load() async {
@@ -79,6 +103,7 @@ class _FirstMeetingScreenState extends State<FirstMeetingScreen> {
       goal.text = value.state.goalInput;
       value.addListener(changed);
       setState(() {});
+      enterHome();
     } on Exception {
       if (mounted) setState(() => loadError = '체험 기록을 읽지 못했습니다. 다시 시도해 주세요.');
     }
@@ -116,7 +141,8 @@ class _FirstMeetingScreenState extends State<FirstMeetingScreen> {
                     decoration: const InputDecoration(labelText: '강아지 이름'),
                   ),
                   const SizedBox(height: 12),
-                  FilledButton(
+                  // Two equal saves: neither is the sheet's one primary (3.3).
+                  OutlinedButton(
                     onPressed: c.isBusy || c.hasPendingMutation
                         ? null
                         : () => c.renameDog(settingsName.text),
@@ -131,7 +157,7 @@ class _FirstMeetingScreenState extends State<FirstMeetingScreen> {
                     decoration: const InputDecoration(labelText: '하루 걸음 목표'),
                   ),
                   const SizedBox(height: 12),
-                  FilledButton(
+                  OutlinedButton(
                     onPressed: c.isBusy || c.hasPendingMutation
                         ? null
                         : () => c.changeGoal(settingsGoal.text),
@@ -148,7 +174,10 @@ class _FirstMeetingScreenState extends State<FirstMeetingScreen> {
                       onPressed: c.isBusy ? null : c.retryMutation,
                       child: const Text('저장 결과 확인 · 재시도'),
                     ),
-                  Text('현재 이름 ${c.state.name} · 목표 ${c.state.goal}걸음'),
+                  Text(
+                    '현재 이름 ${c.state.name} · '
+                    '목표 ${formatCount(c.state.goal)}걸음',
+                  ),
                   const SizedBox(height: 20),
                   if (widget.onOpenBilling != null) ...[
                     OutlinedButton(
@@ -188,7 +217,12 @@ class _FirstMeetingScreenState extends State<FirstMeetingScreen> {
                     child: const Text('개인정보처리방침'),
                   ),
                   if (widget.onDeleteAccount != null)
+                    // Destructive entry: red text at the very bottom (3.3).
                     TextButton(
+                      key: const ValueKey('settings_delete_account'),
+                      style: TextButton.styleFrom(
+                        foregroundColor: MeetingColors.error,
+                      ),
                       onPressed: c.isBusy ? null : deleteAccount,
                       child: const Text('회원 탈퇴'),
                     ),
@@ -242,11 +276,40 @@ class _FirstMeetingScreenState extends State<FirstMeetingScreen> {
   }
 
   void changed() {
-    if (mounted) setState(() {});
+    if (!mounted) return;
+    setState(() {});
+    enterHome();
+  }
+
+  /// Refreshes once per product when the home first shows. The post-frame hop
+  /// lets the router hand over a product created with the completed meeting.
+  void enterHome() {
+    if (homeRefreshed || controller?.state.step != FirstMeetingStep.home) {
+      return;
+    }
+    homeRefreshed = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) unawaited(refreshHome());
+    });
+  }
+
+  /// Entry, app return, pull and retry share one refresh (guide 3.1). A real
+  /// account reconnects first; the dev test user connects only by its button.
+  Future<void> refreshHome() async {
+    final product = widget.product;
+    if (product != null && !product.connected && product.account != null) {
+      await product.connect();
+    }
+    if (product != null && product.connected) {
+      await product.sync();
+    } else {
+      await widget.dailySteps?.refresh();
+    }
   }
 
   @override
   void dispose() {
+    lifecycle.dispose();
     widget.dailySteps?.removeListener(changed);
     widget.product?.removeListener(changed);
     controller?.removeListener(changed);
@@ -269,6 +332,7 @@ class _FirstMeetingScreenState extends State<FirstMeetingScreen> {
             child: const Text('취소'),
           ),
           FilledButton(
+            style: FilledButton.styleFrom(backgroundColor: MeetingColors.error),
             onPressed: () => Navigator.pop(context, true),
             child: const Text('체험 초기화'),
           ),
@@ -286,7 +350,12 @@ class _FirstMeetingScreenState extends State<FirstMeetingScreen> {
     context: context,
     builder: (context) => AlertDialog(
       title: Text(title),
-      content: const Text('이번 Dev 체험 범위에 포함되지 않은 기능입니다.'),
+      // An account build lands here only before today's record is loaded.
+      content: Text(
+        controller?.profileRepository == null
+            ? '이번 Dev 체험 범위에 포함되지 않은 기능입니다.'
+            : '기록을 불러오지 못했어요. 연결 상태를 확인해 주세요.',
+      ),
       actions: [
         FilledButton(
           onPressed: () => Navigator.pop(context),
@@ -399,6 +468,7 @@ class _FirstMeetingScreenState extends State<FirstMeetingScreen> {
         bucket: pageStorage,
         child: MeetingPage(
           key: ValueKey(s.step),
+          onRefresh: s.step == FirstMeetingStep.home ? refreshHome : null,
           showHeader: s.step != FirstMeetingStep.home,
           wide: s.step == FirstMeetingStep.home,
           // While the rail carries back, the header keeps its empty slot.
@@ -845,28 +915,32 @@ class _FirstMeetingScreenState extends State<FirstMeetingScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  Text('오늘 걸음 · 목표 ${s.goal}'),
+                  Text('오늘 걸음 · 목표 ${formatCount(s.goal)}걸음'),
                   const SizedBox(height: 12),
-                  DailyStepsReadout(controller: widget.dailySteps),
+                  DailyStepsReadout(
+                    controller: widget.dailySteps,
+                    onRetry: refreshHome,
+                  ),
                   if (widget.product case final product?) ...[
-                    TextButton(
-                      onPressed: product.busy
-                          ? null
-                          : product.connected
-                          ? product.sync
-                          : product.connect,
-                      child: Text(
-                        product.connected
-                            ? '서버 동기화'
-                            : product.account == null
-                            ? '개발 테스트 사용자 연결'
-                            : '서버 다시 연결',
+                    // Sync runs by itself (3.1). Only the dev build's test
+                    // user, which has no account, connects by hand.
+                    if (product.account == null && !product.connected)
+                      TextButton(
+                        key: const ValueKey('home_dev_connect'),
+                        onPressed: product.busy ? null : product.connect,
+                        child: const Text('개발 테스트 사용자 연결'),
                       ),
-                    ),
                     if (product.error != null) Text(product.error!),
+                    if (product.error != null && product.account != null)
+                      OutlinedButton(
+                        key: const ValueKey('home_sync_retry'),
+                        onPressed: product.busy ? null : refreshHome,
+                        child: const Text('다시 시도'),
+                      ),
                     if (product.wallet case final wallet?)
                       Text(
-                        '${wallet.balance} P${wallet.fixtureLabel == null ? '' : ' · 개발 검증용'}',
+                        '${formatCount(wallet.balance)}P'
+                        '${fixtureLabelsVisible && wallet.fixtureLabel != null ? ' · 개발 검증용' : ''}',
                         key: const ValueKey('reward_wallet'),
                       ),
                   ],

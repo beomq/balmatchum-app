@@ -1,9 +1,12 @@
+import 'dart:async';
+
 import 'package:balmatchum_client/balmatchum_client.dart';
 import 'package:flutter/material.dart';
 
 import '../ads/ads_controller.dart';
 import '../ads/ads_session.dart';
 import '../ads/ads_sheet.dart';
+import '../records/product_page.dart' show fixtureLabelsVisible, formatCount;
 import '../records/records_models.dart';
 import 'product_controller.dart';
 import 'product_repository.dart';
@@ -32,7 +35,33 @@ class _RewardPanelState extends State<RewardPanel> {
   String? notice;
   bool busy = false;
   bool needsReload = false;
+
+  /// The automatic paid-benefit observation failed; only then is its retry
+  /// shown (guide 3.1).
+  bool premiumFailed = false;
   bool get active => mounted && widget.controller.isActive;
+
+  @override
+  void initState() {
+    super.initState();
+    // Not during this build: observing notifies the shared controller, whose
+    // listeners include the home under this sheet.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) autoCheckPremium();
+    });
+  }
+
+  /// Observes the paid benefit while the day offers the ad path and no fresh
+  /// observation exists, so a paid user sees the paid claim without asking.
+  /// Only a billing connection can observe, and observing never claims.
+  void autoCheckPremium() {
+    if (_offersAd(day) &&
+        widget.controller.repository.billing != null &&
+        widget.controller.premiumActive == null &&
+        !premiumFailed) {
+      unawaited(checkPremium());
+    }
+  }
 
   @override
   void didUpdateWidget(RewardPanel oldWidget) {
@@ -101,15 +130,24 @@ class _RewardPanelState extends State<RewardPanel> {
     setState(() {
       busy = true;
       notice = null;
+      premiumFailed = false;
     });
+    var observed = false;
     try {
       await widget.controller.checkPremium();
+      observed = true;
       if (active) {
         setState(() => needsReload = true);
         await reload();
       }
     } catch (_) {
-      if (active) setState(() => notice = '유료 혜택을 확인하지 못했어요. 다시 확인해 주세요.');
+      if (active) {
+        setState(() {
+          // A reload failing after a good observation keeps its own retry.
+          premiumFailed = !observed;
+          notice = '유료 혜택을 확인하지 못했어요. 다시 확인해 주세요.';
+        });
+      }
     } finally {
       if (mounted) setState(() => busy = false);
     }
@@ -184,6 +222,9 @@ class _RewardPanelState extends State<RewardPanel> {
     } finally {
       if (mounted) setState(() => busy = false);
     }
+    // Every settled claim clears the observation; the next paid claim needs
+    // a fresh one.
+    if (active) autoCheckPremium();
   }
 
   @override
@@ -195,10 +236,27 @@ class _RewardPanelState extends State<RewardPanel> {
       final free =
           day.rewardStatus == DayRewardStatus.claimable &&
           (day.claimablePoints ?? 0) > 0;
-      final ad =
-          (day.rewardStatus == DayRewardStatus.claimable ||
-              day.rewardStatus == DayRewardStatus.adRequired) &&
-          (day.adClaimablePoints ?? 0) > 0;
+      final ad = _offersAd(day);
+      final premium = ad && widget.controller.premiumActive == true;
+      final freePoints = formatCount(day.claimablePoints ?? 0);
+      final adPoints = formatCount(day.adClaimablePoints ?? 0);
+      // One primary button (guide 3.3): the first available claim leads and
+      // the other claims step down to outlined buttons.
+      final primary = widget.controller.hasPendingClaim
+          ? null
+          : free
+          ? 'free'
+          : premium
+          ? 'premium'
+          : 'ad';
+      Widget claimButton(
+        String role, {
+        required Key key,
+        required VoidCallback? onPressed,
+        required String label,
+      }) => role == primary
+          ? FilledButton(key: key, onPressed: onPressed, child: Text(label))
+          : OutlinedButton(key: key, onPressed: onPressed, child: Text(label));
       return Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
@@ -216,8 +274,9 @@ class _RewardPanelState extends State<RewardPanel> {
             DayRewardStatus.expired => '무료 수령 기간이 지났어요.',
             DayRewardStatus.unconfigured => '포인트 정책이 아직 준비되지 않았어요.',
           }, key: const ValueKey('reward_status')),
-          if (day.fixtureLabel != null) Text('개발 검증용 · ${day.fixtureLabel}'),
-          Text('받은 포인트 ${day.grantedPoints} P'),
+          if (fixtureLabelsVisible && day.fixtureLabel != null)
+            Text('개발 검증용 · ${day.fixtureLabel}'),
+          Text('받은 포인트 ${formatCount(day.grantedPoints)}P'),
           if (notice != null)
             Text(notice!, key: const ValueKey('reward_notice')),
           if (widget.controller.hasPendingClaim)
@@ -233,8 +292,10 @@ class _RewardPanelState extends State<RewardPanel> {
               child: const Text('같은 요청으로 결과 확인'),
             ),
           if (busy) const Text('처리 중…'),
-          if (needsReload)
+          // Reloads run on their own; this shows only after one failed.
+          if (needsReload && !busy)
             TextButton(
+              key: const ValueKey('reward_reload'),
               onPressed: busy || widget.controller.hasPendingClaim
                   ? null
                   : () async {
@@ -246,39 +307,44 @@ class _RewardPanelState extends State<RewardPanel> {
                         }
                       }
                     },
-              child: const Text('남은 보상 다시 조회'),
+              child: const Text('다시 시도'),
             ),
           if (free)
-            FilledButton(
+            claimButton(
+              'free',
               key: const ValueKey('reward_free_claim'),
               onPressed: enabled ? () => claim(withAd: false) : null,
-              child: Text('무료 ${day.claimablePoints} P 받기'),
+              label: '무료 ${freePoints}P 받기',
             ),
           if (ad) ...[
-            OutlinedButton(
-              key: const ValueKey('reward_check_premium'),
-              onPressed: enabled ? checkPremium : null,
-              child: const Text('유료 혜택 새로 확인'),
-            ),
+            // The observation runs on its own; a failed one offers a retry.
+            if (premiumFailed)
+              OutlinedButton(
+                key: const ValueKey('reward_check_premium'),
+                onPressed: enabled ? checkPremium : null,
+                child: const Text('다시 시도'),
+              ),
             if (widget.controller.premiumActive == false)
               const Text('현재 유효한 구매가 없어요. 무료 또는 광고 수령을 선택할 수 있어요.'),
-            if (widget.controller.premiumActive == true)
-              FilledButton(
+            if (premium)
+              claimButton(
+                'premium',
                 key: const ValueKey('reward_premium_claim'),
                 onPressed: enabled ? () => claim(premium: true) : null,
-                child: Text('유료 혜택으로 ${day.adClaimablePoints} P 받기'),
+                label: '유료 혜택으로 ${adPoints}P 받기',
               ),
-            Text('광고 확인 시 미수령 전체 기본분의 총 2배 · ${day.adClaimablePoints} P'),
+            Text('광고 확인 시 미수령 전체 기본분의 총 2배 · ${adPoints}P'),
             OutlinedButton(
               key: const ValueKey('reward_watch_ad'),
               onPressed: enabled ? watchAd : null,
               child: const Text('광고 시청 확인'),
             ),
             if (verifiedIntent != null)
-              FilledButton(
+              claimButton(
+                'ad',
                 key: const ValueKey('reward_ad_claim'),
                 onPressed: enabled ? () => claim(withAd: true) : null,
-                child: Text('확인된 광고로 ${day.adClaimablePoints} P 받기'),
+                label: '확인된 광고로 ${adPoints}P 받기',
               ),
           ],
         ],
@@ -286,3 +352,9 @@ class _RewardPanelState extends State<RewardPanel> {
     },
   );
 }
+
+/// The ad and paid paths apply only while unclaimed ad-eligible points remain.
+bool _offersAd(RecordDay day) =>
+    (day.rewardStatus == DayRewardStatus.claimable ||
+        day.rewardStatus == DayRewardStatus.adRequired) &&
+    (day.adClaimablePoints ?? 0) > 0;

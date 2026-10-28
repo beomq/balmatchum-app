@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import '../first_meeting/meeting_theme.dart';
+
 class AccountDeletionDialog extends StatelessWidget {
   const AccountDeletionDialog({super.key});
 
@@ -16,7 +18,10 @@ class AccountDeletionDialog extends StatelessWidget {
         onPressed: () => Navigator.pop(context, false),
         child: const Text('취소'),
       ),
+      // Destructive confirmation is red, like a day deletion (guide 3.3).
       FilledButton(
+        key: const ValueKey('account_deletion_confirm'),
+        style: FilledButton.styleFrom(backgroundColor: MeetingColors.error),
         onPressed: () => Navigator.pop(context, true),
         child: const Text('계정 영구 삭제'),
       ),

@@ -25,6 +25,14 @@ class QuizController extends ChangeNotifier {
   bool get canAct =>
       isActive && !busy && !adBusy && !hasPending && !needsRefresh;
 
+  /// With a billing connection the paid benefit is observed before the extra
+  /// question sends anyone to an ad (guide 3.1). The observed status ends it.
+  bool get _premiumCheckDue =>
+      repository.billing != null &&
+      premiumError == null &&
+      today?.extraStatus == 'adRequired' &&
+      today?.premiumStatus == 'notChecked';
+
   bool beginAd() {
     if (!canAct) return false;
     adBusy = true;
@@ -83,6 +91,7 @@ class QuizController extends ChangeNotifier {
       busy = false;
       _notify();
     }
+    if (_premiumCheckDue) await checkPremium();
   }
 
   Future<void> _refresh() async {
@@ -208,6 +217,8 @@ class QuizController extends ChangeNotifier {
       busy = false;
       _notify();
     }
+    // An answered free question can open the ad-gated extra one.
+    if (_premiumCheckDue) await checkPremium();
   }
 
   Future<List<QuizQuestion>> history(int? before) async {

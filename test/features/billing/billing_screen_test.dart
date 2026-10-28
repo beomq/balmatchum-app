@@ -33,7 +33,10 @@ void main() {
             home: BillingScreen(controller: c),
           ),
         );
+        final retry = find.byKey(const ValueKey('billing_retry'));
         expect(find.text('€12,34 · 스토어에서 구매'), findsOneWidget);
+        // A healthy store state has no manual status check (guide 3.1).
+        expect(retry, findsNothing);
         await tester.tap(
           find.byKey(const ValueKey('billing_buy_test.lifetime')),
         );
@@ -43,19 +46,27 @@ void main() {
         sdk.events.add([purchase(status: PurchaseStatus.pending)]);
         await tester.pumpAndSettle();
         expect(c.phase, BillingPhase.pending);
+        expect(retry, findsNothing);
         sdk.events.add([purchase()]);
         await tester.pumpAndSettle();
         expect(sdk.completed, hasLength(1));
+        expect(retry, findsNothing);
+        // A failed observation is the one case with a retry, and it recovers.
         server.failure = BillingException(code: 'temporarilyUnavailable');
-        await tester.ensureVisible(find.byKey(const ValueKey('billing_retry')));
-        await tester.tap(find.byKey(const ValueKey('billing_retry')));
+        await tester.ensureVisible(
+          find.byKey(const ValueKey('billing_restore')),
+        );
+        await tester.tap(find.byKey(const ValueKey('billing_restore')));
         await tester.pumpAndSettle();
         expect(c.entitlement, isNull);
         expect(c.phase, BillingPhase.retry);
+        expect(retry, findsOneWidget);
         server.failure = null;
-        await tester.tap(find.byKey(const ValueKey('billing_retry')));
+        await tester.ensureVisible(retry);
+        await tester.tap(retry);
         await tester.pumpAndSettle();
         expect(c.phase, BillingPhase.ready);
+        expect(retry, findsNothing);
         expect(tester.takeException(), isNull);
       });
     }
