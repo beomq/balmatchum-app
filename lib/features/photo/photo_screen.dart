@@ -313,10 +313,13 @@ class PhotoScreenState extends State<PhotoScreen> {
 
   /// PHOTO-02 (Pen `rov6I`): actions on top, the canvas in all the height
   /// left and the tools below. With the Duo rail the rail takes the way
-  /// out and the bar keeps the title and save.
+  /// out and the bar keeps the title and save. PHOTO-03 (Pen `PGjdt`) is
+  /// the same frame once the save succeeded: no selection, no edits, and
+  /// the share there.
   Widget _editor({required bool rail}) {
     final sticker = editor.sticker;
     final message = editor.message;
+    final savedView = editor.phase == PhotoPhase.saved;
     return LayoutBuilder(
       builder: (context, bounds) {
         final gutter = math.max(
@@ -351,11 +354,15 @@ class PhotoScreenState extends State<PhotoScreen> {
                         textAlign: rail ? TextAlign.start : TextAlign.center,
                       ),
                     ),
+                    // A saved arrangement is not saved again; a change
+                    // since then makes it savable.
                     FilledButton(
                       key: const ValueKey('photo_save'),
-                      style: _pill,
-                      onPressed: editor.canExport ? editor.save : null,
-                      child: const Text('저장'),
+                      style: editor.saved ? _savedPill : _pill,
+                      onPressed: editor.canExport && !editor.saved
+                          ? editor.save
+                          : null,
+                      child: Text(editor.saved ? '저장됨' : '저장'),
                     ),
                   ],
                 ),
@@ -370,7 +377,7 @@ class PhotoScreenState extends State<PhotoScreen> {
                     )
                   : null,
             ),
-            Expanded(child: _canvas()),
+            Expanded(child: _canvas(editable: !savedView)),
             Padding(
               padding: EdgeInsets.fromLTRB(gutter, Space.s3, gutter, Space.s3),
               child: Column(
@@ -392,50 +399,65 @@ class PhotoScreenState extends State<PhotoScreen> {
                       ),
                     ),
                   if (editor.dog == null && !editor.busy) _retryDog(),
-                  Row(
-                    spacing: 10,
-                    children: [
-                      Expanded(
-                        child: OutlinedButton(
-                          key: const ValueKey('photo_flip'),
-                          onPressed: editor.busy
-                              ? null
-                              : () => editor.edit(
-                                  sticker.copyWith(flipped: !sticker.flipped),
-                                ),
-                          child: Text(sticker.flipped ? '좌우 반전 해제' : '좌우 반전'),
-                        ),
-                      ),
-                      Expanded(
-                        child: OutlinedButton(
-                          key: const ValueKey('photo_reset'),
-                          onPressed: editor.busy
-                              ? null
-                              : () => editor.edit(const DogSticker()),
-                          child: const Text('처음으로'),
-                        ),
-                      ),
-                      // Until the saved view takes it, sharing stays here.
-                      Expanded(
-                        child: Builder(
-                          builder: (context) => OutlinedButton(
-                            key: const ValueKey('photo_share'),
-                            onPressed: editor.canExport
-                                ? () {
-                                    final box =
-                                        context.findRenderObject()!
-                                            as RenderBox;
-                                    editor.share(
-                                      box.localToGlobal(Offset.zero) & box.size,
-                                    );
-                                  }
-                                : null,
-                            child: const Text('공유'),
+                  if (savedView)
+                    Row(
+                      spacing: 10,
+                      children: [
+                        Expanded(
+                          child: OutlinedButton(
+                            key: const ValueKey('photo_reedit'),
+                            onPressed: editor.busy ? null : editor.reedit,
+                            child: const Text('다시 꾸미기'),
                           ),
                         ),
-                      ),
-                    ],
-                  ),
+                        // The share sheet anchors to this button.
+                        Expanded(
+                          child: Builder(
+                            builder: (context) => FilledButton(
+                              key: const ValueKey('photo_share'),
+                              onPressed: editor.busy
+                                  ? null
+                                  : () {
+                                      final box =
+                                          context.findRenderObject()!
+                                              as RenderBox;
+                                      editor.share(
+                                        box.localToGlobal(Offset.zero) &
+                                            box.size,
+                                      );
+                                    },
+                              child: const Text('공유하기'),
+                            ),
+                          ),
+                        ),
+                      ],
+                    )
+                  else
+                    Row(
+                      spacing: 10,
+                      children: [
+                        Expanded(
+                          child: OutlinedButton(
+                            key: const ValueKey('photo_flip'),
+                            onPressed: editor.busy
+                                ? null
+                                : () => editor.edit(
+                                    sticker.copyWith(flipped: !sticker.flipped),
+                                  ),
+                            child: Text(sticker.flipped ? '좌우 반전 해제' : '좌우 반전'),
+                          ),
+                        ),
+                        Expanded(
+                          child: OutlinedButton(
+                            key: const ValueKey('photo_reset'),
+                            onPressed: editor.busy
+                                ? null
+                                : () => editor.edit(const DogSticker()),
+                            child: const Text('처음으로'),
+                          ),
+                        ),
+                      ],
+                    ),
                 ],
               ),
             ),
@@ -445,10 +467,11 @@ class PhotoScreenState extends State<PhotoScreen> {
     );
   }
 
-  /// The photo as it will be saved, with the selection drawn over it. The
-  /// pointer moves the companion by fractions of the drawn photo, not of
-  /// the canvas around it.
-  Widget _canvas() => LayoutBuilder(
+  /// The photo as it will be saved, with the selection drawn over it while
+  /// [editable]. The pointer moves the companion by fractions of the drawn
+  /// photo, not of the canvas around it. The saved view shows the same
+  /// composite with nothing over it but its notice.
+  Widget _canvas({required bool editable}) => LayoutBuilder(
     builder: (context, bounds) {
       final photo = editor.photo!;
       final dog = editor.dog;
@@ -469,8 +492,8 @@ class PhotoScreenState extends State<PhotoScreen> {
       return Semantics(
         label: '${widget.dogName} 사진 편집',
         value: _stickerValue(sticker),
-        hint: '끌어서 옮기고 두 손가락으로 크기와 각도를 바꿔요',
-        customSemanticsActions: dog == null
+        hint: editable ? '끌어서 옮기고 두 손가락으로 크기와 각도를 바꿔요' : null,
+        customSemanticsActions: dog == null || !editable
             ? null
             : {
                 PhotoCanvasActions.left: () =>
@@ -501,26 +524,32 @@ class PhotoScreenState extends State<PhotoScreen> {
         child: GestureDetector(
           key: const ValueKey('photo_canvas'),
           behavior: HitTestBehavior.opaque,
-          onScaleStart: (details) {
-            if (editor.busy) return;
-            _gestureStart = editor.sticker;
-            _focalStart = details.localFocalPoint;
-          },
-          onScaleUpdate: (details) {
-            final start = _gestureStart;
-            final focalStart = _focalStart;
-            if (editor.busy || start == null || focalStart == null) return;
-            final delta = details.localFocalPoint - focalStart;
-            editor.edit(
-              start.copyWith(
-                x: start.x + delta.dx / rect.width,
-                y: start.y + delta.dy / rect.height,
-                scale: start.scale * details.scale,
-                rotation: start.rotation + details.rotation,
-              ),
-            );
-          },
-          onScaleEnd: (_) => _clearGesture(),
+          onScaleStart: !editable
+              ? null
+              : (details) {
+                  if (editor.busy) return;
+                  _gestureStart = editor.sticker;
+                  _focalStart = details.localFocalPoint;
+                },
+          onScaleUpdate: !editable
+              ? null
+              : (details) {
+                  final start = _gestureStart;
+                  final focalStart = _focalStart;
+                  if (editor.busy || start == null || focalStart == null) {
+                    return;
+                  }
+                  final delta = details.localFocalPoint - focalStart;
+                  editor.edit(
+                    start.copyWith(
+                      x: start.x + delta.dx / rect.width,
+                      y: start.y + delta.dy / rect.height,
+                      scale: start.scale * details.scale,
+                      rotation: start.rotation + details.rotation,
+                    ),
+                  );
+                },
+          onScaleEnd: !editable ? null : (_) => _clearGesture(),
           child: ColoredBox(
             color: MeetingColors.pressed,
             child: Stack(
@@ -535,7 +564,7 @@ class PhotoScreenState extends State<PhotoScreen> {
                     ),
                   ),
                 ),
-                if (selection != null)
+                if (editable && selection != null)
                   Positioned.fill(
                     child: IgnorePointer(
                       child: PhotoSelectionOverlay(
@@ -548,14 +577,24 @@ class PhotoScreenState extends State<PhotoScreen> {
                   top: Space.s4,
                   left: Space.s4,
                   right: Space.s4,
-                  child: ExcludeSemantics(
-                    child: Center(
-                      child: _Pill(
-                        key: const ValueKey('photo_hint'),
-                        color: ProductColors.photoHint,
-                        label: '끌어서 옮기고, 두 손가락으로 크기·회전',
-                      ),
-                    ),
+                  child: Center(
+                    child: editable
+                        ? const ExcludeSemantics(
+                            child: _Pill(
+                              key: ValueKey('photo_hint'),
+                              color: ProductColors.photoHint,
+                              label: '끌어서 옮기고, 두 손가락으로 크기·회전',
+                            ),
+                          )
+                        // Announced as it appears (guide 7.5-2).
+                        : Semantics(
+                            liveRegion: true,
+                            child: const _Pill(
+                              key: ValueKey('photo_saved_notice'),
+                              color: ProductColors.photoSaved,
+                              label: '✓ 갤러리에 저장했어요',
+                            ),
+                          ),
                   ),
                 ),
               ],
@@ -608,6 +647,14 @@ final _pill = FilledButton.styleFrom(
   shape: const StadiumBorder(),
   textStyle: meetingType(14, 18, FontWeight.w800),
   tapTargetSize: MaterialTapTargetSize.padded,
+);
+
+/// Pen's saved state of the same pill: primary-soft, not pressable.
+final _savedPill = _pill.merge(
+  FilledButton.styleFrom(
+    disabledBackgroundColor: MeetingColors.soft,
+    disabledForegroundColor: MeetingColors.primaryStrong,
+  ),
 );
 
 /// Where the companion is, for assistive technology.

@@ -8,6 +8,19 @@ enum PhotoSource { gallery, camera }
 
 enum PhotoShareResult { selected, cancelled, unavailable }
 
+/// What the photo screen shows (guide 7.3-7.5).
+enum PhotoPhase {
+  /// No photo yet: the example and the pick.
+  start,
+
+  /// A photo to arrange.
+  edit,
+
+  /// The arrangement as the gallery took it; nothing edits it until the
+  /// user goes back to editing.
+  saved,
+}
+
 abstract interface class PhotoAdapter {
   Future<Uint8List?> pick(PhotoSource source);
   Future<Uint8List?> recoverLostPhoto();
@@ -111,6 +124,21 @@ class PhotoEditor extends ChangeNotifier {
   bool isError = false;
   bool _disposed = false;
 
+  /// The PNG the gallery took for the current photo and sticker. Set only
+  /// after `adapter.save` returned, never because [save] ended: [_run]
+  /// catches its failures (guide 7.5-1). Any later edit or photo clears it.
+  Uint8List? savedPng;
+  bool get saved => savedPng != null;
+
+  /// Back to editing a saved picture, which stays saved until it changes.
+  bool reediting = false;
+
+  PhotoPhase get phase => photo == null
+      ? PhotoPhase.start
+      : saved && !reediting
+      ? PhotoPhase.saved
+      : PhotoPhase.edit;
+
   bool get canExport => photo != null && dog != null && !busy;
 
   Future<ui.Image> _decode(Uint8List bytes) async {
@@ -158,6 +186,8 @@ class PhotoEditor extends ChangeNotifier {
     photo?.dispose();
     photo = loaded;
     sticker = const DogSticker();
+    savedPng = null;
+    reediting = false;
   }
 
   Future<void> pick(PhotoSource source) => _run(() async {
@@ -165,9 +195,20 @@ class PhotoEditor extends ChangeNotifier {
     if (bytes != null) await _replace(bytes);
   });
 
+  /// The saved view holds still, so a share matches the saved picture.
   void edit(DogSticker value) {
-    if (busy || photo == null) return;
+    if (busy || photo == null || phase == PhotoPhase.saved) return;
+    if (!identical(value, sticker)) savedPng = null;
     sticker = value;
+    message = null;
+    notifyListeners();
+  }
+
+  /// Back from the saved view with the same photo and sticker (guide
+  /// 7.5-3).
+  void reedit() {
+    if (busy || phase != PhotoPhase.saved) return;
+    reediting = true;
     message = null;
     notifyListeners();
   }
@@ -205,13 +246,22 @@ class PhotoEditor extends ChangeNotifier {
     }
   }
 
+  /// Saves once per arrangement; a saved one is not saved again.
   Future<void> save() => _run(() async {
-    await adapter.save(await capturePng());
-    message = '합성한 사진을 갤러리에 저장했어요.';
+    if (saved) return;
+    final png = await capturePng();
+    await adapter.save(png);
+    // Reached only once the gallery took it.
+    savedPng = png;
+    reediting = false;
   });
 
+  /// Shares the saved PNG itself, so what is sent is what the gallery has
+  /// (guide 7.5-4).
   Future<void> share(ui.Rect origin) => _run(() async {
-    final result = await adapter.share(await capturePng(), origin);
+    final png = savedPng;
+    if (png == null) throw const PhotoFailure('사진을 먼저 저장해 주세요.');
+    final result = await adapter.share(png, origin);
     message = switch (result) {
       PhotoShareResult.selected => '공유할 앱을 선택했어요.',
       PhotoShareResult.cancelled => '공유를 취소했어요. 편집은 그대로예요.',
