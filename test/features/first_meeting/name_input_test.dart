@@ -6,6 +6,7 @@ import 'package:balmatchum_app/features/first_meeting/meeting_theme.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+import '../../support/duo_viewports.dart';
 import 'domain/authenticated_profile_test.dart' show Profiles, view;
 import 'meeting_ui_test.dart' show MemoryStore;
 
@@ -162,5 +163,112 @@ void main() {
         },
       );
     }
+  }
+
+  for (final platform in [TargetPlatform.iOS, TargetPlatform.android]) {
+    testWidgets(
+      'Duo outer rail toggle keeps the Korean name field on $platform',
+      (tester) async {
+        // Given the name step on the outer panel, where the rail carries back.
+        useDuoViewport(tester, 'outer portrait');
+        final store = PausedStore();
+        final c = FirstMeetingController(storage: store);
+        addTearDown(c.dispose);
+        await c.initialize();
+        await c.enter();
+        await c.chooseCatalog();
+        await c.selectBreed('pug');
+        await c.confirmCandidate();
+        await c.updateSex(DogSex.female);
+        await tester.pumpWidget(
+          MaterialApp(
+            theme: meetingTheme().copyWith(platform: platform),
+            home: FirstMeetingScreen(controller: c),
+          ),
+        );
+        await tester.pumpAndSettle();
+        final railBack = find.byKey(const ValueKey('duo_rail_back'));
+        final topBack = find.byKey(const ValueKey('meeting_back'));
+        final field = find.byKey(const ValueKey('meeting_name'));
+        final editableFinder = find.descendant(
+          of: field,
+          matching: find.byType(EditableText),
+        );
+        expect(railBack, findsOneWidget);
+        final place = tester.getRect(field);
+
+        // When the field takes focus and the keyboard inset hides the rail.
+        await tester.showKeyboard(field);
+        final initialEditable = tester.state<EditableTextState>(editableFinder);
+        tester.view.viewInsets = const FakeViewPadding(bottom: 900);
+        addTearDown(tester.view.resetViewInsets);
+        await tester.pump();
+
+        void expectSameField(String reason) {
+          final editable = tester.widget<EditableText>(editableFinder);
+          expect(editable.focusNode.hasFocus, isTrue, reason: reason);
+          expect(
+            tester.state(editableFinder),
+            same(initialEditable),
+            reason: reason,
+          );
+          // A dropped or resized back slot would move the field under the IME.
+          expect(tester.getRect(field), place, reason: reason);
+          expect(tester.takeException(), isNull);
+        }
+
+        expect(railBack, findsNothing);
+        expect(topBack, findsOneWidget);
+        expectSameField('keyboard opened');
+
+        // And the IME composes, commits and deletes across busy frames.
+        Future<void> compose(Iterable<TextEditingValue> edits) async {
+          for (final edit in edits) {
+            final saves =
+                tester.widget<EditableText>(editableFinder).controller.text !=
+                edit.text;
+            if (saves) {
+              store.writeStarted = Completer<void>();
+              store.writeReleased = Completer<void>();
+            }
+            tester.testTextInput.updateEditingValue(edit);
+            if (saves) {
+              await store.writeStarted!.future.timeout(
+                const Duration(seconds: 5),
+              );
+            }
+            await tester.pump();
+            // Then the same editing session keeps focus, value and place.
+            expectSameField('busy $edit');
+            expect(
+              tester.widget<EditableText>(editableFinder).controller.value,
+              edit,
+            );
+            store.writeReleased?.complete();
+            await tester.pump();
+            expectSameField('saved $edit');
+            expect(
+              tester.widget<EditableText>(editableFinder).controller.value,
+              edit,
+            );
+            store.writeStarted = null;
+            store.writeReleased = null;
+          }
+        }
+
+        await compose(koreanEdits);
+
+        // When the keyboard closes, the rail returns beside the focused field.
+        tester.view.resetViewInsets();
+        await tester.pump();
+        expect(railBack, findsOneWidget);
+        expect(topBack, findsNothing);
+        expectSameField('keyboard closed');
+        // Then hardware-keyboard composition still keeps the same session.
+        await compose(koreanEdits.take(4));
+        expect(c.state.name, '코코');
+        await tester.pumpWidget(const SizedBox.shrink());
+      },
+    );
   }
 }
