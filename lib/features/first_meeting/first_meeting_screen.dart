@@ -368,7 +368,11 @@ class _FirstMeetingScreenState extends State<FirstMeetingScreen> {
   Widget build(BuildContext context) {
     final c = controller;
     if (c == null) {
+      const empty = DuoRailSpec();
+      final mode = duoRailMode(MediaQuery.of(context), empty);
       return MeetingPage(
+        // Nothing to go back to yet; the Duo column is painted empty.
+        rail: mode == null ? null : DuoRail(spec: empty, mode: mode),
         children: [
           Text(loadError ?? '이 기기의 체험 기록을 읽고 있어요.'),
           if (loadError != null)
@@ -379,13 +383,12 @@ class _FirstMeetingScreenState extends State<FirstMeetingScreen> {
     final s = c.state;
     final railSpec = switch (s.step) {
       FirstMeetingStep.home => homeRailSpec(c),
-      FirstMeetingStep.login => null,
+      // No back action: the column is painted without buttons.
+      FirstMeetingStep.login => const DuoRailSpec(),
       // Same callback and enabled state as the top-bar back.
       _ => DuoRailSpec(tools: [duoBack(c.isBusy ? null : c.back)]),
     };
-    final railMode = railSpec == null
-        ? null
-        : duoRailMode(MediaQuery.of(context), railSpec);
+    final railMode = duoRailMode(MediaQuery.of(context), railSpec);
     return PopScope(
       canPop:
           s.step == FirstMeetingStep.login || s.step == FirstMeetingStep.home,
@@ -406,9 +409,9 @@ class _FirstMeetingScreenState extends State<FirstMeetingScreen> {
                   c.isBusy
               ? null
               : c.back,
-          rail: railSpec != null && railMode != null
-              ? DuoRail(spec: railSpec, mode: railMode)
-              : null,
+          rail: railMode == null
+              ? null
+              : DuoRail(spec: railSpec, mode: railMode),
           children: [
             if (c.hasPendingMutation)
               OutlinedButton(

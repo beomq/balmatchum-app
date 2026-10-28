@@ -1,12 +1,16 @@
 import 'dart:async';
 
 import 'package:balmatchum_app/app/dependencies.dart';
+import 'package:balmatchum_app/app/duo_rail.dart';
 import 'package:balmatchum_app/app/router.dart';
+import 'package:balmatchum_app/features/bootstrap/presentation/bootstrap_screen.dart';
 import 'package:balmatchum_app/main.dart';
 import 'package:balmatchum_client/balmatchum_client.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+
+import '../../../support/duo_viewports.dart';
 
 void main() {
   testWidgets('request only starts on tap and disables duplicate requests', (
@@ -145,4 +149,36 @@ void main() {
       expect(tester.takeException(), isNull);
     },
   );
+
+  testWidgets('Duo outer panel paints an empty side rail', (tester) async {
+    // Given the measured iPhone Duo outer panel.
+    useDuoViewport(tester, 'outer portrait');
+    // When the bootstrap screen is shown.
+    await tester.pumpWidget(
+      duoHost(const BootstrapScreen(checkGreeting: null)),
+    );
+    await tester.pumpAndSettle();
+    // Then the side column is painted with no rail button, beside the check.
+    expectEmptyDuoRail(tester);
+    final check = find.byKey(const ValueKey('bootstrap_check_connection'));
+    expect(check.hitTestable(), findsOneWidget);
+    expect(tester.getRect(check).right, lessThanOrEqualTo(382));
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('normal iPhone bootstrap has no side rail', (tester) async {
+    // Given an ordinary iPhone safe area.
+    tester.view.devicePixelRatio = 3;
+    tester.view.physicalSize = const Size(390, 844) * 3;
+    tester.view.padding = const FakeViewPadding(top: 177, bottom: 102);
+    addTearDown(tester.view.reset);
+    // When the bootstrap screen is shown.
+    await tester.pumpWidget(
+      duoHost(const BootstrapScreen(checkGreeting: null)),
+    );
+    await tester.pumpAndSettle();
+    // Then no rail or side column is drawn.
+    expect(find.byType(DuoRail), findsNothing);
+    expect(tester.takeException(), isNull);
+  });
 }

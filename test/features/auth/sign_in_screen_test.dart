@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:balmatchum_app/app/duo_rail.dart';
 import 'package:balmatchum_app/app/router.dart';
 import 'package:balmatchum_app/features/auth/sign_in_screen.dart';
 import 'package:balmatchum_app/features/auth/sign_in_starter.dart';
@@ -10,6 +11,8 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:social_signin_kit/social_signin_kit.dart';
+
+import '../../support/duo_viewports.dart';
 
 class _Starter implements SignInStarter {
   _Starter(this.callback);
@@ -371,6 +374,36 @@ void main() {
     );
     await tester.pumpAndSettle();
     await tester.ensureVisible(_social.last);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('Duo outer panel paints an empty side rail', (tester) async {
+    // Given the measured iPhone Duo outer panel.
+    useDuoViewport(tester, 'outer portrait');
+    // When the sign-in screen is shown.
+    await tester.pumpWidget(
+      duoHost(const SignInScreen(starter: NotConnectedSignInStarter())),
+    );
+    await tester.pumpAndSettle();
+    // Then the side column is painted with no rail button, beside the form.
+    expectEmptyDuoRail(tester);
+    expect(tester.getRect(_age).right, lessThanOrEqualTo(382));
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('normal iPhone sign-in has no side rail', (tester) async {
+    // Given an ordinary iPhone safe area.
+    tester.view.devicePixelRatio = 3;
+    tester.view.physicalSize = const Size(390, 844) * 3;
+    tester.view.padding = const FakeViewPadding(top: 177, bottom: 102);
+    addTearDown(tester.view.reset);
+    // When the sign-in screen is shown.
+    await tester.pumpWidget(
+      duoHost(const SignInScreen(starter: NotConnectedSignInStarter())),
+    );
+    await tester.pumpAndSettle();
+    // Then no rail or side column is drawn.
+    expect(find.byType(DuoRail), findsNothing);
     expect(tester.takeException(), isNull);
   });
 }

@@ -20,6 +20,17 @@ import 'domain/authenticated_profile_test.dart' show Profiles, view;
 import 'domain/first_meeting_test.dart' show MemoryStorage;
 import 'name_input_test.dart' show PausedStore;
 
+/// Holds the first storage read so the loading page stays on screen.
+class _HeldReadStorage extends MemoryStorage {
+  final release = Completer<void>();
+
+  @override
+  Future<String?> read() async {
+    await release.future;
+    return super.read();
+  }
+}
+
 void main() {
   void usePadding(WidgetTester tester, Size size, FakeViewPadding padding) {
     tester.view.devicePixelRatio = 3;
@@ -513,6 +524,29 @@ void main() {
       tester.view.resetViewInsets();
       await tester.pumpAndSettle();
       expect(back, findsOneWidget);
+      expect(topBack, findsNothing);
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('loading and login paint an empty rail', (tester) async {
+      // Given the outer panel and a Dev meeting whose first read is held.
+      useDuoViewport(tester, 'outer portrait');
+      final storage = _HeldReadStorage();
+      final c = FirstMeetingController(storage: storage);
+      addTearDown(c.dispose);
+      // When the screen starts loading.
+      await tester.pumpWidget(duoHost(FirstMeetingScreen(controller: c)));
+      await tester.pump();
+      // Then the loading page already paints the empty side column.
+      expect(find.text('이 기기의 체험 기록을 읽고 있어요.'), findsOneWidget);
+      expectEmptyDuoRail(tester);
+      // When the read completes on the login step.
+      storage.release.complete();
+      await tester.pumpAndSettle();
+      // Then login keeps the empty column and offers no back anywhere.
+      expect(c.state.step, FirstMeetingStep.login);
+      expectEmptyDuoRail(tester);
+      expect(back, findsNothing);
       expect(topBack, findsNothing);
       expect(tester.takeException(), isNull);
     });
