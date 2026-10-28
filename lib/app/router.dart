@@ -184,6 +184,9 @@ final routerProvider = Provider<GoRouter>((ref) {
                 product: authenticated.state.isComplete
                     ? ref.read(authenticatedProductControllerProvider)
                     : null,
+                quiz: authenticated.state.isComplete
+                    ? ref.read(authenticatedQuizControllerProvider)
+                    : null,
                 onLogout: ref.read(logoutProvider),
                 onDeleteAccount: ref.read(accountDeletionProvider)?.delete,
                 onOpenPhoto: () => context.push('/photo'),

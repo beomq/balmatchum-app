@@ -78,7 +78,9 @@ class QuizController extends ChangeNotifier {
     if (isActive) notifyListeners();
   }
 
-  Future<void> load() async {
+  /// The home reads today's status for its quiz tile only; the quiz screen
+  /// also observes the paid benefit ([observePremium]).
+  Future<void> load({bool observePremium = true}) async {
     if (!isActive || busy || adBusy || hasPending) return;
     busy = true;
     notice = null;
@@ -91,7 +93,7 @@ class QuizController extends ChangeNotifier {
       busy = false;
       _notify();
     }
-    if (_premiumCheckDue) await checkPremium();
+    if (observePremium && _premiumCheckDue) await checkPremium();
   }
 
   Future<void> _refresh() async {

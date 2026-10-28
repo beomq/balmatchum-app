@@ -195,7 +195,7 @@ void main() {
     await tester.pumpAndSettle();
     // Before today's record arrives the fallback is an account message.
     product.today = null;
-    final reward = find.widgetWithText(FilledButton, '포인트 받기');
+    final reward = find.byKey(const ValueKey('home_reward'));
     await tester.ensureVisible(reward);
     await tester.tap(reward);
     await tester.pumpAndSettle();
@@ -224,7 +224,7 @@ void main() {
       final product = productFor(repository);
       await tester.pumpWidget(home(account(), product));
       await tester.pumpAndSettle();
-      final reward = find.widgetWithText(FilledButton, '포인트 받기');
+      final reward = find.byKey(const ValueKey('home_reward'));
       await tester.ensureVisible(reward);
       await tester.tap(reward);
       await tester.pumpAndSettle();

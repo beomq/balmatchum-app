@@ -125,16 +125,16 @@ void main() {
     expect(product.error, isNull);
     expect(product.today?.steps, 5000);
     await tester.pumpAndSettle();
-    await tapText('포인트 받기');
+    await tapText('오늘 포인트 받기');
     await tester.pumpAndSettle();
     // steps-v1-20261019: 5,000 steps = 50 base points, free claim only.
     await changedTo(
       product,
       () => product.wallet?.balance == 50,
-      () => tapText('무료 50P 받기'),
+      () => tapText('50P 받기'),
     );
     await tester.pumpAndSettle();
-    // The reward sheet stays open after a claim; dismiss it via its barrier.
+    // The sheet shows the result until closed; dismiss it via its barrier.
     await tester.tapAt(const Offset(20, 20));
     await tester.pumpAndSettle();
     expect(find.text('오늘 포인트'), findsNothing);

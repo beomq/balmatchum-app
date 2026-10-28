@@ -1,23 +1,26 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/scheduler.dart' show SchedulerPhase;
 import 'package:flutter/services.dart';
 import 'package:social_signin_kit/social_signin_kit.dart';
 
 import '../../app/dependencies.dart';
 import '../../app/duo_rail.dart';
 import '../daily_activity/daily_steps_controller.dart';
-import '../daily_activity/daily_steps_readout.dart';
 import '../daily_activity/product_controller.dart';
 import '../daily_activity/record_mapping.dart';
-import '../daily_activity/reward_panel.dart';
 import '../daily_activity/product_repository.dart';
+import '../daily_activity/today_reward_sheet.dart';
+import '../quiz/quiz_controller.dart';
 import '../records/product_page.dart' show fixtureLabelsVisible, formatCount;
+import '../records/status_widgets.dart';
 import '../auth/kakao_auth_service.dart';
 import '../auth/account_deletion_dialog.dart';
 import '../wardrobe/dog_sprite.dart';
 import 'breed_pager.dart';
 import 'domain/first_meeting.dart';
+import 'home_goal_card.dart';
 import 'meeting_theme.dart';
 import 'meeting_widgets.dart';
 
@@ -31,6 +34,7 @@ class FirstMeetingScreen extends StatefulWidget {
     this.onOpenWardrobe,
     this.onOpenBilling,
     this.product,
+    this.quiz,
     this.onLogout,
     this.onDeleteAccount,
     this.openUrl = openExternalUrl,
@@ -44,6 +48,9 @@ class FirstMeetingScreen extends StatefulWidget {
   final VoidCallback? onOpenWardrobe;
   final VoidCallback? onOpenBilling;
   final ProductController? product;
+
+  /// A signed-in account's quiz, read for the home's quiz tile.
+  final QuizController? quiz;
   final Future<LogoutOutcome> Function()? onLogout;
   final Future<void> Function()? onDeleteAccount;
   final Future<bool> Function(Uri url) openUrl;
@@ -68,6 +75,7 @@ class _FirstMeetingScreenState extends State<FirstMeetingScreen> {
     super.initState();
     widget.dailySteps?.addListener(changed);
     widget.product?.addListener(changed);
+    widget.quiz?.addListener(changed);
     // Coming back to the app refreshes the home like a pull (guide 3.1).
     lifecycle = AppLifecycleListener(
       onShow: () {
@@ -82,6 +90,10 @@ class _FirstMeetingScreenState extends State<FirstMeetingScreen> {
   @override
   void didUpdateWidget(FirstMeetingScreen oldWidget) {
     super.didUpdateWidget(oldWidget);
+    if (oldWidget.quiz != widget.quiz) {
+      oldWidget.quiz?.removeListener(changed);
+      widget.quiz?.addListener(changed);
+    }
     if (oldWidget.product != widget.product) {
       oldWidget.product?.removeListener(changed);
       widget.product?.addListener(changed);
@@ -277,6 +289,13 @@ class _FirstMeetingScreenState extends State<FirstMeetingScreen> {
 
   void changed() {
     if (!mounted) return;
+    // A shared controller can notify while another route builds, such as the
+    // quiz screen loading in its initState; repaint after that frame.
+    if (WidgetsBinding.instance.schedulerPhase ==
+        SchedulerPhase.persistentCallbacks) {
+      WidgetsBinding.instance.addPostFrameCallback((_) => changed());
+      return;
+    }
     setState(() {});
     enterHome();
   }
@@ -302,9 +321,13 @@ class _FirstMeetingScreenState extends State<FirstMeetingScreen> {
     }
     if (product != null && product.connected) {
       await product.sync();
+      // A sync still running for another trigger reads these itself.
+      if (!product.busy) await product.loadStreak();
     } else {
       await widget.dailySteps?.refresh();
     }
+    // The tile shows today's quiz state; the quiz screen observes benefits.
+    await widget.quiz?.load(observePremium: false);
   }
 
   @override
@@ -312,6 +335,7 @@ class _FirstMeetingScreenState extends State<FirstMeetingScreen> {
     lifecycle.dispose();
     widget.dailySteps?.removeListener(changed);
     widget.product?.removeListener(changed);
+    widget.quiz?.removeListener(changed);
     controller?.removeListener(changed);
     deletingAccount.dispose();
     name.dispose();
@@ -381,24 +405,17 @@ class _FirstMeetingScreenState extends State<FirstMeetingScreen> {
         return;
       }
     }
-    await showModalBottomSheet<void>(
-      context: context,
-      isScrollControlled: true,
-      builder: (context) => SafeArea(
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.all(24),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Text('오늘 포인트', style: Theme.of(context).textTheme.headlineSmall),
-              const SizedBox(height: 16),
-              RewardPanel(controller: product, day: recordDay(product.today!)),
-            ],
-          ),
-        ),
-      ),
+    final dog = controller!.state.candidate!;
+    final wardrobe = await showTodayRewardSheet(
+      context,
+      product: product,
+      day: recordDay(product.today!),
+      dogAsset: dog.spritePath,
+      dogLayer: product.wornLayer(dog.id),
+      canOpenWardrobe: widget.onOpenWardrobe != null,
     );
+    // Navigates from the home once the sheet's route is gone.
+    if (wardrobe && mounted) widget.onOpenWardrobe?.call();
   }
 
   /// Same labels and actions as the home header and shortcuts.
@@ -815,192 +832,252 @@ class _FirstMeetingScreenState extends State<FirstMeetingScreen> {
               today.day,
             ).difference(DateTime.utc(met.year, met.month, met.day)).inDays +
             1;
+        final product = widget.product;
+        final todayKey = ProductRepository.dateKey(ProductRepository.today);
+        final goal = HomeGoal.of(widget.dailySteps, s.goal, todayKey);
+        final point = homeReward(product, todayKey);
+        final streak = product?.streak;
+        final wallet = product?.wallet;
+        final streakShown = streak != null && streak.days > 0;
         return [
           MeetingHomeLayout(
-            header: Row(
+            header: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                Expanded(
-                  child: Text(
-                    '${s.name} · 함께한 지 $days일',
-                    textAlign: TextAlign.center,
-                    style: Theme.of(context).textTheme.titleLarge,
-                  ),
-                ),
-                if (rail == null)
-                  IconButton(
-                    onPressed: c.profileRepository == null ? reset : settings,
-                    tooltip: c.profileRepository == null ? 'Dev 체험 초기화' : '설정',
-                    icon: Image.asset(
-                      'assets/first_meeting/icons/settings.png',
-                      width: 32,
-                      height: 32,
-                    ),
-                  ),
-              ],
-            ),
-            scene: ClipRRect(
-              borderRadius: BorderRadius.circular(16),
-              child: SizedBox(
-                height:
-                    MediaQuery.sizeOf(context).height < 600 &&
-                        MediaQuery.textScalerOf(context).scale(16) <= 21
-                    ? 220
-                    : 330,
-                child: Stack(
-                  fit: StackFit.expand,
+                Row(
                   children: [
-                    if (widget.product?.store == null ||
-                        widget.product!.store!.equippedTheme == 'sunny')
-                      Image.asset(
-                        'assets/first_meeting/sunny.png',
-                        fit: BoxFit.cover,
-                      )
-                    else
-                      ColoredBox(
-                        color: Color(
-                          widget.product!.store!.items
-                              .firstWhere(
-                                (item) =>
-                                    item.themeId ==
-                                    widget.product!.store!.equippedTheme,
-                              )
-                              .colorValue,
+                    Expanded(
+                      child: Text(
+                        '${s.name} · 함께한 지 $days일',
+                        textAlign: TextAlign.center,
+                        // Pen's home header is a small muted line (5.1).
+                        style: meetingType(
+                          18,
+                          24,
+                          FontWeight.w700,
+                          MeetingColors.muted,
                         ),
                       ),
-                    Padding(
-                      padding: const EdgeInsets.all(18),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Container(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 14,
-                              vertical: 10,
-                            ),
-                            decoration: BoxDecoration(
-                              color: Colors.white,
-                              borderRadius: BorderRadius.circular(12),
-                            ),
-                            child: Text(
-                              '오늘도 네 옆에서 걸을게',
-                              style: Theme.of(context).textTheme.titleMedium
-                                  ?.copyWith(fontFamily: 'Galmuri11'),
-                            ),
+                    ),
+                    if (rail == null)
+                      IconButton(
+                        onPressed: c.profileRepository == null
+                            ? reset
+                            : settings,
+                        tooltip: c.profileRepository == null
+                            ? 'Dev 체험 초기화'
+                            : '설정',
+                        icon: Image.asset(
+                          'assets/first_meeting/icons/settings.png',
+                          width: 32,
+                          height: 32,
+                        ),
+                      ),
+                  ],
+                ),
+                // Unknown values leave their chip out; nothing reads as 0.
+                if (streakShown || wallet != null) ...[
+                  const SizedBox(height: 12),
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: [
+                      if (streakShown)
+                        StatusChip(
+                          streak.atLeast
+                              ? '${streak.days}일 이상 연속 기록'
+                              : '${streak.days}일 연속 기록',
+                          textKey: const ValueKey('home_streak'),
+                        ),
+                      if (wallet != null)
+                        StatusChip(
+                          '${formatCount(wallet.balance)}P'
+                          '${fixtureLabelsVisible && wallet.fixtureLabel != null ? ' · 개발 검증용' : ''}',
+                          textKey: const ValueKey('reward_wallet'),
+                        ),
+                    ],
+                  ),
+                ],
+              ],
+            ),
+            scene: LayoutBuilder(
+              builder: (context, bounds) => ClipRRect(
+                borderRadius: BorderRadius.circular(16),
+                child: SizedBox(
+                  // Pen's 358 x 250 stage at 390 pt, scaled with the body.
+                  // Large text keeps the tall stage for its wrapped line.
+                  height: MediaQuery.textScalerOf(context).scale(16) > 21
+                      ? 330
+                      : MediaQuery.sizeOf(context).height < 600
+                      ? 220
+                      : (bounds.maxWidth * 250 / 358).clamp(220.0, 330.0),
+                  child: Stack(
+                    fit: StackFit.expand,
+                    children: [
+                      if (product?.store == null ||
+                          product!.store!.equippedTheme == 'sunny')
+                        Image.asset(
+                          'assets/first_meeting/sunny.png',
+                          fit: BoxFit.cover,
+                        )
+                      else
+                        ColoredBox(
+                          color: Color(
+                            product.store!.items
+                                .firstWhere(
+                                  (item) =>
+                                      item.themeId ==
+                                      product.store!.equippedTheme,
+                                )
+                                .colorValue,
                           ),
-                          const SizedBox(height: 8),
-                          Expanded(
-                            child: Center(
-                              child: DogSprite(
-                                asset: s.candidate!.spritePath,
-                                layer: widget.product?.wornLayer(
-                                  s.candidate!.id,
-                                ),
-                                layerKey: const ValueKey('home_dog_outfit'),
+                        ),
+                      Padding(
+                        padding: const EdgeInsets.all(18),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 14,
+                                vertical: 10,
+                              ),
+                              decoration: BoxDecoration(
+                                color: Colors.white,
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                              child: Text(
+                                _bubble(goal, point),
+                                key: const ValueKey('home_bubble'),
+                                style: Theme.of(context).textTheme.titleMedium
+                                    ?.copyWith(fontFamily: 'Galmuri11'),
                               ),
                             ),
-                          ),
-                        ],
+                            const SizedBox(height: 8),
+                            Expanded(
+                              child: Center(
+                                child: DogSprite(
+                                  asset: s.candidate!.spritePath,
+                                  layer: product?.wornLayer(s.candidate!.id),
+                                  layerKey: const ValueKey('home_dog_outfit'),
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
                       ),
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
               ),
             ),
-            status: Container(
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(16),
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  Text('오늘 걸음 · 목표 ${formatCount(s.goal)}걸음'),
-                  const SizedBox(height: 12),
-                  DailyStepsReadout(
-                    controller: widget.dailySteps,
-                    onRetry: refreshHome,
-                  ),
-                  if (widget.product case final product?) ...[
-                    // Sync runs by itself (3.1). Only the dev build's test
-                    // user, which has no account, connects by hand.
-                    if (product.account == null && !product.connected)
-                      TextButton(
-                        key: const ValueKey('home_dev_connect'),
-                        onPressed: product.busy ? null : product.connect,
-                        child: const Text('개발 테스트 사용자 연결'),
-                      ),
-                    if (product.error != null) Text(product.error!),
-                    if (product.error != null && product.account != null)
-                      OutlinedButton(
-                        key: const ValueKey('home_sync_retry'),
-                        onPressed: product.busy ? null : refreshHome,
-                        child: const Text('다시 시도'),
-                      ),
-                    if (product.wallet case final wallet?)
-                      Text(
-                        '${formatCount(wallet.balance)}P'
-                        '${fixtureLabelsVisible && wallet.fixtureLabel != null ? ' · 개발 검증용' : ''}',
-                        key: const ValueKey('reward_wallet'),
-                      ),
-                  ],
-                  const SizedBox(height: 12),
-                  FilledButton(onPressed: reward, child: const Text('포인트 받기')),
+            status: HomeGoalCard(
+              goal: goal,
+              reward: point,
+              onReward: reward,
+              onRetry: refreshHome,
+              notices: [
+                if (product != null) ...[
+                  // Sync runs by itself (3.1). Only the dev build's test
+                  // user, which has no account, connects by hand.
+                  if (product.account == null && !product.connected)
+                    TextButton(
+                      key: const ValueKey('home_dev_connect'),
+                      onPressed: product.busy ? null : product.connect,
+                      child: const Text('개발 테스트 사용자 연결'),
+                    ),
+                  if (product.error != null) Text(product.error!),
+                  if (product.error != null && product.account != null)
+                    OutlinedButton(
+                      key: const ValueKey('home_sync_retry'),
+                      onPressed: product.busy ? null : refreshHome,
+                      child: const Text('다시 시도'),
+                    ),
                 ],
-              ),
+              ],
             ),
+            // The rail carries these destinations while it shows.
             shortcuts: rail != null
                 ? null
                 : MeetingShortcuts(
                     children: [
-                      for (final entry in [
-                        ('기록', 'calendar-record'),
-                        ('퀴즈', 'question-quiz'),
-                        ('꾸미기', 'wardrobe'),
-                        ('사진', 'camera-photo'),
-                      ])
-                        OutlinedButton(
-                          style: OutlinedButton.styleFrom(
-                            minimumSize: const Size(72, 80),
-                          ),
-                          onPressed:
-                              switch (entry.$1) {
-                                '사진' => widget.onOpenPhoto,
-                                '기록' => widget.onOpenRecords,
-                                '퀴즈' => widget.onOpenQuiz,
-                                '꾸미기' => widget.onOpenWardrobe,
-                                _ => null,
-                              } ??
-                              () => unavailable(entry.$1),
-                          child: Column(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Image.asset(
-                                'assets/first_meeting/icons/${entry.$2}.png',
-                                width: 32,
-                                height: 32,
-                              ),
-                              const SizedBox(height: 8),
-                              Text(entry.$1),
-                              if (entry.$1 == '퀴즈' &&
-                                  widget.product?.quiz != null &&
-                                  widget.product!.quiz!.answerIndex == null)
-                                Semantics(
-                                  label: '오늘 퀴즈 미응답',
-                                  child: const Text('·'),
-                                ),
-                            ],
-                          ),
-                        ),
+                      StatusTile(
+                        key: const ValueKey('home_tile_records'),
+                        icon: 'assets/first_meeting/icons/calendar-record.png',
+                        title: '기록',
+                        status: streak == null
+                            ? null
+                            : '이번 주 기록 ${streak.thisWeek}일',
+                        statusKey: const ValueKey('home_tile_records_status'),
+                        onTap: widget.onOpenRecords ?? () => unavailable('기록'),
+                      ),
+                      StatusTile(
+                        key: const ValueKey('home_tile_quiz'),
+                        icon: 'assets/first_meeting/icons/question-quiz.png',
+                        title: '퀴즈',
+                        status: quizStatus(todayKey),
+                        statusKey: const ValueKey('home_tile_quiz_status'),
+                        onTap: widget.onOpenQuiz ?? () => unavailable('퀴즈'),
+                      ),
+                      StatusTile(
+                        key: const ValueKey('home_tile_wardrobe'),
+                        icon: 'assets/first_meeting/icons/wardrobe.png',
+                        title: '꾸미기',
+                        status: wardrobeStatus(),
+                        statusKey: const ValueKey('home_tile_wardrobe_status'),
+                        onTap:
+                            widget.onOpenWardrobe ?? () => unavailable('꾸미기'),
+                      ),
+                      StatusTile(
+                        key: const ValueKey('home_tile_photo'),
+                        icon: 'assets/first_meeting/icons/camera-photo.png',
+                        title: '사진',
+                        // An invitation, not a claim that a photo exists.
+                        status: '${_withWa(s.name)} 한 장',
+                        statusKey: const ValueKey('home_tile_photo_status'),
+                        onTap: widget.onOpenPhoto ?? () => unavailable('사진'),
+                      ),
                     ],
                   ),
-            footer: Text(
-              c.profileRepository == null ? 'Dev 체험 · 이 기기에 저장' : '계정에 저장된 친구',
-              textAlign: TextAlign.center,
-            ),
+            // Only the Dev local flow says where it saves (owner, 10-28).
+            footer: c.profileRepository == null
+                ? const Text('Dev 체험 · 이 기기에 저장', textAlign: TextAlign.center)
+                : null,
           ),
         ];
     }
+  }
+
+  /// The quiz tile's state; null while it is not known, never "done".
+  String? quizStatus(String today) {
+    if (widget.quiz case final quiz?) {
+      final value = quiz.today;
+      if (value == null || value.date != today) return null;
+      return switch (value.status) {
+        'ready' => switch (value.free) {
+          null => null,
+          final question =>
+            question.answerIndex == null ? '아직 안 풀었어요' : '오늘 완료',
+        },
+        'contentUnavailable' || 'exhausted' => '문제 준비 중',
+        _ => null,
+      };
+    }
+    // The dev build reads its fixture question with the product.
+    final question = widget.product?.quiz;
+    if (question == null || question.date != today) return null;
+    return question.answerIndex == null ? '아직 안 풀었어요' : '오늘 완료';
+  }
+
+  /// The outfit the stage draws, from the last confirmed server state; null
+  /// while that state is not known.
+  String? wardrobeStatus() {
+    final outfits = widget.product?.outfits;
+    if (outfits == null) return null;
+    for (final item in outfits.items) {
+      if (item.outfitId == outfits.equippedOutfit) return '착용 중 · ${item.name}';
+    }
+    return '착용한 옷 없음';
   }
 
   Widget dogCard(
@@ -1036,4 +1113,31 @@ class _FirstMeetingScreenState extends State<FirstMeetingScreen> {
       ),
     ),
   );
+}
+
+/// The companion's line. Numbers stay in the goal card and never repeat
+/// here (guide 5.1); "almost there" is kept for the last stretch only.
+String _bubble(HomeGoal goal, HomeReward point) {
+  if (goal.state != StepsState.counted) {
+    return goal.retryable ? '오늘 걸음을\n아직 못 가져왔어' : '오늘도 네 옆에서 걸을게';
+  }
+  if (point == HomeReward.claimed) {
+    return goal.achieved ? '포인트 받았어!\n오늘 정말 잘 걸었어' : '포인트 받았어!\n남은 걸음도 같이 가자';
+  }
+  if (goal.achieved) return '오늘 목표 달성!\n같이 걸어서 좋았어';
+  if (goal.percent >= 80) return '거의 다 왔어!\n조금만 더 같이 걷자';
+  return '오늘도 네 옆에서 걸을게';
+}
+
+/// `{name}와` or `{name}과` by the name's last sound. Digits are read in
+/// Korean; other characters take 와.
+String _withWa(String name) {
+  final value = name.trimRight();
+  if (value.isEmpty) return name;
+  final last = value.codeUnitAt(value.length - 1);
+  final closed = last >= 0xAC00 && last <= 0xD7A3
+      ? (last - 0xAC00) % 28 != 0
+      // 영 일 삼 육 칠 팔 end in a consonant; 이 사 오 구 do not.
+      : '013678'.contains(String.fromCharCode(last));
+  return '$value${closed ? '과' : '와'}';
 }

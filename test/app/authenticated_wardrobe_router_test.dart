@@ -73,7 +73,7 @@ void main() {
       MaterialApp.router(theme: meetingTheme(), routerConfig: router),
     );
     await tester.pumpAndSettle();
-    final entry = find.widgetWithText(OutlinedButton, '꾸미기');
+    final entry = find.byKey(const ValueKey('home_tile_wardrobe'));
     await tester.ensureVisible(entry);
     await tester.tap(entry);
     await tester.pumpAndSettle();

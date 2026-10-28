@@ -73,6 +73,10 @@ class ProductRepository {
     ),
   );
 
+  /// Days [from] through [to], KST, in one request (the server allows 93).
+  Future<List<DailyRecord>> days(DateTime from, DateTime to) =>
+      _records((client) => client.product.listDays(dateKey(from), dateKey(to)));
+
   Future<WalletView> wallet() =>
       _records((client) => client.product.getWallet());
 
