@@ -173,6 +173,13 @@ void main() {
       router.go('/records');
       await tester.pumpAndSettle();
       expect(find.byType(RecordsCalendarScreen), findsOneWidget);
+      final calendar = tester.widget<RecordsCalendarScreen>(
+        find.byType(RecordsCalendarScreen),
+      );
+      // Today's goal and the account's reads feed the tiles and the card.
+      expect(calendar.todayGoal, meeting.state.goal);
+      expect(calendar.loadSummary, isNotNull);
+      expect(calendar.loadQuiz, isNotNull);
       await capture(tester, boundary, 'records-calendar');
       router.go('/records/invalid');
       await tester.pumpAndSettle();
@@ -181,10 +188,13 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.byType(RecordDayScreen), findsOneWidget);
       // Sub screens take the user's own sprite from the router (guide 3.6).
-      expect(
-        tester.widget<RecordDayScreen>(find.byType(RecordDayScreen)).dogAsset,
-        meeting.state.candidate!.spritePath,
+      final record = tester.widget<RecordDayScreen>(
+        find.byType(RecordDayScreen),
       );
+      expect(record.dogAsset, meeting.state.candidate!.spritePath);
+      // A past date gets no goal; only today's is known (guide 7.1-5).
+      expect(record.goal, isNull);
+      expect(record.loadQuiz, isNotNull);
       expect(find.byKey(const ValueKey('reward_free_claim')), findsOneWidget);
       await capture(tester, boundary, 'records-day');
       await tester.ensureVisible(

@@ -13,7 +13,9 @@ class StepStreak {
   });
 
   /// KST days read in one request. The server answers at most 93 days per
-  /// `listDays`; one month keeps the read the size of the records calendar.
+  /// `listDays`; one month keeps the read the size of the records calendar
+  /// and always reaches back to the first of today's month, so the same
+  /// read also covers [monthAverage].
   static const window = 31;
 
   /// Consecutive recorded days ending today, or ending yesterday while today
@@ -57,6 +59,25 @@ class StepStreak {
       thisWeek: week,
     );
   }
+}
+
+/// Mean steps of the confirmed days of [today]'s KST month among [records],
+/// rounded; null without one. A confirmed zero is a real count and counts;
+/// deleted, unconfirmed and empty days have no count and do not. The owner
+/// has not decided the denominator (guide 7.1); this is the reading that
+/// never turns a missing day into 0.
+int? monthAverage(Iterable<api.DailyRecord> records, DateTime today) {
+  final month = ProductRepository.dateKey(today).substring(0, 8);
+  final counts = <int>[
+    for (final record in records)
+      if (record.date.startsWith(month) &&
+          !record.deleted &&
+          record.availability == 'confirmed' &&
+          record.steps != null)
+        record.steps!,
+  ];
+  if (counts.isEmpty) return null;
+  return (counts.reduce((a, b) => a + b) / counts.length).round();
 }
 
 /// A day the server confirmed with at least one step. Deleted days, days the

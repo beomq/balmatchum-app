@@ -120,6 +120,44 @@ void main() {
     },
   );
 
+  test('the month average counts confirmed days of today\'s month only', () {
+    final records = [
+      day(wednesday, 0, steps: 6000),
+      day(wednesday, 1, steps: 0),
+      day(wednesday, 2, steps: 9000),
+      // No count: never averaged in as 0.
+      day(wednesday, 3, steps: null, availability: 'unknown'),
+      day(wednesday, 4, deleted: true),
+      // September 30, the month before.
+      day(wednesday, 28, steps: 30000),
+    ];
+    expect(monthAverage(records, wednesday), 5000);
+    expect(
+      monthAverage([
+        day(wednesday, 3, steps: null, availability: 'unknown'),
+      ], wednesday),
+      isNull,
+    );
+    expect(monthAverage(const [], wednesday), isNull);
+  });
+
+  test('the records tiles share the streak read and add the average', () async {
+    final today = ProductRepository.today;
+    final repository = AccountRepository()
+      ..recentDays = [day(today, 0, steps: 3000), day(today, 1, steps: 5000)];
+    final product = accountController(repository);
+    final summary = await product.loadRecordsSummary();
+    expect(summary.streak, 2);
+    expect(summary.streakAtLeast, isFalse);
+    // Both days fall in today's month unless today is the first.
+    expect(summary.monthAverage, today.day == 1 ? 3000 : 4000);
+    final (from, to) = repository.dayRanges.single;
+    expect(ProductRepository.dateKey(to), ProductRepository.dateKey(today));
+    expect(to.difference(from).inDays, StepStreak.window - 1);
+    repository.recentDays = null;
+    await expectLater(product.loadRecordsSummary(), throwsException);
+  });
+
   test('a deleted day or a disconnect leaves no old streak', () async {
     final today = ProductRepository.today;
     final repository = AccountRepository()..recentDays = [day(today, 0)];

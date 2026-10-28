@@ -219,6 +219,26 @@ class ProductController extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// The records page's tiles (guide 7.1): the same one read of the last
+  /// [StepStreak.window] KST days as the home's streak, so both agree. Only
+  /// reads; a failed read throws and the tiles show no number.
+  Future<RecordsSummary> loadRecordsSummary() async {
+    _checkAccount();
+    final today = ProductRepository.today;
+    final records = await repository.days(
+      today.subtract(const Duration(days: StepStreak.window - 1)),
+      today,
+    );
+    _checkAccount();
+    final streak = StepStreak.of(records, today);
+    return RecordsSummary(
+      thisWeek: streak.thisWeek,
+      streak: streak.days,
+      streakAtLeast: streak.atLeast,
+      monthAverage: monthAverage(records, today),
+    );
+  }
+
   Future<RecordMonth> loadMonth(DateTime date) async {
     _checkAccount();
     final days = await repository.month(date);

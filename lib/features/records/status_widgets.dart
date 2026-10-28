@@ -166,6 +166,68 @@ class _RingPainter extends CustomPainter {
       old.progress != progress || old.color != color;
 }
 
+/// `Stat/Tile` (`kXIvI`): a short label over one value. A null [value]
+/// draws a dash and reads [missing], never a made-up number.
+class StatTile extends StatelessWidget {
+  const StatTile({
+    required this.label,
+    required this.value,
+    this.missing = '확인 중',
+    this.valueKey,
+    super.key,
+  });
+  final String label;
+  final String? value;
+
+  /// What assistive technology reads while [value] is null.
+  final String missing;
+
+  /// Finds the value itself, whose text tests read.
+  final Key? valueKey;
+
+  @override
+  Widget build(BuildContext context) => Semantics(
+    container: true,
+    label: '$label, ${value ?? missing}',
+    excludeSemantics: true,
+    child: Container(
+      padding: const EdgeInsets.symmetric(horizontal: Space.s3, vertical: 10),
+      decoration: BoxDecoration(
+        color: MeetingColors.raised,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: MeetingColors.line),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        spacing: 2,
+        children: [
+          // Both lines shrink to fit rather than wrap or clip.
+          FittedBox(
+            fit: BoxFit.scaleDown,
+            alignment: AlignmentDirectional.centerStart,
+            child: Text(
+              label,
+              maxLines: 1,
+              style: meetingType(12, 16, FontWeight.w700, MeetingColors.muted),
+            ),
+          ),
+          FittedBox(
+            fit: BoxFit.scaleDown,
+            alignment: AlignmentDirectional.centerStart,
+            child: Text(
+              value ?? '–',
+              key: valueKey,
+              maxLines: 1,
+              style: meetingType(16.5, 22, FontWeight.w800),
+            ),
+          ),
+        ],
+      ),
+    ),
+  );
+}
+
 /// `Home/Status Tile` (`F9fHc6`): a destination with its current state.
 class StatusTile extends StatelessWidget {
   const StatusTile({

@@ -21,6 +21,14 @@ abstract final class ProductColors {
   static const divider = Color(0xFFF3EADC);
   static const recordInk = Color(0xFF2F3A1E);
   static const panelShadow = Color(0x2450301E);
+
+  /// Pen `color-subtle`: an unknown day's number (`K6Z5x`).
+  static const subtle = Color(0xFF9A877A);
+
+  /// Pen literals of the records calendar (`K6Z5x`): an unknown day's
+  /// circle and the number of a day without a record.
+  static const dayUnknown = Color(0xFFEFE7DC);
+  static const dayEmpty = Color(0xFFD9CEC2);
 }
 
 /// DESIGN.md spacing scale (space/1..8).
