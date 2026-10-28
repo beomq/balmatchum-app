@@ -23,9 +23,12 @@ gh workflow run apple-upload.yml --ref develop -f target=dev
 ```
 
 첫 명령은 Dev AAB 서명 빌드 후 Play internal에 draft로 업로드한다.
-두 번째 명령은 기존 수동 실행의 verify 모드를 유지한다. Dev iOS/watch 서명
-archive·IPA를 만들고 artifact로 보관하지만 TestFlight에는 업로드하지 않는다.
-`APPLE_UPLOAD_ENABLED=true`여도 수동 Apple 실행은 verify다.
+두 번째 명령은 `APPLE_UPLOAD_ENABLED=true`일 때 Dev iOS/watch 서명
+archive·IPA를 만들고 Dev 앱을 TestFlight에 업로드한다. 이 활성화 변수가 false이거나
+없으면 verify 모드로 빌드·패키지 검증만 수행하며 업로드하지 않는다.
+수동 업로드는 `workflow_dispatch`의 target=dev와 정확한 `refs/heads/develop` 조합에만
+허용한다. 수동 target=prod와 `chore/cicd-validation`은 verify이며 다른 ref의 Dev
+수동 실행도 verify 또는 기존 대상/ref 검사에서 거절된다.
 `main`의 Play/Apple Production push 트리거와 업로드 활성화 조건,
 `chore/cicd-validation`의 Apple 검증 트리거는 유지한다.
 
