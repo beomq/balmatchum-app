@@ -23,6 +23,9 @@
   패키지 경로, [pubspec.lock](pubspec.lock)의 resolved-ref를 함께 관리합니다.
 - 개발은 `develop`에서 짧은 작업 브랜치 → PR/CI → `develop`.
   `main`은 릴리스 PR·버전 태그용입니다. 검증되지 않은 변경의 병합은 허용하지 않습니다.
+- `develop` push/병합은 CI만 실행하며 Dev 배포 빌드는 수동입니다.
+  [Dev 수동 실행 명령](docs/PLAY_DEV_DEPLOY.md#dev-수동-실행)을 사용합니다.
+  `main`의 Production 배포 동작은 유지합니다.
 - `com.beomq.balmatchum`은 **미확정 로컬 식별자**입니다. 외부 등록/서명/배포는 별도 결정입니다.
 
 ## 검증 상태와 한계
