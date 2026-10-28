@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:balmatchum_app/app/duo_rail.dart';
 import 'package:balmatchum_app/features/auth/sign_in_screen.dart';
 import 'package:balmatchum_app/features/auth/sign_in_starter.dart';
@@ -16,8 +18,25 @@ import '../../support/duo_viewports.dart';
 import '../daily_activity/product_controller_test.dart' show AccountRepository;
 import 'domain/authenticated_profile_test.dart' show Profiles, view;
 import 'domain/first_meeting_test.dart' show MemoryStorage;
+import 'name_input_test.dart' show PausedStore;
 
 void main() {
+  void usePadding(WidgetTester tester, Size size, FakeViewPadding padding) {
+    tester.view.devicePixelRatio = 3;
+    tester.view.physicalSize = size * 3;
+    tester.view.padding = padding;
+    addTearDown(tester.view.reset);
+  }
+
+  const normalIPhones = [
+    ('portrait', Size(390, 844), FakeViewPadding(top: 177, bottom: 102)),
+    (
+      'landscape',
+      Size(844, 390),
+      FakeViewPadding(left: 177, right: 177, bottom: 63),
+    ),
+  ];
+
   for (final viewport in duoViewports.entries) {
     for (final stage in ['catalog', 'name', 'goal']) {
       testWidgets('$stage fits Duo ${viewport.key}', (tester) async {
@@ -167,13 +186,6 @@ void main() {
     const railIds = ['settings', 'records', 'quiz', 'wardrobe', 'photo'];
     Finder rail(String id) => find.byKey(ValueKey('duo_rail_$id'));
 
-    void usePadding(WidgetTester tester, Size size, FakeViewPadding padding) {
-      tester.view.devicePixelRatio = 3;
-      tester.view.physicalSize = size * 3;
-      tester.view.padding = padding;
-      addTearDown(tester.view.reset);
-    }
-
     Future<List<String>> pumpHome(WidgetTester tester) async {
       final opened = <String>[];
       final c = FirstMeetingController(
@@ -279,18 +291,7 @@ void main() {
       expect(tester.takeException(), isNull);
     });
 
-    for (final (name, size, padding) in [
-      (
-        'portrait',
-        const Size(390, 844),
-        const FakeViewPadding(top: 177, bottom: 102),
-      ),
-      (
-        'landscape',
-        const Size(844, 390),
-        const FakeViewPadding(left: 177, right: 177, bottom: 63),
-      ),
-    ]) {
+    for (final (name, size, padding) in normalIPhones) {
       testWidgets('normal iPhone $name keeps header settings and shortcuts', (
         tester,
       ) async {
@@ -371,5 +372,166 @@ void main() {
       expect(find.byType(MeetingShortcuts), findsNothing);
       expect(tester.takeException(), isNull);
     });
+  });
+
+  group('Duo onboarding rail', () {
+    final back = find.byKey(const ValueKey('duo_rail_back'));
+    final topBack = find.byKey(const ValueKey('meeting_back'));
+
+    /// Walks a Dev first meeting forward until it reaches [step].
+    Future<FirstMeetingController> meetingAt(
+      FirstMeetingStep step, {
+      FirstMeetingStorage? storage,
+    }) async {
+      final c = FirstMeetingController(storage: storage ?? MemoryStorage());
+      addTearDown(c.dispose);
+      await c.initialize();
+      final recommend =
+          step == FirstMeetingStep.question || step == FirstMeetingStep.results;
+      final moves = <Future<void> Function()>[
+        c.enter,
+        if (recommend) ...[
+          c.chooseRecommendation,
+          for (var i = 0; i < 3; i++) () => c.answer(false),
+        ] else ...[
+          c.chooseCatalog,
+          () => c.selectBreed('shih-tzu'),
+          c.confirmCandidate,
+          () => c.updateName('몽글'),
+          () => c.updateSex(DogSex.female),
+          c.submitName,
+        ],
+      ];
+      for (final move in moves) {
+        if (c.state.step == step) break;
+        await move();
+      }
+      expect(c.state.step, step);
+      return c;
+    }
+
+    for (final (step, previous) in const [
+      (FirstMeetingStep.method, FirstMeetingStep.login),
+      (FirstMeetingStep.question, FirstMeetingStep.method),
+      (FirstMeetingStep.results, FirstMeetingStep.method),
+      (FirstMeetingStep.catalog, FirstMeetingStep.method),
+      (FirstMeetingStep.confirm, FirstMeetingStep.catalog),
+      (FirstMeetingStep.name, FirstMeetingStep.confirm),
+      (FirstMeetingStep.goal, FirstMeetingStep.name),
+    ]) {
+      testWidgets('outer portrait ${step.name} moves back to the rail', (
+        tester,
+      ) async {
+        // Given the measured outer panel at this onboarding step.
+        useDuoViewport(tester, 'outer portrait');
+        final c = await meetingAt(step);
+        await tester.pumpWidget(duoHost(FirstMeetingScreen(controller: c)));
+        await tester.pumpAndSettle();
+        // Then back is the only rail button, on the bar axis at the bottom.
+        expect(back.hitTestable(), findsOneWidget);
+        expect(
+          find.descendant(
+            of: find.byType(DuoRail),
+            matching: find.byType(IconButton),
+          ),
+          findsOneWidget,
+        );
+        expect(tester.getRect(back).center.dx, closeTo(418, 1));
+        expect(tester.getRect(back).bottom, closeTo(642, 1));
+        expect(find.byTooltip('뒤로'), findsOneWidget);
+        // And the top bar no longer repeats it.
+        expect(topBack, findsNothing);
+        // When the rail back is tapped.
+        await tester.tap(back);
+        await tester.pumpAndSettle();
+        // Then the step goes back like the top-bar back did.
+        expect(c.state.step, previous);
+        expect(tester.takeException(), isNull);
+      });
+    }
+
+    testWidgets('a busy step disables the rail back like the top bar', (
+      tester,
+    ) async {
+      // Given the name step whose next storage write is held open.
+      useDuoViewport(tester, 'outer portrait');
+      final store = PausedStore();
+      final c = await meetingAt(FirstMeetingStep.name, storage: store);
+      await tester.pumpWidget(duoHost(FirstMeetingScreen(controller: c)));
+      await tester.pumpAndSettle();
+      VoidCallback? onBack() => tester.widget<IconButton>(back).onPressed;
+      expect(onBack(), isNotNull);
+      // When a save is in flight.
+      store.writeStarted = Completer<void>();
+      store.writeReleased = Completer<void>();
+      final saving = c.updateSex(DogSex.male);
+      await store.writeStarted!.future.timeout(const Duration(seconds: 5));
+      await tester.pump();
+      // Then the rail keeps back but disables it, and the top bar stays empty.
+      expect(c.isBusy, isTrue);
+      expect(onBack(), isNull);
+      expect(topBack, findsNothing);
+      // And back is enabled again once the save completes.
+      store.writeReleased!.complete();
+      await saving;
+      await tester.pumpAndSettle();
+      expect(onBack(), isNotNull);
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('large text keeps back as a 44 pt rail icon', (tester) async {
+      // Given the outer panel with doubled text size at the goal step.
+      useDuoViewport(tester, 'outer portrait');
+      tester.platformDispatcher.textScaleFactorTestValue = 2;
+      addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
+      final c = await meetingAt(FirstMeetingStep.goal);
+      // When the step is shown.
+      await tester.pumpWidget(duoHost(FirstMeetingScreen(controller: c)));
+      await tester.pumpAndSettle();
+      // Then the compact rail keeps the 44 pt back without overflow.
+      expect(tester.getSize(back), const Size.square(44));
+      expect(tester.getRect(back).bottom, closeTo(642, 1));
+      expect(topBack, findsNothing);
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('an open keyboard returns back to the top bar', (tester) async {
+      // Given the goal step with its rail on the outer panel.
+      useDuoViewport(tester, 'outer portrait');
+      final c = await meetingAt(FirstMeetingStep.goal);
+      await tester.pumpWidget(duoHost(FirstMeetingScreen(controller: c)));
+      await tester.pumpAndSettle();
+      expect(back, findsOneWidget);
+      // When a keyboard inset appears.
+      tester.view.viewInsets = const FakeViewPadding(bottom: 900);
+      addTearDown(tester.view.resetViewInsets);
+      await tester.pumpAndSettle();
+      // Then the rail hides and the top bar shows back again.
+      expect(find.byType(DuoRail), findsNothing);
+      expect(topBack.hitTestable(), findsOneWidget);
+      // And the rail returns once the keyboard closes.
+      tester.view.resetViewInsets();
+      await tester.pumpAndSettle();
+      expect(back, findsOneWidget);
+      expect(topBack, findsNothing);
+      expect(tester.takeException(), isNull);
+    });
+
+    for (final (name, size, padding) in normalIPhones) {
+      testWidgets('normal iPhone $name keeps the top-bar back', (tester) async {
+        // Given an ordinary iPhone safe area at the confirm step.
+        usePadding(tester, size, padding);
+        final c = await meetingAt(FirstMeetingStep.confirm);
+        await tester.pumpWidget(duoHost(FirstMeetingScreen(controller: c)));
+        await tester.pumpAndSettle();
+        // Then no rail is drawn and the top-bar back still works.
+        expect(find.byType(DuoRail), findsNothing);
+        expect(back, findsNothing);
+        await tester.tap(topBack);
+        await tester.pumpAndSettle();
+        expect(c.state.step, FirstMeetingStep.catalog);
+        expect(tester.takeException(), isNull);
+      });
+    }
   });
 }

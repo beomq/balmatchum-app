@@ -146,6 +146,8 @@ class MeetingPage extends StatelessWidget {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.stretch,
                         children: [
+                          // The slot stays while the rail or a busy step
+                          // hides back, so the focused name field never moves.
                           if (showHeader)
                             SizedBox(
                               height: 48,

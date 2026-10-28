@@ -377,7 +377,12 @@ class _FirstMeetingScreenState extends State<FirstMeetingScreen> {
       );
     }
     final s = c.state;
-    final railSpec = s.step == FirstMeetingStep.home ? homeRailSpec(c) : null;
+    final railSpec = switch (s.step) {
+      FirstMeetingStep.home => homeRailSpec(c),
+      FirstMeetingStep.login => null,
+      // Same callback and enabled state as the top-bar back.
+      _ => DuoRailSpec(tools: [duoBack(c.isBusy ? null : c.back)]),
+    };
     final railMode = railSpec == null
         ? null
         : duoRailMode(MediaQuery.of(context), railSpec);
@@ -393,8 +398,10 @@ class _FirstMeetingScreenState extends State<FirstMeetingScreen> {
           key: ValueKey(s.step),
           showHeader: s.step != FirstMeetingStep.home,
           wide: s.step == FirstMeetingStep.home,
+          // While the rail carries back, the header keeps its empty slot.
           onBack:
-              s.step == FirstMeetingStep.login ||
+              railMode != null ||
+                  s.step == FirstMeetingStep.login ||
                   s.step == FirstMeetingStep.home ||
                   c.isBusy
               ? null

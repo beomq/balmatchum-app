@@ -76,8 +76,13 @@ void main() {
     await tester.tap(find.text('자기 페이스로 나란히 걷는 친구'));
     await tester.pumpAndSettle();
     await binding.takeScreenshot('meeting-native-recommendation');
-    await tester.ensureVisible(find.byKey(const ValueKey('meeting_back')));
-    await tester.tap(find.byKey(const ValueKey('meeting_back')));
+    // The iPhone Duo side rail carries back instead of the top bar.
+    final railBack = find.byKey(const ValueKey('duo_rail_back'));
+    final back = railBack.evaluate().isEmpty
+        ? find.byKey(const ValueKey('meeting_back'))
+        : railBack;
+    await tester.ensureVisible(back);
+    await tester.tap(back);
     await tester.pumpAndSettle();
     await tester.tap(find.text('30종에서 직접 고르기'));
     await tester.pumpAndSettle();
