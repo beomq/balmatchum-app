@@ -5,6 +5,10 @@ import 'package:flutter/material.dart';
 
 import '../../app/duo_rail.dart';
 import '../first_meeting/meeting_theme.dart';
+import '../first_meeting/onboarding_widgets.dart' show wrapByWords;
+import '../first_meeting/particles.dart';
+import '../records/product_page.dart';
+import '../wardrobe/dog_sprite.dart';
 import 'photo_editor.dart';
 
 export 'photo_editor.dart'
@@ -34,6 +38,9 @@ class PhotoScreenState extends State<PhotoScreen> {
   DogSticker? _gestureStart;
   Offset? _focalStart;
   bool leaving = false;
+
+  /// What the last pick asked for, so its retry asks the same.
+  PhotoSource source = PhotoSource.gallery;
 
   @override
   void initState() {
@@ -91,6 +98,11 @@ class PhotoScreenState extends State<PhotoScreen> {
     });
   }
 
+  void pick(PhotoSource value) {
+    source = value;
+    editor.pick(value);
+  }
+
   Widget _button(
     String label,
     String key,
@@ -122,44 +134,18 @@ class PhotoScreenState extends State<PhotoScreen> {
       _button(
         '사진 선택',
         'photo_gallery',
-        editor.busy ? null : () => editor.pick(PhotoSource.gallery),
+        editor.busy ? null : () => pick(PhotoSource.gallery),
       ),
       _button(
         '카메라 촬영',
         'photo_camera',
-        editor.busy ? null : () => editor.pick(PhotoSource.camera),
+        editor.busy ? null : () => pick(PhotoSource.camera),
       ),
     ],
   );
 
   Widget _preview() {
-    final photo = editor.photo;
-    if (photo == null) {
-      return Container(
-        height: 300,
-        padding: const EdgeInsets.all(24),
-        decoration: BoxDecoration(
-          color: MeetingColors.soft,
-          borderRadius: BorderRadius.circular(16),
-        ),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Image.asset(
-              widget.dogAssetPath,
-              height: 148,
-              filterQuality: FilterQuality.none,
-              semanticLabel: widget.dogName,
-            ),
-            const SizedBox(height: 16),
-            Text(
-              '${widget.dogName}와 함께할 사진을 골라 주세요.',
-              textAlign: TextAlign.center,
-            ),
-          ],
-        ),
-      );
-    }
+    final photo = editor.photo!;
     return AspectRatio(
       aspectRatio: photo.width / photo.height,
       child: LayoutBuilder(
@@ -335,6 +321,171 @@ class PhotoScreenState extends State<PhotoScreen> {
     ],
   );
 
+  /// PHOTO-01 (Pen `opawe`): a worked example of the result, one pick and
+  /// nothing to save or edit yet. A cancelled pick stays here; only a
+  /// picked photo moves on.
+  Widget _start({required bool rail}) {
+    final name = widget.dogName;
+    final failed = editor.isError && editor.message != null;
+    final headline = '사진 위에 ${withEul(name)} 올려 한 장 남겨요';
+    final body = '앨범에서 사진을 고르면 ${withEul(name)} 옮기고 크기를 바꿀 수 있어요.';
+    final title = ProductTitle(
+      '${withWa(name)} 한 장',
+      textAlign: rail ? TextAlign.start : TextAlign.center,
+    );
+    return LayoutBuilder(
+      builder: (context, bounds) {
+        final gutter = math.max(
+          pageGutter(bounds.maxWidth),
+          (bounds.maxWidth - 600) / 2,
+        );
+        return SingleChildScrollView(
+          padding: EdgeInsets.fromLTRB(gutter, Space.s2, gutter, Space.s6),
+          child: ConstrainedBox(
+            constraints: BoxConstraints(
+              minHeight: math.max(0, bounds.maxHeight - Space.s2 - Space.s6),
+            ),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    SizedBox(
+                      height: 48,
+                      child: rail
+                          ? Align(
+                              alignment: AlignmentDirectional.centerStart,
+                              child: title,
+                            )
+                          : Row(
+                              children: [
+                                IconButton(
+                                  key: const ValueKey('photo_back'),
+                                  tooltip: '뒤로',
+                                  onPressed: editor.busy
+                                      ? null
+                                      : () => leave(widget.onBack),
+                                  icon: const PixelIcon('back'),
+                                ),
+                                Expanded(child: title),
+                                IconButton(
+                                  key: const ValueKey('photo_home'),
+                                  tooltip: '홈',
+                                  onPressed: editor.busy
+                                      ? null
+                                      : () => leave(widget.onHome),
+                                  icon: const PixelIcon('home'),
+                                ),
+                              ],
+                            ),
+                    ),
+                    const SizedBox(height: 14),
+                    // Short or wide screens shrink the example so the
+                    // pick stays in view; it never stretches.
+                    Center(
+                      child: ConstrainedBox(
+                        constraints: BoxConstraints(
+                          maxHeight: math.max(220, bounds.maxHeight - 310),
+                        ),
+                        child: _Example(dogAssetPath: widget.dogAssetPath),
+                      ),
+                    ),
+                    const SizedBox(height: 20),
+                    Text(
+                      wrapByWords(headline),
+                      key: const ValueKey('photo_start_title'),
+                      semanticsLabel: headline,
+                      textAlign: TextAlign.center,
+                      style: meetingType(19, 26, FontWeight.w800),
+                    ),
+                    const SizedBox(height: 6),
+                    Text(
+                      wrapByWords(body),
+                      semanticsLabel: body,
+                      textAlign: TextAlign.center,
+                      style: meetingType(
+                        14,
+                        21,
+                        FontWeight.w500,
+                        MeetingColors.muted,
+                      ),
+                    ),
+                    // Permission and read failures stay on this screen with
+                    // the adapter's own guidance and a retry (guide 7.3-4).
+                    if (failed) ...[
+                      const SizedBox(height: Space.s4),
+                      ProductPanel(
+                        key: const ValueKey('photo_pick_error'),
+                        color: ProductColors.warningSoft,
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          spacing: Space.s3,
+                          children: [
+                            Semantics(
+                              liveRegion: true,
+                              child: Text(
+                                editor.message!,
+                                key: const ValueKey('photo_status'),
+                                style: const TextStyle(
+                                  color: MeetingColors.error,
+                                ),
+                              ),
+                            ),
+                            OutlinedButton(
+                              key: const ValueKey('photo_pick_retry'),
+                              onPressed: editor.busy
+                                  ? null
+                                  : () => pick(source),
+                              child: const Text('다시 시도'),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                    if (editor.dog == null && !editor.busy) ...[
+                      const SizedBox(height: Space.s3),
+                      _button('강아지 다시 불러오기', 'photo_retry', editor.initialize),
+                    ],
+                  ],
+                ),
+                Padding(
+                  padding: const EdgeInsets.only(top: Space.s4),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    spacing: Space.s1,
+                    children: [
+                      FilledButton(
+                        key: const ValueKey('photo_gallery'),
+                        // Pen `Photo Pick`: the one primary action, 52 pt.
+                        style: FilledButton.styleFrom(
+                          minimumSize: const Size.fromHeight(52),
+                        ),
+                        onPressed: editor.busy
+                            ? null
+                            : () => pick(PhotoSource.gallery),
+                        child: const Text('앨범에서 사진 고르기'),
+                      ),
+                      // Not in Pen: the existing camera pick stays as text.
+                      TextButton(
+                        key: const ValueKey('photo_camera'),
+                        onPressed: editor.busy
+                            ? null
+                            : () => pick(PhotoSource.camera),
+                        child: const Text('카메라로 찍기'),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
   @override
   Widget build(BuildContext context) => AnimatedBuilder(
     animation: editor,
@@ -357,84 +508,93 @@ class PhotoScreenState extends State<PhotoScreen> {
             fit: StackFit.expand,
             children: [
               SafeArea(
-                child: LayoutBuilder(
-                  builder: (context, bounds) {
-                    final padding = bounds.maxWidth < 360
-                        ? 12.0
-                        : bounds.maxWidth < 600
-                        ? 16.0
-                        : bounds.maxWidth < 840
-                        ? 24.0
-                        : 32.0;
-                    final wide = bounds.maxWidth >= 840;
-                    return SingleChildScrollView(
-                      padding: EdgeInsets.fromLTRB(padding, 16, padding, 24),
-                      child: Center(
-                        child: ConstrainedBox(
-                          constraints: BoxConstraints(
-                            maxWidth: wide ? 1100 : 600,
-                          ),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.stretch,
-                            children: [
-                              if (mode == null) ...[
-                                Row(
+                child: editor.photo == null
+                    ? _start(rail: mode != null)
+                    : LayoutBuilder(
+                        builder: (context, bounds) {
+                          final padding = bounds.maxWidth < 360
+                              ? 12.0
+                              : bounds.maxWidth < 600
+                              ? 16.0
+                              : bounds.maxWidth < 840
+                              ? 24.0
+                              : 32.0;
+                          final wide = bounds.maxWidth >= 840;
+                          return SingleChildScrollView(
+                            padding: EdgeInsets.fromLTRB(
+                              padding,
+                              16,
+                              padding,
+                              24,
+                            ),
+                            child: Center(
+                              child: ConstrainedBox(
+                                constraints: BoxConstraints(
+                                  maxWidth: wide ? 1100 : 600,
+                                ),
+                                child: Column(
+                                  crossAxisAlignment:
+                                      CrossAxisAlignment.stretch,
                                   children: [
-                                    IconButton(
-                                      key: const ValueKey('photo_back'),
-                                      tooltip: '뒤로',
-                                      onPressed: editor.busy
-                                          ? null
-                                          : () => leave(widget.onBack),
-                                      icon: Image.asset(
-                                        'assets/first_meeting/icons/back.png',
-                                        width: 32,
-                                        height: 32,
-                                        filterQuality: FilterQuality.none,
+                                    if (mode == null) ...[
+                                      Row(
+                                        children: [
+                                          IconButton(
+                                            key: const ValueKey('photo_back'),
+                                            tooltip: '뒤로',
+                                            onPressed: editor.busy
+                                                ? null
+                                                : () => leave(widget.onBack),
+                                            icon: Image.asset(
+                                              'assets/first_meeting/icons/back.png',
+                                              width: 32,
+                                              height: 32,
+                                              filterQuality: FilterQuality.none,
+                                            ),
+                                          ),
+                                          const Spacer(),
+                                          TextButton(
+                                            key: const ValueKey('photo_home'),
+                                            onPressed: editor.busy
+                                                ? null
+                                                : () => leave(widget.onHome),
+                                            child: const Text('홈'),
+                                          ),
+                                        ],
                                       ),
+                                      const SizedBox(height: 18),
+                                    ],
+                                    Text(
+                                      '함께 사진 찍기',
+                                      style: Theme.of(context)
+                                          .textTheme
+                                          .headlineSmall,
                                     ),
-                                    const Spacer(),
-                                    TextButton(
-                                      key: const ValueKey('photo_home'),
-                                      onPressed: editor.busy
-                                          ? null
-                                          : () => leave(widget.onHome),
-                                      child: const Text('홈'),
-                                    ),
+                                    const SizedBox(height: 8),
+                                    Text('${widget.dogName}를 사진에 담아 보세요.'),
+                                    const SizedBox(height: 20),
+                                    if (wide)
+                                      Row(
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.start,
+                                        children: [
+                                          Expanded(flex: 6, child: _preview()),
+                                          const SizedBox(width: 24),
+                                          Expanded(flex: 4, child: _controls()),
+                                        ],
+                                      )
+                                    else ...[
+                                      _preview(),
+                                      const SizedBox(height: 20),
+                                      _controls(),
+                                    ],
                                   ],
                                 ),
-                                const SizedBox(height: 18),
-                              ],
-                              Text(
-                                '함께 사진 찍기',
-                                style: Theme.of(context)
-                                    .textTheme
-                                    .headlineSmall,
                               ),
-                              const SizedBox(height: 8),
-                              Text('${widget.dogName}를 사진에 담아 보세요.'),
-                              const SizedBox(height: 20),
-                              if (wide)
-                                Row(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Expanded(flex: 6, child: _preview()),
-                                    const SizedBox(width: 24),
-                                    Expanded(flex: 4, child: _controls()),
-                                  ],
-                                )
-                              else ...[
-                                _preview(),
-                                const SizedBox(height: 20),
-                                _controls(),
-                              ],
-                            ],
-                          ),
-                        ),
+                            ),
+                          );
+                        },
                       ),
-                    );
-                  },
-                ),
               ),
               if (mode != null) DuoRail(spec: spec, mode: mode),
             ],
@@ -442,6 +602,82 @@ class PhotoScreenState extends State<PhotoScreen> {
         ),
       );
     },
+  );
+}
+
+/// Pen `Photo Example`: the app's sunny background with the user's own
+/// companion on it, tagged so it is never taken for their photo or a saved
+/// result. The base sprite only, as the editor composites.
+class _Example extends StatelessWidget {
+  const _Example({required this.dogAssetPath});
+  final String dogAssetPath;
+
+  /// Pen frame and dog box, in its 358 × 400 points.
+  static const _frame = Size(358, 400);
+  static const _dog = Rect.fromLTWH(120, 170, 220, 220);
+
+  @override
+  Widget build(BuildContext context) => AspectRatio(
+    aspectRatio: _frame.width / _frame.height,
+    child: Semantics(
+      key: const ValueKey('photo_example'),
+      image: true,
+      label: '완성 예시',
+      child: ExcludeSemantics(
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(20),
+          child: LayoutBuilder(
+            builder: (context, bounds) {
+              final scale = bounds.maxWidth / _frame.width;
+              return Stack(
+                fit: StackFit.expand,
+                children: [
+                  Image.asset(
+                    'assets/first_meeting/sunny.png',
+                    fit: BoxFit.cover,
+                    filterQuality: FilterQuality.none,
+                  ),
+                  Positioned.fromRect(
+                    rect: Rect.fromLTWH(
+                      _dog.left * scale,
+                      _dog.top * scale,
+                      _dog.width * scale,
+                      _dog.height * scale,
+                    ),
+                    child: DogSprite(asset: dogAssetPath),
+                  ),
+                  Positioned(
+                    left: Space.s3,
+                    top: Space.s3,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 11,
+                        vertical: 5,
+                      ),
+                      decoration: const BoxDecoration(
+                        color: ProductColors.photoTag,
+                        borderRadius: BorderRadius.all(Radius.circular(999)),
+                      ),
+                      child: Text(
+                        '완성 예시',
+                        style: meetingType(12.5, 16, FontWeight.w700),
+                      ),
+                    ),
+                  ),
+                  // Pen draws the line stroke over the picture's edge.
+                  DecoratedBox(
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(20),
+                      border: Border.all(color: MeetingColors.line),
+                    ),
+                  ),
+                ],
+              );
+            },
+          ),
+        ),
+      ),
+    ),
   );
 }
 

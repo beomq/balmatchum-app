@@ -163,6 +163,7 @@ void main() {
       expect(back, 1);
       expect(home, 1);
       adapter.next = await tester.runAsync(photoFixture);
+      await tester.ensureVisible(find.byKey(const ValueKey('photo_gallery')));
       await tester.runAsync(
         () => tester.tap(find.byKey(const ValueKey('photo_gallery'))),
       );
@@ -259,7 +260,8 @@ void main() {
       );
       await tester.runAsync(() => idle(largeState));
       await tester.pumpAndSettle();
-      await tester.ensureVisible(find.byKey(const ValueKey('photo_save')));
+      // Before a photo the pick is the one action (guide 7.3-3).
+      await tester.ensureVisible(find.byKey(const ValueKey('photo_gallery')));
       expect(tester.takeException(), isNull);
       await tester.pumpWidget(const SizedBox.shrink());
     });

@@ -29,6 +29,12 @@ abstract final class ProductColors {
   /// circle and the number of a day without a record.
   static const dayUnknown = Color(0xFFEFE7DC);
   static const dayEmpty = Color(0xFFD9CEC2);
+
+  /// Pen literals of the photo screens: the example tag (`opawe`), the
+  /// canvas hint (`rov6I`) and the saved notice (`PGjdt`).
+  static const photoTag = Color(0xD9FFFFFF);
+  static const photoHint = Color(0xB33D291F);
+  static const photoSaved = Color(0xE6637348);
 }
 
 /// DESIGN.md spacing scale (space/1..8).
