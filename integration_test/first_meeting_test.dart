@@ -82,6 +82,8 @@ void main() {
     await tester.tap(find.text('30종에서 직접 고르기'));
     await tester.pumpAndSettle();
     await binding.takeScreenshot('meeting-native-catalog');
+    await tester.tap(find.byKey(const ValueKey('breed_group_G2')));
+    await tester.pumpAndSettle();
     final shih = find.byKey(const ValueKey('breed_shih-tzu'));
     await tester.ensureVisible(shih);
     await tester.tap(shih);

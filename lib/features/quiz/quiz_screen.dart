@@ -87,7 +87,11 @@ class _DailyQuizScreenState extends State<DailyQuizScreen> {
             shrinkWrap: true,
             padding: const EdgeInsets.all(24),
             children: [
-              const Text('지난 퀴즈 복습'),
+              Text(
+                '지난 퀴즈 복습',
+                style: Theme.of(context).textTheme.headlineSmall,
+              ),
+              const SizedBox(height: 8),
               if (items.isEmpty) const Text('아직 답한 문제가 없어요.'),
               for (final item in items)
                 ListTile(

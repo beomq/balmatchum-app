@@ -95,7 +95,7 @@ class _SignInScreenState extends State<SignInScreen> {
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Text('로그인', style: textTheme.headlineMedium),
+                  Text('로그인', style: textTheme.headlineSmall),
                   if (widget.notice != null)
                     Semantics(liveRegion: true, child: Text(widget.notice!)),
                   const SizedBox(height: _SignInLayout.sectionGap),

@@ -2,10 +2,11 @@ import 'package:flutter/material.dart';
 
 import '../first_meeting/meeting_theme.dart';
 
-/// Semantic colors from app-v2 DESIGN.md that the meeting palette lacks.
+/// Pen semantic variables (2026-09-28 olive palette) the meeting palette
+/// lacks; DESIGN.md still lists the superseded green values.
 abstract final class ProductColors {
-  static const record = Color(0xFF47815E);
-  static const recordSoft = Color(0xFFE8F3EA);
+  static const record = Color(0xFF637348);
+  static const recordSoft = MeetingColors.green;
   static const error = Color(0xFFA74638);
   static const warningSoft = Color(0xFFFFF1CC);
   static const attention = Color(0xFFA97600);

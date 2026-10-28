@@ -183,14 +183,18 @@ class MeetingHeading extends StatelessWidget {
 }
 
 class MeetingNotice extends StatelessWidget {
-  const MeetingNotice(this.title, this.body, {super.key});
+  const MeetingNotice(this.title, this.body, {this.warning = false, super.key});
   final String title;
   final String body;
+
+  /// ONB-07 Warning: warning-soft fill with a line stroke.
+  final bool warning;
   @override
   Widget build(BuildContext context) => Container(
     padding: const EdgeInsets.all(16),
     decoration: BoxDecoration(
-      color: MeetingColors.pressed,
+      color: warning ? MeetingColors.warningSoft : MeetingColors.pressed,
+      border: warning ? Border.all(color: MeetingColors.line) : null,
       borderRadius: BorderRadius.circular(16),
     ),
     child: Column(
