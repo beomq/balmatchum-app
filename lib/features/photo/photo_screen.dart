@@ -2,6 +2,7 @@ import 'dart:math' as math;
 import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/semantics.dart';
 
 import '../../app/duo_rail.dart';
 import '../first_meeting/meeting_theme.dart';
@@ -32,6 +33,31 @@ class PhotoScreen extends StatefulWidget {
   @override
   State<PhotoScreen> createState() => PhotoScreenState();
 }
+
+/// What VoiceOver and TalkBack offer on the canvas in place of the removed
+/// position, size and angle sliders (guide 7.4-6). Each one is one step.
+abstract final class PhotoCanvasActions {
+  static const left = CustomSemanticsAction(label: '왼쪽으로 옮기기');
+  static const right = CustomSemanticsAction(label: '오른쪽으로 옮기기');
+  static const up = CustomSemanticsAction(label: '위로 옮기기');
+  static const down = CustomSemanticsAction(label: '아래로 옮기기');
+  static const bigger = CustomSemanticsAction(label: '크게');
+  static const smaller = CustomSemanticsAction(label: '작게');
+  static const turnLeft = CustomSemanticsAction(label: '왼쪽으로 돌리기');
+  static const turnRight = CustomSemanticsAction(label: '오른쪽으로 돌리기');
+
+  /// A move is 5% of the photo, a size step 10%, a turn 15°.
+  static const move = .05;
+  static const grow = 1.1;
+  static const turn = math.pi / 12;
+}
+
+/// Where a photo of [photo] pixels is drawn in [area]: whole, centred and
+/// never stretched, so the screen and the saved PNG show the same picture.
+Rect photoRect(Size photo, Rect area) => Alignment.center.inscribe(
+  applyBoxFit(BoxFit.contain, photo, area.size).destination,
+  area,
+);
 
 class PhotoScreenState extends State<PhotoScreen> {
   late final PhotoEditor editor;
@@ -103,223 +129,16 @@ class PhotoScreenState extends State<PhotoScreen> {
     editor.pick(value);
   }
 
-  Widget _button(
-    String label,
-    String key,
-    VoidCallback? action, {
-    bool primary = false,
-  }) {
-    final style = ButtonStyle(
-      minimumSize: const WidgetStatePropertyAll(Size(44, 48)),
-    );
-    return primary
-        ? FilledButton(
-            key: ValueKey(key),
-            onPressed: action,
-            style: style,
-            child: Text(label),
-          )
-        : OutlinedButton(
-            key: ValueKey(key),
-            onPressed: action,
-            style: style,
-            child: Text(label),
-          );
-  }
-
-  Widget _sources() => Wrap(
-    spacing: 12,
-    runSpacing: 12,
-    children: [
-      _button(
-        '사진 선택',
-        'photo_gallery',
-        editor.busy ? null : () => pick(PhotoSource.gallery),
-      ),
-      _button(
-        '카메라 촬영',
-        'photo_camera',
-        editor.busy ? null : () => pick(PhotoSource.camera),
-      ),
-    ],
-  );
-
-  Widget _preview() {
-    final photo = editor.photo!;
-    return AspectRatio(
-      aspectRatio: photo.width / photo.height,
-      child: LayoutBuilder(
-        builder: (context, bounds) {
-          final size = bounds.biggest;
-          return Semantics(
-            label: '${widget.dogName} 사진 편집. 끌어서 이동하고 두 손가락으로 크기와 각도를 조절해요.',
-            child: GestureDetector(
-              key: const ValueKey('photo_canvas'),
-              behavior: HitTestBehavior.opaque,
-              onScaleStart: (details) {
-                if (editor.busy) return;
-                _gestureStart = editor.sticker;
-                _focalStart = details.localFocalPoint;
-              },
-              onScaleUpdate: (details) {
-                final start = _gestureStart;
-                final focalStart = _focalStart;
-                if (editor.busy || start == null || focalStart == null) return;
-                final delta = details.localFocalPoint - focalStart;
-                editor.edit(
-                  start.copyWith(
-                    x: start.x + delta.dx / size.width,
-                    y: start.y + delta.dy / size.height,
-                    scale: start.scale * details.scale,
-                    rotation: start.rotation + details.rotation,
-                  ),
-                );
-              },
-              onScaleEnd: (_) => _clearGesture(),
-              child: ClipRect(
-                child: CustomPaint(
-                  painter: _PhotoPainter(photo, editor.dog, editor.sticker),
-                  size: size,
-                ),
-              ),
-            ),
-          );
-        },
-      ),
+  /// One accessibility step; the new place is read back at once.
+  void _step(DogSticker Function(DogSticker) change) {
+    if (editor.busy || editor.photo == null) return;
+    editor.edit(change(editor.sticker));
+    SemanticsService.sendAnnouncement(
+      View.of(context),
+      _stickerValue(editor.sticker),
+      Directionality.of(context),
     );
   }
-
-  Widget _slider(
-    String label,
-    String key,
-    double value,
-    double min,
-    double max,
-    ValueChanged<double> change,
-  ) => Column(
-    crossAxisAlignment: CrossAxisAlignment.start,
-    children: [
-      Text(label, style: Theme.of(context).textTheme.titleMedium),
-      Slider(
-        key: ValueKey(key),
-        value: value,
-        min: min,
-        max: max,
-        onChanged: editor.busy ? null : change,
-        semanticFormatterCallback: (value) => value.toStringAsFixed(1),
-      ),
-    ],
-  );
-
-  Widget _controls() => Column(
-    crossAxisAlignment: CrossAxisAlignment.stretch,
-    children: [
-      _sources(),
-      const SizedBox(height: 20),
-      if (editor.photo != null) ...[
-        const Text('끌어서 이동 · 두 손가락으로 크기와 각도 조절'),
-        const SizedBox(height: 16),
-        _slider(
-          '가로 위치',
-          'photo_x',
-          editor.sticker.x,
-          0,
-          1,
-          (v) => editor.edit(editor.sticker.copyWith(x: v)),
-        ),
-        _slider(
-          '세로 위치',
-          'photo_y',
-          editor.sticker.y,
-          0,
-          1,
-          (v) => editor.edit(editor.sticker.copyWith(y: v)),
-        ),
-        _slider(
-          '크기',
-          'photo_scale',
-          editor.sticker.scale,
-          .3,
-          3,
-          (v) => editor.edit(editor.sticker.copyWith(scale: v)),
-        ),
-        _slider(
-          '회전',
-          'photo_rotation',
-          math.atan2(
-            math.sin(editor.sticker.rotation),
-            math.cos(editor.sticker.rotation),
-          ),
-          -math.pi,
-          math.pi,
-          (v) => editor.edit(editor.sticker.copyWith(rotation: v)),
-        ),
-        Wrap(
-          spacing: 12,
-          runSpacing: 12,
-          children: [
-            _button(
-              editor.sticker.flipped ? '좌우 반전 해제' : '좌우 반전',
-              'photo_flip',
-              editor.busy
-                  ? null
-                  : () => editor.edit(
-                      editor.sticker.copyWith(flipped: !editor.sticker.flipped),
-                    ),
-            ),
-            _button(
-              '위치 초기화',
-              'photo_reset',
-              editor.busy ? null : () => editor.edit(const DogSticker()),
-            ),
-          ],
-        ),
-        const SizedBox(height: 20),
-      ],
-      _button(
-        '갤러리에 저장',
-        'photo_save',
-        editor.canExport ? editor.save : null,
-        primary: true,
-      ),
-      const SizedBox(height: 12),
-      Builder(
-        builder: (context) => _button(
-          '사진 공유',
-          'photo_share',
-          editor.canExport
-              ? () {
-                  final box = context.findRenderObject()! as RenderBox;
-                  editor.share(box.localToGlobal(Offset.zero) & box.size);
-                }
-              : null,
-        ),
-      ),
-      const SizedBox(height: 16),
-      const Text('원본 사진은 그대로 두고, 합성한 사진만 저장해요. 사진은 서버로 보내지 않아요.'),
-      if (editor.busy)
-        const Padding(
-          padding: EdgeInsets.only(top: 16),
-          child: LinearProgressIndicator(),
-        ),
-      if (editor.message != null)
-        Padding(
-          padding: const EdgeInsets.only(top: 16),
-          child: Semantics(
-            liveRegion: true,
-            child: Text(
-              editor.message!,
-              key: const ValueKey('photo_status'),
-              style: TextStyle(
-                color: editor.isError ? MeetingColors.error : MeetingColors.ink,
-              ),
-            ),
-          ),
-        ),
-      if (editor.dog == null && !editor.busy)
-        _button('강아지 다시 불러오기', 'photo_retry', editor.initialize),
-    ],
-  );
 
   /// PHOTO-01 (Pen `opawe`): a worked example of the result, one pick and
   /// nothing to save or edit yet. A cancelled pick stays here; only a
@@ -446,7 +265,7 @@ class PhotoScreenState extends State<PhotoScreen> {
                     ],
                     if (editor.dog == null && !editor.busy) ...[
                       const SizedBox(height: Space.s3),
-                      _button('강아지 다시 불러오기', 'photo_retry', editor.initialize),
+                      _retryDog(),
                     ],
                   ],
                 ),
@@ -486,6 +305,267 @@ class PhotoScreenState extends State<PhotoScreen> {
     );
   }
 
+  Widget _retryDog() => OutlinedButton(
+    key: const ValueKey('photo_retry'),
+    onPressed: editor.initialize,
+    child: const Text('강아지 다시 불러오기'),
+  );
+
+  /// PHOTO-02 (Pen `rov6I`): actions on top, the canvas in all the height
+  /// left and the tools below. With the Duo rail the rail takes the way
+  /// out and the bar keeps the title and save.
+  Widget _editor({required bool rail}) {
+    final sticker = editor.sticker;
+    final message = editor.message;
+    return LayoutBuilder(
+      builder: (context, bounds) {
+        final gutter = math.max(
+          pageGutter(bounds.maxWidth),
+          (bounds.maxWidth - 600) / 2,
+        );
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            SizedBox(
+              height: 52,
+              child: Padding(
+                padding: EdgeInsetsDirectional.only(
+                  start: rail ? gutter : Space.s2,
+                  end: gutter,
+                ),
+                child: Row(
+                  spacing: Space.s2,
+                  children: [
+                    if (!rail)
+                      IconButton(
+                        key: const ValueKey('photo_back'),
+                        tooltip: '닫기',
+                        onPressed: editor.busy
+                            ? null
+                            : () => leave(widget.onBack),
+                        icon: const PixelIcon('close-x', size: 24),
+                      ),
+                    Expanded(
+                      child: ProductTitle(
+                        '사진 꾸미기',
+                        textAlign: rail ? TextAlign.start : TextAlign.center,
+                      ),
+                    ),
+                    FilledButton(
+                      key: const ValueKey('photo_save'),
+                      style: _pill,
+                      onPressed: editor.canExport ? editor.save : null,
+                      child: const Text('저장'),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            SizedBox(
+              height: 2,
+              child: editor.busy
+                  ? const LinearProgressIndicator(
+                      key: ValueKey('photo_busy'),
+                      minHeight: 2,
+                    )
+                  : null,
+            ),
+            Expanded(child: _canvas()),
+            Padding(
+              padding: EdgeInsets.fromLTRB(gutter, Space.s3, gutter, Space.s3),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                spacing: Space.s3,
+                children: [
+                  if (message != null)
+                    Semantics(
+                      liveRegion: true,
+                      child: Text(
+                        message,
+                        key: const ValueKey('photo_status'),
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                          color: editor.isError
+                              ? MeetingColors.error
+                              : MeetingColors.ink,
+                        ),
+                      ),
+                    ),
+                  if (editor.dog == null && !editor.busy) _retryDog(),
+                  Row(
+                    spacing: 10,
+                    children: [
+                      Expanded(
+                        child: OutlinedButton(
+                          key: const ValueKey('photo_flip'),
+                          onPressed: editor.busy
+                              ? null
+                              : () => editor.edit(
+                                  sticker.copyWith(flipped: !sticker.flipped),
+                                ),
+                          child: Text(sticker.flipped ? '좌우 반전 해제' : '좌우 반전'),
+                        ),
+                      ),
+                      Expanded(
+                        child: OutlinedButton(
+                          key: const ValueKey('photo_reset'),
+                          onPressed: editor.busy
+                              ? null
+                              : () => editor.edit(const DogSticker()),
+                          child: const Text('처음으로'),
+                        ),
+                      ),
+                      // Until the saved view takes it, sharing stays here.
+                      Expanded(
+                        child: Builder(
+                          builder: (context) => OutlinedButton(
+                            key: const ValueKey('photo_share'),
+                            onPressed: editor.canExport
+                                ? () {
+                                    final box =
+                                        context.findRenderObject()!
+                                            as RenderBox;
+                                    editor.share(
+                                      box.localToGlobal(Offset.zero) & box.size,
+                                    );
+                                  }
+                                : null,
+                            child: const Text('공유'),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  /// The photo as it will be saved, with the selection drawn over it. The
+  /// pointer moves the companion by fractions of the drawn photo, not of
+  /// the canvas around it.
+  Widget _canvas() => LayoutBuilder(
+    builder: (context, bounds) {
+      final photo = editor.photo!;
+      final dog = editor.dog;
+      final sticker = editor.sticker;
+      final rect = photoRect(
+        Size(photo.width.toDouble(), photo.height.toDouble()),
+        Offset.zero & bounds.biggest,
+      );
+      final selection = dog == null
+          ? null
+          : sticker
+                .rect(
+                  rect.size,
+                  Size(dog.width.toDouble(), dog.height.toDouble()),
+                )
+                .shift(rect.topLeft);
+      void step(DogSticker Function(DogSticker) change) => _step(change);
+      return Semantics(
+        label: '${widget.dogName} 사진 편집',
+        value: _stickerValue(sticker),
+        hint: '끌어서 옮기고 두 손가락으로 크기와 각도를 바꿔요',
+        customSemanticsActions: dog == null
+            ? null
+            : {
+                PhotoCanvasActions.left: () =>
+                    step((s) => s.copyWith(x: s.x - PhotoCanvasActions.move)),
+                PhotoCanvasActions.right: () =>
+                    step((s) => s.copyWith(x: s.x + PhotoCanvasActions.move)),
+                PhotoCanvasActions.up: () =>
+                    step((s) => s.copyWith(y: s.y - PhotoCanvasActions.move)),
+                PhotoCanvasActions.down: () =>
+                    step((s) => s.copyWith(y: s.y + PhotoCanvasActions.move)),
+                PhotoCanvasActions.bigger: () => step(
+                  (s) => s.copyWith(scale: s.scale * PhotoCanvasActions.grow),
+                ),
+                PhotoCanvasActions.smaller: () => step(
+                  (s) => s.copyWith(scale: s.scale / PhotoCanvasActions.grow),
+                ),
+                PhotoCanvasActions.turnLeft: () => step(
+                  (s) => s.copyWith(
+                    rotation: s.rotation - PhotoCanvasActions.turn,
+                  ),
+                ),
+                PhotoCanvasActions.turnRight: () => step(
+                  (s) => s.copyWith(
+                    rotation: s.rotation + PhotoCanvasActions.turn,
+                  ),
+                ),
+              },
+        child: GestureDetector(
+          key: const ValueKey('photo_canvas'),
+          behavior: HitTestBehavior.opaque,
+          onScaleStart: (details) {
+            if (editor.busy) return;
+            _gestureStart = editor.sticker;
+            _focalStart = details.localFocalPoint;
+          },
+          onScaleUpdate: (details) {
+            final start = _gestureStart;
+            final focalStart = _focalStart;
+            if (editor.busy || start == null || focalStart == null) return;
+            final delta = details.localFocalPoint - focalStart;
+            editor.edit(
+              start.copyWith(
+                x: start.x + delta.dx / rect.width,
+                y: start.y + delta.dy / rect.height,
+                scale: start.scale * details.scale,
+                rotation: start.rotation + details.rotation,
+              ),
+            );
+          },
+          onScaleEnd: (_) => _clearGesture(),
+          child: ColoredBox(
+            color: MeetingColors.pressed,
+            child: Stack(
+              children: [
+                Positioned.fromRect(
+                  rect: rect,
+                  child: ClipRect(
+                    child: CustomPaint(
+                      key: const ValueKey('photo_preview'),
+                      painter: _PhotoPainter(photo, dog, sticker),
+                      size: rect.size,
+                    ),
+                  ),
+                ),
+                if (selection != null)
+                  Positioned.fill(
+                    child: IgnorePointer(
+                      child: PhotoSelectionOverlay(
+                        rect: selection,
+                        rotation: sticker.rotation,
+                      ),
+                    ),
+                  ),
+                Positioned(
+                  top: Space.s4,
+                  left: Space.s4,
+                  right: Space.s4,
+                  child: ExcludeSemantics(
+                    child: Center(
+                      child: _Pill(
+                        key: const ValueKey('photo_hint'),
+                        color: ProductColors.photoHint,
+                        label: '끌어서 옮기고, 두 손가락으로 크기·회전',
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+    },
+  );
+
   @override
   Widget build(BuildContext context) => AnimatedBuilder(
     animation: editor,
@@ -510,91 +590,7 @@ class PhotoScreenState extends State<PhotoScreen> {
               SafeArea(
                 child: editor.photo == null
                     ? _start(rail: mode != null)
-                    : LayoutBuilder(
-                        builder: (context, bounds) {
-                          final padding = bounds.maxWidth < 360
-                              ? 12.0
-                              : bounds.maxWidth < 600
-                              ? 16.0
-                              : bounds.maxWidth < 840
-                              ? 24.0
-                              : 32.0;
-                          final wide = bounds.maxWidth >= 840;
-                          return SingleChildScrollView(
-                            padding: EdgeInsets.fromLTRB(
-                              padding,
-                              16,
-                              padding,
-                              24,
-                            ),
-                            child: Center(
-                              child: ConstrainedBox(
-                                constraints: BoxConstraints(
-                                  maxWidth: wide ? 1100 : 600,
-                                ),
-                                child: Column(
-                                  crossAxisAlignment:
-                                      CrossAxisAlignment.stretch,
-                                  children: [
-                                    if (mode == null) ...[
-                                      Row(
-                                        children: [
-                                          IconButton(
-                                            key: const ValueKey('photo_back'),
-                                            tooltip: '뒤로',
-                                            onPressed: editor.busy
-                                                ? null
-                                                : () => leave(widget.onBack),
-                                            icon: Image.asset(
-                                              'assets/first_meeting/icons/back.png',
-                                              width: 32,
-                                              height: 32,
-                                              filterQuality: FilterQuality.none,
-                                            ),
-                                          ),
-                                          const Spacer(),
-                                          TextButton(
-                                            key: const ValueKey('photo_home'),
-                                            onPressed: editor.busy
-                                                ? null
-                                                : () => leave(widget.onHome),
-                                            child: const Text('홈'),
-                                          ),
-                                        ],
-                                      ),
-                                      const SizedBox(height: 18),
-                                    ],
-                                    Text(
-                                      '함께 사진 찍기',
-                                      style: Theme.of(context)
-                                          .textTheme
-                                          .headlineSmall,
-                                    ),
-                                    const SizedBox(height: 8),
-                                    Text('${widget.dogName}를 사진에 담아 보세요.'),
-                                    const SizedBox(height: 20),
-                                    if (wide)
-                                      Row(
-                                        crossAxisAlignment:
-                                            CrossAxisAlignment.start,
-                                        children: [
-                                          Expanded(flex: 6, child: _preview()),
-                                          const SizedBox(width: 24),
-                                          Expanded(flex: 4, child: _controls()),
-                                        ],
-                                      )
-                                    else ...[
-                                      _preview(),
-                                      const SizedBox(height: 20),
-                                      _controls(),
-                                    ],
-                                  ],
-                                ),
-                              ),
-                            ),
-                          );
-                        },
-                      ),
+                    : _editor(rail: mode != null),
               ),
               if (mode != null) DuoRail(spec: spec, mode: mode),
             ],
@@ -603,6 +599,115 @@ class PhotoScreenState extends State<PhotoScreen> {
       );
     },
   );
+}
+
+/// Pen `Editor Save`: a 36 pt pill at the bar's end, still a 48 pt target.
+final _pill = FilledButton.styleFrom(
+  minimumSize: const Size(0, 36),
+  padding: const EdgeInsets.symmetric(horizontal: Space.s4),
+  shape: const StadiumBorder(),
+  textStyle: meetingType(14, 18, FontWeight.w800),
+  tapTargetSize: MaterialTapTargetSize.padded,
+);
+
+/// Where the companion is, for assistive technology.
+String _stickerValue(DogSticker s) {
+  final turn = (s.rotation * 180 / math.pi).round() % 360;
+  return [
+    '가로 ${(s.x * 100).round()}%',
+    '세로 ${(s.y * 100).round()}%',
+    '크기 ${(s.scale * 100).round()}%',
+    '회전 $turn도',
+    if (s.flipped) '좌우 반전',
+  ].join(', ');
+}
+
+/// Pen `Editor Hint`: one short line on a dark pill over the canvas.
+class _Pill extends StatelessWidget {
+  const _Pill({required this.color, required this.label, super.key});
+  final Color color;
+  final String label;
+
+  @override
+  Widget build(BuildContext context) => Container(
+    padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 5),
+    decoration: BoxDecoration(
+      color: color,
+      borderRadius: const BorderRadius.all(Radius.circular(999)),
+    ),
+    child: Text(
+      label,
+      textAlign: TextAlign.center,
+      style: meetingType(12.5, 16, FontWeight.w700, MeetingColors.raised),
+    ),
+  );
+}
+
+/// The selected companion's border and corner marks (Pen `Editor
+/// Selection`), turned with it. Drawn over the canvas only: [paintPhoto]
+/// and the saved PNG never include it. The marks show the selection; size
+/// and angle change with two fingers, not by dragging them.
+class PhotoSelectionOverlay extends StatelessWidget {
+  const PhotoSelectionOverlay({
+    required this.rect,
+    required this.rotation,
+    super.key,
+  });
+
+  /// The companion's box in the canvas, before [rotation] about its centre.
+  final Rect rect;
+  final double rotation;
+
+  @override
+  Widget build(BuildContext context) =>
+      CustomPaint(painter: _SelectionPainter(rect, rotation));
+}
+
+class _SelectionPainter extends CustomPainter {
+  _SelectionPainter(this.rect, this.rotation);
+  final Rect rect;
+  final double rotation;
+
+  /// Pen's 14 pt corner circles.
+  static const _mark = 7.0;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    canvas.save();
+    canvas.translate(rect.center.dx, rect.center.dy);
+    canvas.rotate(rotation);
+    final box = Rect.fromCenter(
+      center: Offset.zero,
+      width: rect.width,
+      height: rect.height,
+    );
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(box, const Radius.circular(6)),
+      Paint()
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 2
+        ..color = MeetingColors.raised,
+    );
+    final fill = Paint()..color = MeetingColors.raised;
+    final ring = Paint()
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 2
+      ..color = MeetingColors.primaryStrong;
+    for (final corner in [
+      box.topLeft,
+      box.topRight,
+      box.bottomLeft,
+      box.bottomRight,
+    ]) {
+      canvas.drawCircle(corner, _mark, fill);
+      canvas.drawCircle(corner, _mark, ring);
+    }
+    canvas.restore();
+  }
+
+  @override
+  bool shouldRepaint(_SelectionPainter oldDelegate) =>
+      rect != oldDelegate.rect || rotation != oldDelegate.rotation;
 }
 
 /// Pen `Photo Example`: the app's sunny background with the user's own
