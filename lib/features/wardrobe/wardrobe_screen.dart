@@ -226,8 +226,13 @@ class _WardrobeScreenState extends State<WardrobeScreen> {
         fit: StackFit.expand,
         children: [
           SafeArea(
+            // The pinned bar reaches the bottom edge and pads the inset
+            // itself; the scrolling content pads it at its end.
+            bottom: false,
             child: LayoutBuilder(
               builder: (context, bounds) {
+                final inset = MediaQuery.paddingOf(context).bottom;
+                final height = bounds.maxHeight - inset;
                 final w = bounds.maxWidth;
                 final gutter = pageGutter(w);
                 final content = (w - gutter * 2).clamp(0.0, 1200.0);
@@ -235,7 +240,8 @@ class _WardrobeScreenState extends State<WardrobeScreen> {
                 // RESPONSIVE.md 3: when a fixed action would leave no product row,
                 // release it into the single scroll.
                 final pinned =
-                    bounds.maxHeight >= 600 &&
+                    !split &&
+                    height >= 600 &&
                     MediaQuery.textScalerOf(context).scale(1) < 1.5;
                 final previewWidth = w >= 840
                     ? (content * .38).clamp(280.0, 360.0)
@@ -296,7 +302,7 @@ class _WardrobeScreenState extends State<WardrobeScreen> {
                   equipped:
                       selected != null && selected!.id == s.equippedThemeId,
                   balance: s.balance,
-                  compact: !split && bounds.maxHeight < 600,
+                  compact: !split && height < 600,
                 );
                 final list = _Catalog(
                   snapshot: s,
@@ -326,6 +332,7 @@ class _WardrobeScreenState extends State<WardrobeScreen> {
                   onReload: load,
                   onEarnPoints: widget.onHome,
                 );
+                final panel = ProductPanel(child: action);
                 final body = split
                     ? Row(
                         crossAxisAlignment: CrossAxisAlignment.start,
@@ -333,12 +340,15 @@ class _WardrobeScreenState extends State<WardrobeScreen> {
                           SizedBox(
                             width: previewWidth,
                             child: SingleChildScrollView(
+                              padding: EdgeInsets.only(
+                                bottom: Space.s3 + inset,
+                              ),
                               child: Column(
                                 crossAxisAlignment: CrossAxisAlignment.stretch,
                                 children: [
                                   preview,
                                   const SizedBox(height: Space.s3),
-                                  action,
+                                  panel,
                                 ],
                               ),
                             ),
@@ -346,20 +356,40 @@ class _WardrobeScreenState extends State<WardrobeScreen> {
                           const SizedBox(width: Space.s6),
                           Expanded(
                             child: SingleChildScrollView(
+                              padding: EdgeInsets.only(
+                                bottom: Space.s3 + inset,
+                              ),
                               child: Column(
                                 crossAxisAlignment: CrossAxisAlignment.stretch,
                                 children: [
                                   list,
                                   const SizedBox(height: Space.s6),
                                   outfitShelf,
-                                  const SizedBox(height: Space.s3),
                                 ],
                               ),
                             ),
                           ),
                         ],
                       )
-                    : null;
+                    : SingleChildScrollView(
+                        padding: EdgeInsets.only(
+                          bottom: Space.s3 + (pinned ? 0 : inset),
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            preview,
+                            const SizedBox(height: Space.s3),
+                            list,
+                            const SizedBox(height: Space.s6),
+                            outfitShelf,
+                            if (!pinned) ...[
+                              const SizedBox(height: Space.s3),
+                              panel,
+                            ],
+                          ],
+                        ),
+                      );
                 return Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
@@ -376,39 +406,31 @@ class _WardrobeScreenState extends State<WardrobeScreen> {
                               gutter,
                               0,
                             ),
-                            child:
-                                body ??
-                                SingleChildScrollView(
-                                  child: Column(
-                                    crossAxisAlignment:
-                                        CrossAxisAlignment.stretch,
-                                    children: [
-                                      preview,
-                                      const SizedBox(height: Space.s3),
-                                      list,
-                                      const SizedBox(height: Space.s6),
-                                      outfitShelf,
-                                      const SizedBox(height: Space.s3),
-                                      if (!pinned) ...[
-                                        action,
-                                        const SizedBox(height: Space.s3),
-                                      ],
-                                    ],
-                                  ),
-                                ),
+                            child: body,
                           ),
                         ),
                       ),
                     ),
-                    if (!split && pinned)
-                      Padding(
-                        padding: EdgeInsets.fromLTRB(
-                          gutter,
-                          Space.s2,
-                          gutter,
-                          Space.s2,
+                    if (pinned)
+                      // Pen 'Wardrobe Action Bar': raised, a line on top,
+                      // down to the bottom edge.
+                      DecoratedBox(
+                        key: const ValueKey('wardrobe_action_bar'),
+                        decoration: const BoxDecoration(
+                          color: ProductColors.raised,
+                          border: Border(
+                            top: BorderSide(color: MeetingColors.line),
+                          ),
                         ),
-                        child: action,
+                        child: Padding(
+                          padding: EdgeInsets.fromLTRB(
+                            gutter,
+                            Space.s3,
+                            gutter,
+                            Space.s3 + inset,
+                          ),
+                          child: action,
+                        ),
                       ),
                   ],
                 );
@@ -926,6 +948,11 @@ class _SpendDialog extends StatelessWidget {
   }
 }
 
+/// The bottom action (Pen 'V2 · WARD · 하단 버튼 상태', XEGNQ): one button in
+/// one place whose label and surface follow the selected theme, beside its
+/// name and a short price or ownership line. The states the board leaves out
+/// keep their guidance: no selection, an unconfirmed price and a request in
+/// flight.
 class _ActionBar extends StatelessWidget {
   const _ActionBar({
     required this.theme,
@@ -943,6 +970,8 @@ class _ActionBar extends StatelessWidget {
   final int? balance;
   final bool busy;
   final String? error;
+
+  /// The server refused the last purchase for lack of points.
   final bool insufficient;
   final ValueChanged<WardrobeTheme> onPurchase;
   final ValueChanged<WardrobeTheme> onEquip;
@@ -951,80 +980,104 @@ class _ActionBar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final t = theme;
-    final text = Theme.of(context).textTheme;
     if (t == null) {
-      return const ProductPanel(child: Text('배경을 골라 미리 볼 수 있어요.'));
+      return Text(
+        '배경을 골라 미리 볼 수 있어요.',
+        key: const ValueKey('wardrobe_action_state_unselected'),
+        style: Theme.of(context).textTheme.bodyMedium,
+      );
     }
-    final isEquipped = t.id == equippedId;
-    final short =
-        !t.owned && t.price != null && balance != null && t.price! > balance!;
-    final (String caption, String label, VoidCallback? onPressed) = isEquipped
-        ? ('적용 완료 · 홈에 반영돼요', '착용 중', null)
+    final price = t.price;
+    final points = balance;
+    final held = points == null ? '보유 확인 전' : '보유 ${formatCount(points)}P';
+    final (
+      String state,
+      String line,
+      String label,
+      VoidCallback? onPressed,
+    ) = t.id == equippedId
+        ? ('equipped', '지금 착용 중', '착용 중', null)
         : t.owned
-        ? ('구매 완료 · 아직 적용 전', '착용하기', () => onEquip(t))
-        : t.price == null
-        ? ('가격이 아직 확정되지 않았어요', '구매하기', null)
-        : short || insufficient
-        ? ('포인트가 부족해요', '구매하기', null)
-        : ('미리보기만 선택됨', '구매하기', () => onPurchase(t));
+        ? ('equip', '보유 중', '착용하기', () => onEquip(t))
+        : price == null
+        ? ('unpriced', '가격이 아직 확정되지 않았어요', '구매하기', null)
+        : insufficient || (points != null && price > points)
+        ? ('short', '${formatCount(price)}P 필요 · $held', '포인트 부족', null)
+        : (
+            'buy',
+            '${formatCount(price)}P · $held',
+            '${formatCount(price)}P로 사기',
+            () => onPurchase(t),
+          );
     final button = FilledButton(
       key: const ValueKey('wardrobe_action'),
       style: FilledButton.styleFrom(
-        minimumSize: const Size(132, 48),
-        backgroundColor: isEquipped ? ProductColors.record : null,
-        disabledBackgroundColor: isEquipped ? ProductColors.record : null,
-        disabledForegroundColor: isEquipped ? ProductColors.raised : null,
+        minimumSize: const Size(150, 48),
+        // V2: a state that cannot act is a light surface with brown text.
+        disabledBackgroundColor: MeetingColors.soft,
+        disabledForegroundColor: MeetingColors.primaryStrong,
       ),
+      // While a request runs, taps cannot start another.
       onPressed: busy ? null : onPressed,
       child: Text(busy ? '처리 중…' : label),
     );
     final info = Column(
+      // The state rides on the text, so a change keeps the button itself
+      // (and an assistive focus on it) in place.
+      key: ValueKey('wardrobe_action_state_${busy ? 'busy' : state}'),
       crossAxisAlignment: CrossAxisAlignment.start,
+      spacing: 2,
       children: [
-        Text(t.name, style: text.titleMedium),
-        Text(caption, key: const ValueKey('wardrobe_action_caption')),
+        Text(
+          '${t.name} 배경',
+          key: const ValueKey('wardrobe_action_title'),
+          style: meetingType(15, 20, FontWeight.w800),
+        ),
+        Text(
+          line,
+          key: const ValueKey('wardrobe_action_caption'),
+          style: meetingType(12.5, 16, FontWeight.w600, MeetingColors.muted),
+        ),
       ],
     );
-    return ProductPanel(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          LayoutBuilder(
-            builder: (context, bounds) =>
-                bounds.maxWidth >= 300 &&
-                    MediaQuery.textScalerOf(context).scale(1) < 1.5
-                ? Row(
-                    children: [
-                      Expanded(child: info),
-                      const SizedBox(width: Space.s3),
-                      button,
-                    ],
-                  )
-                : Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      info,
-                      const SizedBox(height: Space.s2),
-                      button,
-                    ],
-                  ),
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        LayoutBuilder(
+          builder: (context, bounds) =>
+              bounds.maxWidth >= 300 &&
+                  MediaQuery.textScalerOf(context).scale(1) < 1.5
+              ? Row(
+                  children: [
+                    Expanded(child: info),
+                    const SizedBox(width: Space.s3),
+                    button,
+                  ],
+                )
+              : Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    info,
+                    const SizedBox(height: Space.s2),
+                    button,
+                  ],
+                ),
+        ),
+        if (error != null) ...[
+          const SizedBox(height: Space.s2),
+          Text(
+            error!,
+            key: const ValueKey('wardrobe_error'),
+            style: const TextStyle(color: ProductColors.error),
           ),
-          if (error != null) ...[
-            const SizedBox(height: Space.s2),
-            Text(
-              error!,
-              key: const ValueKey('wardrobe_error'),
-              style: const TextStyle(color: ProductColors.error),
-            ),
-          ],
-          if ((short || insufficient) && !t.owned)
-            TextButton(
-              key: const ValueKey('wardrobe_earn_points'),
-              onPressed: onEarnPoints,
-              child: const Text('홈에서 걸음 포인트 받기'),
-            ),
         ],
-      ),
+        if (state == 'short')
+          TextButton(
+            key: const ValueKey('wardrobe_earn_points'),
+            onPressed: onEarnPoints,
+            child: const Text('홈에서 걸음 포인트 받기'),
+          ),
+      ],
     );
   }
 }
