@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 
 import '../first_meeting/meeting_theme.dart';
+import '../records/product_page.dart' show PixelIcon;
 import 'ads_controller.dart';
 
 /// Caller owns the account-scoped controller and disposes it after this returns.
@@ -124,7 +125,7 @@ class _AdsSheetState extends State<AdsSheet> with WidgetsBindingObserver {
                           borderRadius: BorderRadius.circular(12),
                         ),
                       ),
-                      icon: const Icon(Icons.close, color: MeetingColors.ink),
+                      icon: const PixelIcon('close-x', size: 20),
                     ),
                   ],
                 ),

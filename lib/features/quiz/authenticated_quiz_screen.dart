@@ -6,11 +6,16 @@ import 'package:flutter/material.dart';
 import '../ads/ads_controller.dart';
 import '../ads/ads_session.dart';
 import '../ads/ads_sheet.dart';
+import '../first_meeting/meeting_theme.dart';
 import '../records/product_page.dart';
+import '../records/status_widgets.dart';
 import '../wardrobe/dog_sprite.dart';
 import 'quiz_controller.dart';
+import 'quiz_review_sheet.dart';
+import 'quiz_widgets.dart';
 
-/// The legacy development quiz screen remains separate from this API.
+/// Today's quiz (`pJMis`, `aZln1`, `w2cyk`). The legacy development quiz
+/// screen remains separate from this API.
 class AuthenticatedQuizScreen extends StatefulWidget {
   const AuthenticatedQuizScreen({
     super.key,
@@ -35,12 +40,36 @@ class AuthenticatedQuizScreen extends StatefulWidget {
 class _AuthenticatedQuizScreenState extends State<AuthenticatedQuizScreen> {
   bool adOpen = false;
   String? adError;
+
+  /// Questions whose answer this screen sent. Only their result reads as
+  /// points received now; any other answered question shows its record.
+  final sent = <int>{};
   QuizController get controller => widget.controller;
   @override
   void initState() {
     super.initState();
     unawaited(controller.load());
   }
+
+  /// A tap is the answer (guide 6.1). The controller takes the first tap
+  /// only and keeps that request until the server settles it.
+  Future<void> answer(QuizQuestion question, int index) async {
+    if (adOpen || !controller.canAct) return;
+    sent.add(question.assignmentId);
+    await controller.answer(question, index);
+  }
+
+  /// Settles the pending request with its own id and payload.
+  Future<void> retry() async {
+    final today = controller.today;
+    if (controller.pendingAnswer != null && today != null) {
+      final question = today.extra ?? today.free;
+      if (question != null) sent.add(question.assignmentId);
+    }
+    await controller.retry();
+  }
+
+  Future<void> openReview() => showQuizReviewSheet(context, controller);
 
   Future<void> watchAd() async {
     if (adOpen || !controller.beginAd()) return;
@@ -51,10 +80,12 @@ class _AuthenticatedQuizScreenState extends State<AuthenticatedQuizScreen> {
       adError = null;
     });
     AdsController? ads;
+    String? captured;
     void capture() {
       final intent = ads?.intent;
       if (mounted && ads?.status == AdsStatus.verified && intent != null) {
         controller.captureVerified(intent, today.date, revision);
+        if (controller.verifiedIntent == intent.id) captured = intent.id;
       }
     }
 
@@ -74,8 +105,10 @@ class _AuthenticatedQuizScreenState extends State<AuthenticatedQuizScreen> {
         purpose: 'extraQuiz',
         targetDate: today.date,
         targetRevision: revision,
+        // The ad button was the ask: play at once, close once verified.
+        autoContinue: true,
       );
-      // The sheet cancels on close. Capture only its earlier verified event.
+      // The sheet cancels on close. Only its earlier verified event counts.
     } catch (_) {
       if (mounted && controller.isActive) {
         setState(() => adError = '광고 확인을 완료하지 못했어요. 다시 시도해 주세요.');
@@ -86,6 +119,16 @@ class _AuthenticatedQuizScreenState extends State<AuthenticatedQuizScreen> {
       controller.endAd();
       if (mounted) setState(() => adOpen = false);
     }
+    // Owner decision ⑤ (2026-10-28): a server-verified view opens the extra
+    // question at once, with the request the explicit button sent before. A
+    // lost answer leaves that request pending for its same-request check; it
+    // is never sent again from here. An early close never gets here verified.
+    if (captured != null &&
+        mounted &&
+        controller.verifiedIntent == captured &&
+        controller.canAct) {
+      await controller.unlockExtra();
+    }
   }
 
   @override
@@ -93,385 +136,446 @@ class _AuthenticatedQuizScreenState extends State<AuthenticatedQuizScreen> {
     listenable: controller,
     builder: (context, _) {
       final today = controller.today;
-      final enabled = controller.canAct && !adOpen;
+      // The extra question takes over once issued; the free one is in review.
+      final question = today?.status == 'ready'
+          ? today!.extra ?? today.free
+          : null;
+      final empty = today != null && question == null;
+      final answered = question?.answerIndex != null;
+      final notice = controller.notice;
+      final open = controller.canAct && !adOpen;
       return ProductPage(
         onBack: widget.onBack,
         onHome: widget.onHome,
-        children: [
-          Text('오늘의 퀴즈', style: Theme.of(context).textTheme.headlineSmall),
-          const SizedBox(height: Space.s2),
-          const Text('무료 1문제 · 광고 또는 유료 혜택으로 추가 1문제\n첫 제출은 정오답과 관계없이 2P예요.'),
-          TextButton(
-            key: const ValueKey('quiz_history'),
-            onPressed: adOpen
-                ? null
-                : () => Navigator.of(context).push(
-                    MaterialPageRoute<void>(
-                      builder: (_) => QuizHistoryScreen(
-                        controller: controller,
-                        onHome: widget.onHome,
-                      ),
-                    ),
-                  ),
-            child: const Text('지난 퀴즈 복습'),
+        // In the top bar as Pen `pJMis` (owner feedback 2026-10-28).
+        title: '오늘의 퀴즈',
+        centerFooter: empty,
+        footer: switch ((today, question)) {
+          (null, _) => null,
+          (final QuizToday today, null) => (gutter) => _Empty(
+            status: today.status,
+            gutter: gutter,
+            dogAsset: widget.dogAsset,
+            onReview: adOpen ? null : openReview,
           ),
-          if (controller.notice != null)
-            Semantics(
-              liveRegion: true,
-              child: Text(
-                controller.notice!,
-                key: const ValueKey('quiz_notice'),
+          (final QuizToday today, final QuizQuestion q) when answered =>
+            (gutter) => _ResultPanel(
+              result: QuizResult(
+                key: ValueKey('quiz_${q.assignmentId}_result'),
+                question: q,
+                received: sent.contains(q.assignmentId),
+                dogAsset: widget.dogAsset,
               ),
+              onHome: widget.onHome,
+              next: next(today, open),
             ),
-          if (controller.busy) const Text('서버에서 확인하는 중…'),
-          if (controller.hasPending)
-            FilledButton(
-              key: const ValueKey('quiz_retry_request'),
-              onPressed: controller.busy ? null : controller.retry,
-              child: const Text('같은 요청으로 결과 확인'),
+          // Nothing to promise while a request waits for the server.
+          _ when notice != null => null,
+          _ => (gutter) => _Hint(gutter: gutter, dogAsset: widget.dogAsset),
+        },
+        children: [
+          _StatusRow(
+            chip: today == null ? null : chip(today, question),
+            onReview: adOpen ? null : openReview,
+          ),
+          const SizedBox(height: Space.s3),
+          // The first load and its failure; never shown as "preparing".
+          if (today == null)
+            ProductLoadState(
+              error: notice,
+              onRetry: controller.load,
+              retryKey: const ValueKey('quiz_reload'),
             )
-          // Loads run on their own; a retry shows only after one failed (3.1).
-          else if (!controller.busy &&
-              (controller.needsRefresh || today == null))
-            TextButton(
-              key: const ValueKey('quiz_reload'),
-              onPressed: adOpen ? null : controller.load,
-              child: const Text('다시 시도'),
+          else if (question != null) ...[
+            QuizQuestionCard(
+              key: ValueKey('quiz_${question.assignmentId}_card'),
+              question: question,
+              kicker: today.extra == null ? '오늘의 문제' : '한 문제 더',
             ),
-          if (today == null && controller.notice == null)
-            const Text('오늘의 퀴즈를 불러오고 있어요.'),
-          if (today != null) ...[
-            // The paid benefit is observed on its own (3.1): nothing to say
-            // before an observation, and only a failure offers a retry.
-            if (controller.premiumError != null ||
-                today.premiumStatus != 'notChecked')
-              Text(
-                controller.premiumError == 'checking'
-                    ? '유료 혜택을 확인하고 있어요.'
-                    : controller.premiumError != null
-                    ? '유료 혜택을 확인하지 못했어요. 다시 확인해 주세요.'
-                    : switch (today.premiumStatus) {
-                        'active' => '유효한 구매를 확인했어요.',
-                        'inactive' => '현재 유효한 구매가 없어요.',
-                        _ => '유료 혜택을 아직 확인하지 않았어요.',
-                      },
-                key: const ValueKey('quiz_premium_status'),
-              ),
-            if (controller.premiumError != null &&
-                controller.premiumError != 'checking')
-              OutlinedButton(
-                key: const ValueKey('quiz_check_premium'),
-                onPressed: enabled ? controller.checkPremium : null,
-                child: const Text('다시 시도'),
-              ),
-            if (today.status != 'ready') ...[
-              if (widget.dogAsset case final dog?
-                  when today.status == 'contentUnavailable' ||
-                      today.status == 'exhausted')
-                Center(
-                  child: SizedBox.square(
-                    key: const ValueKey('quiz_empty_dog'),
-                    dimension: DogSpriteSize.emptyState,
-                    child: DogSprite(asset: dog),
-                  ),
+            const SizedBox(height: 14),
+            for (final (index, label) in question.choices.indexed) ...[
+              if (index > 0) const SizedBox(height: 10),
+              QuizOption(
+                key: ValueKey('quiz_${question.assignmentId}_choice_$index'),
+                label: label,
+                state: quizOptionState(
+                  question,
+                  index,
+                  pending: controller.pendingAnswer,
+                  sending: controller.busy,
                 ),
-              Text(
-                quizError(today.status),
-                key: ValueKey('quiz_status_${today.status}'),
+                selected:
+                    index == (question.answerIndex ?? controller.pendingAnswer),
+                tag: quizOptionTag(question, index),
+                onTap: open && !answered ? () => answer(question, index) : null,
               ),
             ],
-            if (today.free != null)
-              _QuestionCard(
-                key: ValueKey(today.free!.assignmentId),
-                question: today.free!,
-                enabled: enabled,
-                onSubmit: controller.answer,
-                dogAsset: widget.dogAsset,
+            if (!answered && notice == null) ...[
+              const SizedBox(height: Space.s3),
+              Text(
+                '첫 제출은 정오답과 관계없이 2P예요.',
+                key: const ValueKey('quiz_rules'),
+                style: Theme.of(context).textTheme.bodySmall,
               ),
+            ],
+          ],
+          if (today != null && notice != null) ...[
             const SizedBox(height: Space.s4),
-            Text('추가 퀴즈', style: Theme.of(context).textTheme.titleLarge),
-            const SizedBox(height: Space.s2),
-            if (today.extra != null)
-              _QuestionCard(
-                key: ValueKey(today.extra!.assignmentId),
-                question: today.extra!,
-                enabled: enabled,
-                onSubmit: controller.answer,
-                dogAsset: widget.dogAsset,
-              )
-            else ...[
-              Text(switch (today.extraStatus) {
-                'premiumAvailable' =>
-                  '유료 혜택으로 광고 없이 추가 문제를 열 수 있어요. 직접 열기를 눌러 주세요.',
-                'adRequired' =>
-                  '광고 확인 후 직접 열기를 눌러 주세요. 시청만으로 문제가 열리거나 포인트가 지급되지 않아요.',
-                'freeRequired' =>
-                  today.free == null
-                      ? '새 문제가 준비되면 무료 문제부터 시작할 수 있어요.'
-                      : '무료 문제를 먼저 제출해 주세요.',
-                _ => quizError(today.extraStatus),
-              }, key: ValueKey('quiz_extra_${today.extraStatus}')),
-              if (adError != null) Text(adError!),
-              if (today.extraStatus == 'premiumAvailable')
-                FilledButton(
-                  key: const ValueKey('quiz_premium_unlock'),
-                  onPressed: enabled && controller.premiumReady
-                      ? controller.unlockExtraWithPremium
-                      : null,
-                  child: const Text('유료 혜택으로 추가 문제 열기'),
-                ),
-              if (today.extraStatus == 'adRequired') ...[
-                if (controller.verifiedIntent == null)
-                  OutlinedButton(
-                    key: const ValueKey('quiz_watch_ad'),
-                    onPressed: enabled ? watchAd : null,
-                    child: const Text('광고 시청 확인'),
-                  )
-                else
-                  FilledButton(
-                    key: const ValueKey('quiz_unlock'),
-                    onPressed: enabled ? controller.unlockExtra : null,
-                    child: const Text('확인된 광고로 추가 문제 열기'),
-                  ),
-              ],
-            ],
+            _Attention(
+              notice: notice,
+              // A pending request is settled with its own id; anything
+              // else needs today's state again (guide 6.1).
+              retryKey: ValueKey(
+                controller.hasPending ? 'quiz_retry_request' : 'quiz_reload',
+              ),
+              onRetry: controller.busy
+                  ? null
+                  : controller.hasPending
+                  ? retry
+                  : controller.load,
+              // The result panel's home button stays the one primary.
+              primary: !answered,
+            ),
           ],
         ],
       );
     },
   );
-}
 
-class _QuestionCard extends StatefulWidget {
-  const _QuestionCard({
-    super.key,
-    required this.question,
-    this.enabled = false,
-    this.onSubmit,
-    this.dogAsset,
-  });
-  final QuizQuestion question;
-  final bool enabled;
-  final Future<void> Function(QuizQuestion, int)? onSubmit;
-
-  /// Shown beside today's result; history reviews pass none.
-  final String? dogAsset;
-  @override
-  State<_QuestionCard> createState() => _QuestionCardState();
-}
-
-class _QuestionCardState extends State<_QuestionCard> {
-  int? selected;
-  @override
-  Widget build(BuildContext context) {
-    final q = widget.question;
-    final answered = q.answerIndex != null;
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        if (fixtureLabelsVisible && q.fixtureLabel != null) ...[
-          FixtureBadge(q.fixtureLabel!),
-          const Text('테스트 문항이며 운영 포인트에 포함되지 않아요.'),
-        ],
-        const SizedBox(height: Space.s2),
-        Text(q.question, style: Theme.of(context).textTheme.titleLarge),
-        const SizedBox(height: Space.s2),
-        Text(
-          '적용 조건 · ${q.conditions}',
-          key: ValueKey('quiz_conditions_${q.assignmentId}'),
-        ),
-        const SizedBox(height: Space.s3),
-        for (final (index, label) in q.choices.indexed)
-          Padding(
-            padding: const EdgeInsets.only(bottom: Space.s2),
-            child: Semantics(
-              selected: (answered ? q.answerIndex : selected) == index,
-              child: OutlinedButton(
-                key: ValueKey('quiz_${q.assignmentId}_choice_$index'),
-                style: answered
-                    ? OutlinedButton.styleFrom(
-                        disabledForegroundColor: Theme.of(context)
-                            .colorScheme
-                            .onSurface,
-                      )
-                    : null,
-                onPressed: answered || !widget.enabled
-                    ? null
-                    : () => setState(() => selected = index),
-                child: Align(
-                  alignment: Alignment.centerLeft,
-                  child: Text(
-                    '$label${answered
-                        ? (index == q.correctIndex ? ' · 정답' : '') + (index == q.answerIndex ? ' · 내 답' : '')
-                        : selected == index
-                        ? ' · 선택됨'
-                        : ''}',
-                  ),
-                ),
-              ),
-            ),
-          ),
-        if (!answered && widget.onSubmit != null)
-          FilledButton(
-            key: ValueKey('quiz_${q.assignmentId}_submit'),
-            onPressed: widget.enabled && selected != null
-                ? () => widget.onSubmit!(q, selected!)
-                : null,
-            child: const Text('답 제출하기'),
-          ),
-        if (answered) ...[
-          Row(
-            children: [
-              if (widget.dogAsset case final dog?) ...[
-                SizedBox.square(
-                  key: ValueKey('quiz_${q.assignmentId}_dog'),
-                  dimension: DogSpriteSize.companion,
-                  child: DogSprite(asset: dog),
-                ),
-                const SizedBox(width: Space.s3),
-              ],
-              Expanded(
-                child: Text(
-                  q.answerIndex == q.correctIndex ? '정답이에요' : '아쉽지만 오답이에요',
-                  style: Theme.of(context).textTheme.titleMedium,
-                ),
-              ),
-            ],
-          ),
-          if (q.explanation != null) Text(q.explanation!),
-          const SizedBox(height: Space.s2),
-          if (q.source != null) SelectableText('출처 · ${q.source}'),
-          Text('검토일 ${q.reviewedAt} · ${q.reviewedBy}'),
-          Text(
-            '이 문제의 기존 지급 기록 ${formatCount(q.awardedPoints)}P · 복습은 추가 지급 없음',
-            key: ValueKey('quiz_${q.assignmentId}_past_points'),
-          ),
-        ],
-      ],
+  TextChip chip(QuizToday today, QuizQuestion? question) {
+    const key = ValueKey('quiz_chip');
+    if (question == null) return const TextChip('오늘 문제 준비 중', textKey: key);
+    if (question.answerIndex == null) {
+      return TextChip(
+        today.extra == null ? '오늘 1문제 · 첫 제출 보상' : '한 문제 더 · 첫 제출 보상',
+        textKey: key,
+      );
+    }
+    return TextChip(
+      today.extra == null ? '오늘 1문제 · 완료' : '오늘 2문제 · 완료',
+      tone: TextChipTone.record,
+      textKey: key,
     );
   }
-}
 
-class QuizHistoryScreen extends StatefulWidget {
-  const QuizHistoryScreen({
-    super.key,
-    required this.controller,
-    required this.onHome,
-  });
-  final QuizController controller;
-  final VoidCallback onHome;
-  @override
-  State<QuizHistoryScreen> createState() => _QuizHistoryScreenState();
-}
-
-class _QuizHistoryScreenState extends State<QuizHistoryScreen> {
-  final items = <QuizQuestion>[];
-  bool busy = false;
-  bool more = true;
-  String? error;
-  QuizQuestion? review;
-  int? reviewId;
-  bool get active => mounted && widget.controller.isActive;
-  @override
-  void initState() {
-    super.initState();
-    unawaited(load());
-  }
-
-  Future<void> load() async {
-    if (!active || busy) return;
-    setState(() {
-      busy = true;
-      error = null;
-    });
-    try {
-      final page = await widget.controller.history(
-        items.lastOrNull?.assignmentId,
-      );
-      if (!active) return;
-      setState(() {
-        items.addAll(page);
-        more = page.length == 30;
-      });
-    } catch (_) {
-      if (active) setState(() => error = '복습 목록을 불러오지 못했어요. 다시 시도해 주세요.');
-    } finally {
-      if (active) setState(() => busy = false);
-    }
-  }
-
-  Future<void> open(int id) async {
-    if (!active || busy) return;
-    setState(() {
-      busy = true;
-      error = null;
-      reviewId = id;
-    });
-    try {
-      final q = await widget.controller.review(id);
-      if (active && reviewId == id) setState(() => review = q);
-    } catch (_) {
-      if (active && reviewId == id) {
-        setState(() => error = '문제를 불러오지 못했어요. 다시 시도해 주세요.');
-      }
-    } finally {
-      if (active) setState(() => busy = false);
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) => ProductPage(
-    onBack: () {
-      if (reviewId != null) {
-        setState(() {
-          reviewId = null;
-          review = null;
-          error = null;
-        });
-      } else {
-        Navigator.of(context).pop();
-      }
-    },
-    onHome: () {
-      Navigator.of(context).pop();
-      widget.onHome();
-    },
-    children: [
-      Text('지난 퀴즈 복습', style: Theme.of(context).textTheme.headlineSmall),
-      const Text('이미 제출한 문제예요. 복습으로 포인트가 다시 지급되지 않아요.'),
-      if (busy) const Text('불러오는 중…'),
-      if (error != null) ...[
-        Text(error!),
-        TextButton(
-          key: const ValueKey('quiz_history_retry'),
-          onPressed: busy
-              ? null
-              : () => reviewId == null ? load() : open(reviewId!),
-          child: const Text('다시 시도'),
+  /// The one optional step after the free question, under '홈으로'.
+  List<Widget> next(QuizToday today, bool open) {
+    final text = Theme.of(context).textTheme;
+    final premiumError = controller.premiumError;
+    final checking = premiumError == 'checking';
+    return [
+      // The paid benefit is observed on its own (3.1); only a failure says
+      // so and offers its retry.
+      if (premiumError != null && !checking) ...[
+        Text(
+          '유료 혜택을 확인하지 못했어요.',
+          key: const ValueKey('quiz_premium_status'),
+          textAlign: TextAlign.center,
+          style: text.bodySmall,
+        ),
+        _quiet(
+          const ValueKey('quiz_check_premium'),
+          '다시 시도',
+          open ? controller.checkPremium : null,
         ),
       ],
-      if (review != null)
-        _QuestionCard(question: review!)
-      else if (reviewId == null) ...[
-        if (!busy && items.isEmpty && error == null)
-          const Text('아직 답한 문제가 없어요.'),
-        for (final q in items)
-          ListTile(
-            key: ValueKey('quiz_history_${q.assignmentId}'),
-            title: Text(q.question),
-            subtitle: Text(
-              '${q.date} · ${q.slot == 'free' ? '무료' : '추가'} · 기존 ${formatCount(q.awardedPoints)}P',
+      if (adError case final error? when today.extra == null)
+        Text(
+          error,
+          key: const ValueKey('quiz_ad_error'),
+          textAlign: TextAlign.center,
+          style: text.bodySmall,
+        ),
+      if (!checking && today.extra == null)
+        ...switch (today.extraStatus) {
+          // Only when the automatic unlock could not start.
+          'adRequired'
+              when controller.verifiedIntent != null &&
+                  !controller.hasPending =>
+            [
+              _quiet(
+                const ValueKey('quiz_unlock'),
+                '확인된 광고로 한 문제 열기',
+                open ? controller.unlockExtra : null,
+              ),
+            ],
+          'adRequired' => [
+            _quiet(
+              const ValueKey('quiz_watch_ad'),
+              '광고 보고 한 문제 더',
+              open ? watchAd : null,
             ),
-            trailing: const Icon(Icons.chevron_right),
-            onTap: busy ? null : () => open(q.assignmentId),
-          ),
-        if (more && error == null && !busy)
-          TextButton(
-            key: const ValueKey('quiz_history_more'),
-            onPressed: load,
-            child: const Text('이전 문제 더 보기'),
-          ),
+          ],
+          'premiumAvailable' => [
+            _quiet(
+              const ValueKey('quiz_premium_unlock'),
+              '유료 혜택으로 한 문제 더',
+              open && controller.premiumReady
+                  ? controller.unlockExtraWithPremium
+                  : null,
+            ),
+          ],
+          'contentUnavailable' || 'exhausted' => [
+            Text(
+              quizError(today.extraStatus),
+              key: ValueKey('quiz_extra_${today.extraStatus}'),
+              textAlign: TextAlign.center,
+              style: text.bodySmall,
+            ),
+          ],
+          _ => const <Widget>[],
+        },
+    ];
+  }
+}
+
+/// The status chip and the small way into past quizzes.
+class _StatusRow extends StatelessWidget {
+  const _StatusRow({required this.chip, required this.onReview});
+  final Widget? chip;
+  final VoidCallback? onReview;
+
+  @override
+  Widget build(BuildContext context) => Row(
+    mainAxisAlignment: chip == null
+        ? MainAxisAlignment.end
+        : MainAxisAlignment.spaceBetween,
+    children: [
+      if (chip case final chip?) ...[
+        Flexible(child: chip),
+        const SizedBox(width: Space.s2),
       ],
+      TextButton(
+        key: const ValueKey('quiz_history'),
+        onPressed: onReview,
+        style: TextButton.styleFrom(
+          foregroundColor: MeetingColors.muted,
+          textStyle: meetingType(13.5, 18, FontWeight.w700),
+          padding: const EdgeInsets.symmetric(horizontal: Space.s1),
+        ),
+        child: const Row(
+          mainAxisSize: MainAxisSize.min,
+          spacing: 2,
+          children: [Text('지난 퀴즈'), PixelIcon('caret-right', size: 16)],
+        ),
+      ),
     ],
+  );
+}
+
+/// Under an open question: the companion saying a tap answers at once.
+class _Hint extends StatelessWidget {
+  const _Hint({required this.gutter, this.dogAsset});
+  final double gutter;
+  final String? dogAsset;
+
+  @override
+  Widget build(BuildContext context) => Padding(
+    padding: EdgeInsets.fromLTRB(
+      gutter,
+      Space.s4,
+      gutter,
+      20 + MediaQuery.paddingOf(context).bottom,
+    ),
+    child: Row(
+      children: [
+        if (dogAsset case final dog?) ...[
+          SizedBox.square(
+            key: const ValueKey('quiz_hint_dog'),
+            dimension: DogSpriteSize.hint,
+            child: DogSprite(asset: dog),
+          ),
+          const SizedBox(width: 6),
+        ],
+        Flexible(
+          child: DecoratedBox(
+            decoration: const BoxDecoration(
+              color: MeetingColors.raised,
+              borderRadius: BorderRadius.all(Radius.circular(12)),
+            ),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+              child: Text(
+                '보기를 누르면\n바로 정답을 알려 줄게!',
+                key: const ValueKey('quiz_hint'),
+                style: meetingType(
+                  14,
+                  20,
+                  FontWeight.w400,
+                ).copyWith(fontFamily: 'Galmuri11'),
+              ),
+            ),
+          ),
+        ),
+      ],
+    ),
+  );
+}
+
+/// `w2cyk`: the server has no question for today. Never a load failure.
+class _Empty extends StatelessWidget {
+  const _Empty({
+    required this.status,
+    required this.gutter,
+    required this.onReview,
+    this.dogAsset,
+  });
+  final String status;
+  final double gutter;
+  final VoidCallback? onReview;
+  final String? dogAsset;
+
+  @override
+  Widget build(BuildContext context) => Padding(
+    padding: EdgeInsets.fromLTRB(
+      gutter,
+      Space.s4,
+      gutter,
+      40 + MediaQuery.paddingOf(context).bottom,
+    ),
+    child: Column(
+      mainAxisSize: MainAxisSize.min,
+      spacing: 10,
+      children: [
+        if (dogAsset case final dog?)
+          SizedBox.square(
+            key: const ValueKey('quiz_empty_dog'),
+            dimension: DogSpriteSize.emptyState,
+            child: DogSprite(asset: dog),
+          ),
+        Text(
+          switch (status) {
+            'exhausted' => '준비된 문제를 모두 풀었어요',
+            'contentUnavailable' => '준비된 문제가 없어요',
+            _ => '오늘 문제를 열 수 없어요',
+          },
+          key: ValueKey('quiz_status_$status'),
+          textAlign: TextAlign.center,
+          style: meetingType(20, 28, FontWeight.w800),
+        ),
+        // No date is promised: new questions have no fixed day (guide 6.2).
+        Text(
+          '새 문제가 올라오면 여기서 풀 수 있어요.\n그동안 지난 퀴즈를 복습해 볼까요?',
+          textAlign: TextAlign.center,
+          style: Theme.of(context).textTheme.bodyMedium,
+        ),
+        Padding(
+          padding: const EdgeInsets.only(top: Space.s2),
+          child: OutlinedButton(
+            key: const ValueKey('quiz_empty_review'),
+            style: OutlinedButton.styleFrom(minimumSize: const Size(200, 48)),
+            onPressed: onReview,
+            child: const Text('지난 퀴즈 복습'),
+          ),
+        ),
+      ],
+    ),
+  );
+}
+
+/// `Quiz Feedback Panel` (`aZln1`): the result docked to the bottom edge,
+/// the way home and the one optional next step.
+class _ResultPanel extends StatelessWidget {
+  const _ResultPanel({
+    required this.result,
+    required this.onHome,
+    required this.next,
+  });
+  final Widget result;
+  final VoidCallback onHome;
+  final List<Widget> next;
+
+  @override
+  Widget build(BuildContext context) => DecoratedBox(
+    decoration: const BoxDecoration(
+      color: ProductColors.raised,
+      borderRadius: BorderRadius.vertical(top: Radius.circular(26)),
+      boxShadow: [
+        BoxShadow(
+          color: ProductColors.panelShadow,
+          offset: Offset(0, -4),
+          blurRadius: 20,
+        ),
+      ],
+    ),
+    child: Padding(
+      padding: EdgeInsets.fromLTRB(
+        20,
+        18,
+        20,
+        26 + MediaQuery.paddingOf(context).bottom,
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        spacing: Space.s3,
+        children: [
+          result,
+          FilledButton(
+            key: const ValueKey('quiz_home'),
+            style: FilledButton.styleFrom(
+              minimumSize: const Size.fromHeight(52),
+            ),
+            onPressed: onHome,
+            child: const Text('홈으로'),
+          ),
+          ...next,
+        ],
+      ),
+    ),
+  );
+}
+
+/// `Feedback More`: a quiet text action under the primary button.
+TextButton _quiet(Key key, String label, VoidCallback? onPressed) => TextButton(
+  key: key,
+  onPressed: onPressed,
+  style: TextButton.styleFrom(
+    foregroundColor: MeetingColors.muted,
+    minimumSize: const Size.fromHeight(44),
+  ),
+  child: Text(label, textAlign: TextAlign.center),
+);
+
+/// A notice that needs the user, with its one retry.
+class _Attention extends StatelessWidget {
+  const _Attention({
+    required this.notice,
+    required this.retryKey,
+    required this.onRetry,
+    required this.primary,
+  });
+  final String notice;
+  final Key retryKey;
+  final VoidCallback? onRetry;
+  final bool primary;
+
+  @override
+  Widget build(BuildContext context) => ProductPanel(
+    color: ProductColors.warningSoft,
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      spacing: Space.s3,
+      children: [
+        Semantics(
+          liveRegion: true,
+          child: Text(
+            notice,
+            key: const ValueKey('quiz_notice'),
+            style: Theme.of(context).textTheme.titleMedium,
+          ),
+        ),
+        primary
+            ? FilledButton(
+                key: retryKey,
+                onPressed: onRetry,
+                child: const Text('다시 시도'),
+              )
+            : OutlinedButton(
+                key: retryKey,
+                onPressed: onRetry,
+                child: const Text('다시 시도'),
+              ),
+      ],
+    ),
   );
 }

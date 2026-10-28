@@ -5,28 +5,96 @@ import 'package:flutter/material.dart';
 import '../first_meeting/meeting_theme.dart';
 import 'product_page.dart';
 
-/// `Home/Status Chip` (`Dkbzs`): a 32 pt pill with one short status.
+/// `Home/Status Chip` (`Dkbzs`): a 32 pt pill with one short status and,
+/// as in Pen, a 20 pt pixel [icon] before it.
 class StatusChip extends StatelessWidget {
-  const StatusChip(this.label, {this.textKey, super.key});
+  const StatusChip(this.label, {this.icon, this.textKey, super.key});
   final String label;
+
+  /// A [PixelIcon] name; Pen pads the icon side by 8 and the label by 6.
+  final String? icon;
 
   /// Finds the label itself, whose text tests read.
   final Key? textKey;
 
   @override
-  Widget build(BuildContext context) => Container(
-    constraints: const BoxConstraints(minHeight: 32),
-    padding: const EdgeInsets.symmetric(horizontal: Space.s3, vertical: 6),
-    decoration: const BoxDecoration(
-      color: MeetingColors.soft,
-      borderRadius: BorderRadius.all(Radius.circular(999)),
-    ),
-    child: Text(
+  Widget build(BuildContext context) {
+    final text = Text(
       label,
       key: textKey,
       style: meetingType(15, 20, FontWeight.w700),
-    ),
-  );
+    );
+    final icon = this.icon;
+    return Container(
+      constraints: const BoxConstraints(minHeight: 32),
+      padding: EdgeInsets.fromLTRB(
+        icon == null ? Space.s3 : Space.s2,
+        6,
+        Space.s3,
+        6,
+      ),
+      decoration: const BoxDecoration(
+        color: MeetingColors.soft,
+        borderRadius: BorderRadius.all(Radius.circular(999)),
+      ),
+      child: icon == null
+          ? text
+          : Row(
+              mainAxisSize: MainAxisSize.min,
+              spacing: 6,
+              children: [
+                PixelIcon(icon, size: 20),
+                Flexible(child: text),
+              ],
+            ),
+    );
+  }
+}
+
+/// Fills of [TextChip]: a plain status, a good result, a wrong one.
+enum TextChipTone { neutral, record, error }
+
+/// `Chip/Text` (`ki4q7`): a 30 pt pill with a short status or result.
+/// Its 13 pt labels keep 4.5:1 contrast, so the olive tone writes in the
+/// darker olive the correct quiz option uses (Pen's record on record-soft
+/// is 4.4:1).
+class TextChip extends StatelessWidget {
+  const TextChip(
+    this.label, {
+    this.tone = TextChipTone.neutral,
+    this.textKey,
+    super.key,
+  });
+  final String label;
+  final TextChipTone tone;
+
+  /// Finds the label itself, whose text tests read.
+  final Key? textKey;
+
+  @override
+  Widget build(BuildContext context) {
+    final (fill, ink) = switch (tone) {
+      TextChipTone.neutral => (MeetingColors.soft, MeetingColors.ink),
+      TextChipTone.record => (
+        ProductColors.recordSoft,
+        ProductColors.recordInk,
+      ),
+      TextChipTone.error => (ProductColors.errorSoft, ProductColors.error),
+    };
+    return Container(
+      constraints: const BoxConstraints(minHeight: 30),
+      padding: const EdgeInsets.symmetric(horizontal: Space.s3, vertical: 6),
+      decoration: BoxDecoration(
+        color: fill,
+        borderRadius: const BorderRadius.all(Radius.circular(999)),
+      ),
+      child: Text(
+        label,
+        key: textKey,
+        style: meetingType(13, 18, FontWeight.w700, ink),
+      ),
+    );
+  }
 }
 
 /// `Home/Goal Ring` (`T63MNT`): the share of the day's goal. A null

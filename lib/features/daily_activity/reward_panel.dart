@@ -8,7 +8,7 @@ import '../ads/ads_session.dart';
 import '../ads/ads_sheet.dart';
 import '../first_meeting/meeting_theme.dart';
 import '../records/product_page.dart'
-    show Space, fixtureLabelsVisible, formatCount;
+    show PixelIcon, Space, fixtureLabelsVisible, formatCount;
 import '../records/records_models.dart';
 import 'product_controller.dart';
 import 'product_repository.dart';
@@ -311,11 +311,21 @@ class _RewardPanelState extends State<RewardPanel> {
         spacing: Space.s3,
         children: [
           if (points != null) ...[
-            Text(
-              '+${formatCount(points)}P',
-              key: const ValueKey('reward_amount'),
-              textAlign: TextAlign.center,
-              style: meetingType(46, 54, FontWeight.w800),
+            // Pen `Reward Amount`: the points icon, 10 pt, then the amount.
+            Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              spacing: 10,
+              children: [
+                const PixelIcon('points', size: 44),
+                Flexible(
+                  child: Text(
+                    '+${formatCount(points)}P',
+                    key: const ValueKey('reward_amount'),
+                    textAlign: TextAlign.center,
+                    style: meetingType(46, 54, FontWeight.w800),
+                  ),
+                ),
+              ],
             ),
             Text(
               free ? _basis(day) : '광고를 보면 받을 수 있어요',

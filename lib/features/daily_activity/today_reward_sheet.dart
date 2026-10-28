@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../ads/ads_controller.dart';
 import '../first_meeting/meeting_theme.dart';
-import '../records/product_page.dart' show Space, formatCount;
+import '../records/product_page.dart' show PixelIcon, Space, formatCount;
 import '../records/records_models.dart';
 import '../records/status_widgets.dart';
 import '../wardrobe/dog_sprite.dart';
@@ -109,10 +109,7 @@ class _TodayRewardSheetState extends State<TodayRewardSheet> {
                         key: const ValueKey('reward_info'),
                         tooltip: '받는 방법',
                         onPressed: () => setState(() => rulesOpen = !rulesOpen),
-                        icon: const Icon(
-                          Icons.info_outline,
-                          color: MeetingColors.ink,
-                        ),
+                        icon: const PixelIcon('info', size: 20),
                       ),
                   ],
                 ),
@@ -128,7 +125,7 @@ class _TodayRewardSheetState extends State<TodayRewardSheet> {
                     borderRadius: BorderRadius.circular(12),
                   ),
                 ),
-                icon: const Icon(Icons.close, color: MeetingColors.ink),
+                icon: const PixelIcon('close-x', size: 20),
               ),
             ],
           ),
@@ -238,6 +235,7 @@ class _Granted extends StatelessWidget {
             Center(
               child: StatusChip(
                 '보유 ${formatCount(wallet.balance)}P',
+                icon: 'points',
                 textKey: const ValueKey('reward_granted_balance'),
               ),
             )

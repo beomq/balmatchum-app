@@ -108,7 +108,8 @@ class _RecordsCalendarScreenState extends State<RecordsCalendarScreen> {
               key: const ValueKey('records_prev_month'),
               tooltip: '이전 달',
               onPressed: () => shift(-1),
-              icon: const Icon(Icons.chevron_left, color: MeetingColors.ink),
+              // Pen `K6Z5x`: back for the previous month, caret for the next.
+              icon: const PixelIcon('back', size: 20),
             ),
             Expanded(
               child: Text(
@@ -121,7 +122,7 @@ class _RecordsCalendarScreenState extends State<RecordsCalendarScreen> {
               key: const ValueKey('records_next_month'),
               tooltip: '다음 달',
               onPressed: () => shift(1),
-              icon: const Icon(Icons.chevron_right, color: MeetingColors.ink),
+              icon: const PixelIcon('caret-right', size: 20),
             ),
           ],
         ),

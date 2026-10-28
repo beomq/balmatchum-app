@@ -230,18 +230,12 @@ void main() {
       await tester.ensureVisible(
         find.byKey(ValueKey('quiz_${free.assignmentId}_choice_1')),
       );
-      await tester.tap(
-        find.byKey(ValueKey('quiz_${free.assignmentId}_choice_1')),
-      );
-      await tester.pump();
-      await tester.ensureVisible(
-        find.byKey(ValueKey('quiz_${free.assignmentId}_submit')),
-      );
+      // One tap is the answer.
       await act(
         quiz,
         () => quiz.busy,
         () => tester.tap(
-          find.byKey(ValueKey('quiz_${free.assignmentId}_submit')),
+          find.byKey(ValueKey('quiz_${free.assignmentId}_choice_1')),
         ),
       );
       expect(quiz.today!.free!.awardedPoints, 2);

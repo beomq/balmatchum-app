@@ -3,6 +3,9 @@ import 'package:balmatchum_app/features/daily_activity/product_controller.dart';
 import 'package:balmatchum_app/features/daily_activity/record_mapping.dart';
 import 'package:balmatchum_app/features/daily_activity/today_reward_sheet.dart';
 import 'package:balmatchum_app/features/first_meeting/meeting_theme.dart';
+import 'package:balmatchum_app/features/records/product_page.dart'
+    show PixelIcon;
+import 'package:balmatchum_app/features/records/status_widgets.dart';
 import 'package:balmatchum_app/features/watch_sync/watch_bridge.dart';
 import 'package:balmatchum_client/balmatchum_client.dart';
 import 'package:flutter/material.dart';
@@ -90,6 +93,43 @@ void main() {
   Finder key(String value) => find.byKey(ValueKey(value));
   String text(WidgetTester tester, String value) =>
       tester.widget<Text>(key(value)).data!;
+
+  String pixel(WidgetTester tester, Finder scope) => tester
+      .widget<PixelIcon>(
+        find.descendant(of: scope, matching: find.byType(PixelIcon)),
+      )
+      .name;
+
+  testWidgets('the header, the amount and the balance use pixel icons', (
+    tester,
+  ) async {
+    await open(tester);
+    expect(pixel(tester, key('reward_info')), 'info');
+    expect(pixel(tester, key('reward_close')), 'close-x');
+    expect(
+      pixel(
+        tester,
+        find
+            .ancestor(of: key('reward_amount'), matching: find.byType(Row))
+            .first,
+      ),
+      'points',
+    );
+    expect(find.byType(Icon), findsNothing);
+    await tester.tap(key('reward_free_claim'));
+    await tester.pumpAndSettle();
+    expect(
+      pixel(
+        tester,
+        find.ancestor(
+          of: key('reward_granted_balance'),
+          matching: find.byType(StatusChip),
+        ),
+      ),
+      'points',
+    );
+    expect(find.byType(Icon), findsNothing);
+  });
 
   testWidgets('the amount leads and a normal sheet has no operator controls', (
     tester,

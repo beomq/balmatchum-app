@@ -211,15 +211,18 @@ class HomeGoalCard extends StatelessWidget {
         child: Text('포인트 확인 중'),
       ),
       // A failed read leads with its retry; the point action steps down.
-      HomeReward.open when goal.retryable => OutlinedButton(
+      // Pen `Points Button Content`: the 20 pt points icon, 8 pt, the label.
+      HomeReward.open when goal.retryable => OutlinedButton.icon(
         key: const ValueKey('home_reward'),
         onPressed: onReward,
-        child: const Text('오늘 포인트 받기'),
+        icon: const PixelIcon('points', size: 20),
+        label: const Text('오늘 포인트 받기'),
       ),
-      HomeReward.open => FilledButton(
+      HomeReward.open => FilledButton.icon(
         key: const ValueKey('home_reward'),
         onPressed: onReward,
-        child: const Text('오늘 포인트 받기'),
+        icon: const PixelIcon('points', size: 20),
+        label: const Text('오늘 포인트 받기'),
       ),
     };
     return Container(
