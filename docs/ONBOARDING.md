@@ -14,13 +14,13 @@ iOS 빌드는 macOS와 Xcode가 필요합니다. FVM 설치는
 git clone --branch develop https://github.com/beomq/balmatchum-app.git balmatchum-app
 cd balmatchum-app
 fvm --version
-fvm use 3.47.5 --skip-pub-get
+fvm use 3.47.7 --skip-pub-get
 fvm flutter --version
 fvm flutter doctor -v
 fvm flutter pub get --enforce-lockfile
 ```
 
-Flutter 3.47.5 / Dart 3.13.4가 나와야 합니다. 첫 실행은 SDK·패키지 다운로드에
+Flutter 3.47.7 / Dart 3.13.5가 나와야 합니다. 첫 실행은 SDK·패키지 다운로드에
 네트워크가 필요합니다. `pub get`은 서버 저장소의 생성 클라이언트를 Git에서 받으므로
 형제 서버 checkout이나 부모 `DEVELOPMENT.md`가 필요하지 않습니다. 잠금 설치 실패를
 `pub upgrade`나 lockfile 삭제로 우회하지 말고 pubspec/ref와 오류를 담당자에게 전달합니다.
@@ -56,7 +56,7 @@ Android Dev 서명 AAB는 [전용 빌드 안내](ANDROID_DEV.md)를 따릅니다
 ## 알려진 분석 제한과 장애 확인 순서
 
 한글 절대 경로에서 `fvm flutter analyze`가 `FormatException: Unterminated string`,
-종료 코드 255로 실패한 기록이 있습니다. Flutter 3.47.5 SDK의
+종료 코드 255로 실패합니다(3.47.5, 3.47.7 모두 재현). Flutter 3.47.7 SDK의
 `packages/flutter_tools/lib/src/dart/analysis.dart:157`에서 LSP Content-Length를
 UTF-8 바이트 수가 아닌 문자열 길이로 계산하는 코드가 확인됐습니다.
 

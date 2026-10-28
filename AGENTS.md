@@ -5,7 +5,7 @@
 
 - 이 저장소는 발맞춤 Flutter Android/iOS 앱만 소유합니다. 서버, 공유 계약, 기존
   walk_companion 디자인/문서는 수정하지 않습니다.
-- `.fvmrc`의 Flutter 3.47.5 / Dart 3.13.4를 사용합니다. 명령은 `fvm flutter`,
+- `.fvmrc`의 Flutter 3.47.7 / Dart 3.13.5를 사용합니다. 명령은 `fvm flutter`,
   `fvm dart`로 실행하고 전역 SDK를 바꾸지 않습니다.
 - Riverpod는 조립과 상태 수명 관리, 생성자 DI는 객체 의존성 전달에 사용합니다.
   feature-first와 go_router를 유지하며 필요 없는 계층/use case는 만들지 않습니다.

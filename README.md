@@ -17,7 +17,7 @@
 
 ## 현재 기준
 
-- Flutter **3.47.5** / Dart **3.13.4**, 프로젝트 로컬 FVM. 전역 SDK 변경 없음.
+- Flutter **3.47.7** / Dart **3.13.5**, 프로젝트 로컬 FVM. 전역 SDK 변경 없음.
 - Riverpod + 생성자 DI + feature-first + go_router.
 - Serverpod **4.0.3** 생성 `balmatchum_client`: [pubspec.yaml](pubspec.yaml)의 불변 ref와
   패키지 경로, [pubspec.lock](pubspec.lock)의 resolved-ref를 함께 관리합니다.
@@ -32,8 +32,8 @@ iOS 생성 클라이언트 실제 연결을 확인했습니다. 버전별 상세
 [SETUP_REPORT.md](SETUP_REPORT.md)의 날짜별 기록을 참고하세요. 과거 성공은 현재 서버
 가용성이나 새 변경의 QA를 대신하지 않습니다. 사용자 직접 검증은 별도입니다.
 
-- Flutter 3.47.5의 `flutter analyze`는 한글 절대 경로에서 SDK 분석 서버 JSON 오류로
-  종료 코드 255가 발생했습니다. [온보딩의 대응 절차](docs/ONBOARDING.md)를 따릅니다.
+- Flutter 3.47.7의 `flutter analyze`도 한글 절대 경로에서 SDK 분석 서버 JSON 오류로
+  종료 코드 255가 발생합니다(2026-10-28 재현, 3.47.5와 동일). [온보딩의 대응 절차](docs/ONBOARDING.md)를 따릅니다.
 - 원격 develop df463a1의 CI와 Dev draft 배포는 통과했습니다. 현재 통합 브랜치의
   Android 서명 빌드와 Apple compile 결과는 별도로 확인하며 과거 성공으로 대체하지 않습니다.
 - 마지막 실제 서버 점검에서 `127.0.0.1:58099`는 연결 거부였습니다. 연결 QA 전에
