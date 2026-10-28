@@ -154,7 +154,14 @@ void main() {
     expect(find.bySemanticsLabel(RegExp('^1월 1일, 신정')), findsOneWidget);
     await tester.tap(find.byKey(const ValueKey('records_day_4')));
     await tester.pump();
+    // A date tap only selects it; the card's link opens it, once.
+    expect(opened, isEmpty);
+    final open = find.byKey(const ValueKey('records_open_day'));
+    await tester.ensureVisible(open);
+    await tester.tap(open);
+    await tester.pump();
     expect(opened, [DateTime(2027, 1, 4)]);
+    await tester.pumpAndSettle();
     await tester.tap(find.byKey(const ValueKey('records_next_month')));
     await tester.pumpAndSettle();
     expect(requests.last, DateTime(2027, 2));
@@ -170,7 +177,12 @@ void main() {
       await tester.pumpAndSettle();
       // Then steps and rewards remain usable without any route surface.
       expect(find.text('4,200걸음'), findsOneWidget);
-      expect(find.text('4포인트를 받을 수 있어요.'), findsOneWidget);
+      expect(
+        tester
+            .widget<Text>(find.byKey(const ValueKey('records_reward_status')))
+            .data,
+        contains('4P'),
+      );
       // A production build never shows the development fixture marker.
       expect(find.byKey(const ValueKey('product_fixture_badge')), findsNothing);
       expect(find.byKey(const ValueKey('records_route_map')), findsNothing);
@@ -235,7 +247,8 @@ void main() {
     await tester.pumpAndSettle();
     // Then only steps and rewards are advertised, including accessibility.
     expect(
-      find.bySemanticsLabel(RegExp('^1월 4일, 4,200걸음, 받을 포인트 있음')),
+      // The stored day is also today here.
+      find.bySemanticsLabel(RegExp('^1월 4일, 오늘, 4,200걸음, 받을 포인트 있음')),
       findsOneWidget,
     );
     expect(find.bySemanticsLabel(RegExp('GPS')), findsNothing);
@@ -257,7 +270,8 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
-    expect(find.textContaining('0걸음과는 달라요'), findsOneWidget);
+    // Read in full; the drawn line only keeps words whole.
+    expect(find.bySemanticsLabel(RegExp('0걸음과는 달라요')), findsOneWidget);
     expect(find.textContaining('GPS'), findsNothing);
     expect(find.byKey(const ValueKey('records_claim')), findsNothing);
   });
@@ -313,7 +327,7 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.byKey(const ValueKey('records_delete_confirm')));
     await tester.pump();
-    expect(tester.widget<OutlinedButton>(button).onPressed, isNull);
+    expect(tester.widget<TextButton>(button).onPressed, isNull);
     expect(
       tester
           .widget<FilledButton>(find.byKey(const ValueKey('records_claim')))
@@ -388,9 +402,26 @@ void main() {
     await tester.pumpAndSettle();
     expect(claims, [3, 3]);
     expect(loads, 2);
-    expect(find.text('4포인트를 받았어요.'), findsOneWidget);
-    expect(find.text('이 날짜의 포인트를 모두 받았어요.'), findsOneWidget);
+    expect(
+      tester
+          .widget<Text>(find.byKey(const ValueKey('records_tile_points')))
+          .data,
+      '4P',
+    );
+    // Nothing is left to receive, so the tiles say it all (guide 7.2-5).
+    expect(find.byKey(const ValueKey('records_reward_status')), findsNothing);
     expect(find.byKey(const ValueKey('records_claim')), findsNothing);
+    expect(
+      tester
+          .widget<Text>(
+            find.descendant(
+              of: find.byKey(const ValueKey('records_notice')),
+              matching: find.byType(Text),
+            ),
+          )
+          .data,
+      contains('4P'),
+    );
     expect(changed.single.rewardStatus, DayRewardStatus.paid);
   });
 

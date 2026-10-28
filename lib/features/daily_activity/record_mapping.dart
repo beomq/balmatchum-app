@@ -11,6 +11,10 @@ RecordDay recordDay(api.DailyRecord value, {bool rewardsEnabled = true}) =>
           ? StepAvailability.deleted
           : value.availability == 'confirmed'
           ? StepAvailability.confirmed
+          // The server answers every date; one no snapshot ever reached
+          // keeps revision 0 and its default `unknown`.
+          : value.stepRevision == 0
+          ? StepAvailability.none
           : StepAvailability.unavailable,
       rewardStatus: !rewardsEnabled
           ? DayRewardStatus.unconfigured

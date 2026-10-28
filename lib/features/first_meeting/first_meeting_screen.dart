@@ -21,6 +21,7 @@ import 'home_goal_card.dart';
 import 'meeting_theme.dart';
 import 'meeting_widgets.dart';
 import 'onboarding_widgets.dart';
+import 'particles.dart';
 
 class FirstMeetingScreen extends StatefulWidget {
   const FirstMeetingScreen({
@@ -894,7 +895,7 @@ class _FirstMeetingScreenState extends State<FirstMeetingScreen> {
                         icon: 'assets/first_meeting/icons/camera-photo.png',
                         title: '사진',
                         // An invitation, not a claim that a photo exists.
-                        status: '${_withWa(s.name)} 한 장',
+                        status: '${withWa(s.name)} 한 장',
                         statusKey: const ValueKey('home_tile_photo_status'),
                         onTap: widget.onOpenPhoto ?? () => unavailable('사진'),
                       ),
@@ -937,7 +938,7 @@ class _FirstMeetingScreenState extends State<FirstMeetingScreen> {
         FilledButton(
           key: const ValueKey('breed_choose'),
           onPressed: enabled ? () => pickBreed(c, breed) : null,
-          child: Text('${_withRo(breed.name)} 할게요'),
+          child: Text('${withRo(breed.name)} 할게요'),
         ),
         TextButton(
           key: const ValueKey('breed_recommend'),
@@ -1148,49 +1149,14 @@ String _bubble(HomeGoal goal, HomeReward point) {
   return '오늘도 네 옆에서 걸을게';
 }
 
-/// The final consonant of [value]'s last sound as a jongseong index: 0 for
-/// none, 8 for ㄹ. Digits are read in Korean; other characters count as
-/// ending in a vowel.
-int _batchim(String value) {
-  final last = value.codeUnitAt(value.length - 1);
-  if (last >= 0xAC00 && last <= 0xD7A3) return (last - 0xAC00) % 28;
-  // 영 일 삼 육 칠 팔 end in ㅇ ㄹ ㅁ ㄱ ㄹ ㄹ; 이 사 오 구 in a vowel.
-  return const {
-        '0': 21,
-        '1': 8,
-        '3': 16,
-        '6': 1,
-        '7': 8,
-        '8': 8,
-      }[String.fromCharCode(last)] ??
-      0;
-}
-
-/// `{name}와` or `{name}과` by the name's last sound.
-String _withWa(String name) {
-  final value = name.trimRight();
-  if (value.isEmpty) return name;
-  return '$value${_batchim(value) == 0 ? '와' : '과'}';
-}
-
-/// `{value}야` after a vowel, `{value}이야` after a consonant.
-String _withIya(String value) => '$value${_batchim(value) == 0 ? '야' : '이야'}';
-
 /// The companion introducing itself with the typed name (guide 4.3-2), or
 /// asking for one while the name is empty or breaks the rule.
 String _nameLine(String input) => FirstMeetingController.isValidName(input)
-    ? '안녕, 나는 ${_withIya(FirstMeetingController.normalizeName(input))}!'
+    ? '안녕, 나는 ${withIya(FirstMeetingController.normalizeName(input))}!'
     : '안녕, 내 이름을 지어 줘!';
 
 /// The name step's save label: the typed name with 로 or 으로, or a neutral
 /// label while the name is empty or breaks the rule.
 String _nameSave(String input) => FirstMeetingController.isValidName(input)
-    ? '${_withRo(FirstMeetingController.normalizeName(input))} 정할게요'
+    ? '${withRo(FirstMeetingController.normalizeName(input))} 정할게요'
     : '이름을 정할게요';
-
-/// `{value}로` after a vowel or ㄹ, `{value}으로` after another consonant.
-String _withRo(String value) =>
-    '$value${switch (_batchim(value)) {
-      0 || 8 => '로',
-      _ => '으로',
-    }}';

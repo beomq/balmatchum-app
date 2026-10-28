@@ -1,6 +1,7 @@
 import 'package:balmatchum_client/balmatchum_client.dart';
 import 'package:flutter/foundation.dart';
 
+import '../records/records_models.dart';
 import 'quiz_repository.dart';
 
 class QuizController extends ChangeNotifier {
@@ -248,6 +249,35 @@ class QuizController extends ChangeNotifier {
     final value = await repository.history(before);
     _check();
     return value;
+  }
+
+  /// The questions answered on the KST [date] (guide 7.1-5). History comes
+  /// newest first and assignments follow their dates, so the read stops
+  /// after the first page that reaches an earlier date.
+  Future<List<QuizQuestion>> answeredOn(String date) async {
+    final found = <QuizQuestion>[];
+    int? before;
+    while (true) {
+      final page = await history(before);
+      found.addAll(page.where((q) => q.date == date));
+      final next = page.isEmpty ? null : page.last.assignmentId;
+      if (next == null ||
+          (before != null && next >= before) ||
+          page.any((q) => q.date.compareTo(date) < 0)) {
+        return found;
+      }
+      before = next;
+    }
+  }
+
+  /// [answeredOn] summed up for the records screens.
+  Future<DayQuiz> dayQuiz(String date) async {
+    final answered = await answeredOn(date);
+    return DayQuiz(
+      answered: answered.length,
+      correct: answered.where((q) => q.answerIndex == q.correctIndex).length,
+      points: answered.fold(0, (sum, q) => sum + q.awardedPoints),
+    );
   }
 
   Future<QuizQuestion> review(int id) async {
