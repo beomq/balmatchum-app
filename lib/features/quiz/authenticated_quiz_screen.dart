@@ -80,10 +80,12 @@ class _AuthenticatedQuizScreenState extends State<AuthenticatedQuizScreen> {
       adError = null;
     });
     AdsController? ads;
+    String? captured;
     void capture() {
       final intent = ads?.intent;
       if (mounted && ads?.status == AdsStatus.verified && intent != null) {
         controller.captureVerified(intent, today.date, revision);
+        if (controller.verifiedIntent == intent.id) captured = intent.id;
       }
     }
 
@@ -103,6 +105,8 @@ class _AuthenticatedQuizScreenState extends State<AuthenticatedQuizScreen> {
         purpose: 'extraQuiz',
         targetDate: today.date,
         targetRevision: revision,
+        // The ad button was the ask: play at once, close once verified.
+        autoContinue: true,
       );
       // The sheet cancels on close. Only its earlier verified event counts.
     } catch (_) {
@@ -114,6 +118,16 @@ class _AuthenticatedQuizScreenState extends State<AuthenticatedQuizScreen> {
       ads?.dispose();
       controller.endAd();
       if (mounted) setState(() => adOpen = false);
+    }
+    // Owner decision ⑤ (2026-10-28): a server-verified view opens the extra
+    // question at once, with the request the explicit button sent before. A
+    // lost answer leaves that request pending for its same-request check; it
+    // is never sent again from here. An early close never gets here verified.
+    if (captured != null &&
+        mounted &&
+        controller.verifiedIntent == captured &&
+        controller.canAct) {
+      await controller.unlockExtra();
     }
   }
 
@@ -274,7 +288,7 @@ class _AuthenticatedQuizScreenState extends State<AuthenticatedQuizScreen> {
         ),
       if (!checking && today.extra == null)
         ...switch (today.extraStatus) {
-          // A verified view still opens the question by an explicit tap.
+          // Only when the automatic unlock could not start.
           'adRequired'
               when controller.verifiedIntent != null &&
                   !controller.hasPending =>

@@ -100,7 +100,7 @@ class _ObservedRepository extends QuizRepository {
 void main() {
   final binding = IntegrationTestWidgetsFlutterBinding.ensureInitialized();
   testWidgets(
-    'native quiz empty bank answer SSV explicit unlock and historical review',
+    'native quiz empty bank answer SSV automatic unlock and historical review',
     (tester) async {
       final bootstrap =
           jsonDecode(await seam('/session')) as Map<String, dynamic>;
@@ -210,6 +210,8 @@ void main() {
       await seam('/bank');
       await action(controller.load);
 
+      // Owner decision ⑤: the ad button is the one tap. The server's
+      // verification closes the sheet and the same unlock request follows.
       final verified = Completer<void>();
       ads.addListener(() {
         if (ads.status == AdsStatus.verified && !verified.isCompleted) {
@@ -218,24 +220,19 @@ void main() {
       });
       await tap('quiz_watch_ad');
       await tester.pumpAndSettle();
-      await tap('ads_start');
-      await tester.runAsync(
-        () => verified.future.timeout(const Duration(seconds: 20)),
-      );
-      await tester.pumpAndSettle();
+      // The sheet plays the ad itself; the verified view closes it and the
+      // unlock request follows by itself.
+      await action(() async {
+        await tester.runAsync(
+          () => verified.future.timeout(const Duration(seconds: 20)),
+        );
+      });
       final intent = ads.intent!.id;
-      expect((await repository.getToday()).extra, isNull);
-      expect((await client.product.getWallet()).balance, 0);
-      await capture('quiz-verified-ad');
-      await tap('ads_close');
-      await tester.pumpAndSettle();
-      expect(controller.verifiedIntent, intent);
-      expect((await repository.getToday()).extra, isNull);
-      await tester.ensureVisible(find.byKey(const ValueKey('quiz_unlock')));
-      await capture('quiz-explicit-unlock');
-      await action(() => tap('quiz_unlock'));
+      expect(controller.verifiedIntent, isNull);
+      expect(find.byKey(const ValueKey('quiz_unlock')), findsNothing);
       final extra = controller.today!.extra!;
       expect((await client.ads.getIntent(intent)).status, 'consumed');
+      expect((await client.product.getWallet()).balance, 0);
       await tester.ensureVisible(
         find.byKey(ValueKey('quiz_${extra.assignmentId}_choice_0')),
       );

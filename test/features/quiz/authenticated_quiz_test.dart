@@ -379,33 +379,6 @@ void main() {
     expect(repository.requests, isEmpty);
   });
 
-  testWidgets('a verified ad still waits for the explicit unlock', (
-    tester,
-  ) async {
-    repository.current = repository.current.copyWith(
-      free: question(1, answered: true),
-      extraStatus: 'adRequired',
-      extraRevision: 1,
-    );
-    final ads = AdsController(server: TestAdsServer(), sdk: ReadySdk());
-    await mount(tester, ads: ads);
-    await tester.ensureVisible(find.byKey(const ValueKey('quiz_watch_ad')));
-    await tester.tap(find.byKey(const ValueKey('quiz_watch_ad')));
-    await tester.pumpAndSettle();
-    await tester.tap(find.byKey(const ValueKey('ads_start')));
-    await tester.pumpAndSettle();
-    expect(ads.status, AdsStatus.verified);
-    await tester.tap(find.byKey(const ValueKey('ads_close')));
-    await tester.pumpAndSettle();
-    expect(repository.requests, isEmpty);
-    final unlock = find.byKey(const ValueKey('quiz_unlock'));
-    await tester.ensureVisible(unlock);
-    await tester.tap(unlock);
-    await tester.pumpAndSettle();
-    expect(repository.requests, hasLength(1));
-    expect(find.byKey(const ValueKey('quiz_2_card')), findsOneWidget);
-  });
-
   testWidgets('cancelled sheet cannot unlock', (tester) async {
     repository.current = repository.current.copyWith(
       free: question(1, answered: true),
