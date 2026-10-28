@@ -69,12 +69,13 @@ class PhotoScreenState extends State<PhotoScreen> {
         builder: (context) => AlertDialog(
           title: const Text('사진 편집을 나갈까요?'),
           content: const Text('저장하지 않은 편집 내용은 사라져요. 원본 사진은 그대로예요.'),
+          actionsOverflowButtonSpacing: 8,
           actions: [
-            TextButton(
+            OutlinedButton(
               onPressed: () => Navigator.pop(context, false),
               child: const Text('계속 편집'),
             ),
-            TextButton(
+            FilledButton(
               onPressed: () => Navigator.pop(context, true),
               child: const Text('나가기'),
             ),
@@ -323,9 +324,7 @@ class PhotoScreenState extends State<PhotoScreen> {
               editor.message!,
               key: const ValueKey('photo_status'),
               style: TextStyle(
-                color: editor.isError
-                    ? const Color(0xFFA74638)
-                    : MeetingColors.ink,
+                color: editor.isError ? MeetingColors.error : MeetingColors.ink,
               ),
             ),
           ),

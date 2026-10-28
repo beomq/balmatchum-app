@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
+import '../first_meeting/meeting_theme.dart';
 import 'ads_controller.dart';
 
 /// Caller owns the account-scoped controller and disposes it after this returns.
@@ -77,14 +78,22 @@ class _AdsSheetState extends State<AdsSheet> with WidgetsBindingObserver {
                     Expanded(
                       child: Text(
                         '광고 시청 확인',
-                        style: Theme.of(context).textTheme.titleLarge,
+                        style: Theme.of(context).textTheme.headlineSmall,
                       ),
                     ),
                     IconButton(
                       key: const ValueKey('ads_close'),
                       tooltip: '닫기',
                       onPressed: () => Navigator.of(context).pop(),
-                      icon: const Icon(Icons.close),
+                      // Dialog/Today Reward close: 44px control with a line.
+                      style: IconButton.styleFrom(
+                        fixedSize: const Size(44, 44),
+                        side: const BorderSide(color: MeetingColors.line),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                      ),
+                      icon: const Icon(Icons.close, color: MeetingColors.ink),
                     ),
                   ],
                 ),

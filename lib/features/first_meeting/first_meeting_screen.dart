@@ -260,12 +260,13 @@ class _FirstMeetingScreenState extends State<FirstMeetingScreen> {
       builder: (context) => AlertDialog(
         title: const Text('Dev 체험을 초기화할까요?'),
         content: const Text('이 기기의 체험 친구와 입력만 삭제합니다. 실제 계정 데이터는 변경하지 않습니다.'),
+        actionsOverflowButtonSpacing: 8,
         actions: [
-          TextButton(
+          OutlinedButton(
             onPressed: () => Navigator.pop(context, false),
             child: const Text('취소'),
           ),
-          TextButton(
+          FilledButton(
             onPressed: () => Navigator.pop(context, true),
             child: const Text('체험 초기화'),
           ),
@@ -285,7 +286,7 @@ class _FirstMeetingScreenState extends State<FirstMeetingScreen> {
       title: Text(title),
       content: const Text('이번 Dev 체험 범위에 포함되지 않은 기능입니다.'),
       actions: [
-        TextButton(
+        FilledButton(
           onPressed: () => Navigator.pop(context),
           child: const Text('확인'),
         ),
@@ -319,7 +320,8 @@ class _FirstMeetingScreenState extends State<FirstMeetingScreen> {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              const Text('오늘 포인트'),
+              Text('오늘 포인트', style: Theme.of(context).textTheme.headlineSmall),
+              const SizedBox(height: 16),
               RewardPanel(controller: product, day: recordDay(product.today!)),
             ],
           ),
@@ -601,7 +603,8 @@ class _FirstMeetingScreenState extends State<FirstMeetingScreen> {
           Container(
             height: 280,
             decoration: BoxDecoration(
-              color: const Color(0xFFE8EFE5),
+              color: MeetingColors.stage,
+              border: Border.all(color: MeetingColors.line),
               borderRadius: BorderRadius.circular(16),
             ),
             padding: const EdgeInsets.all(16),
@@ -612,7 +615,11 @@ class _FirstMeetingScreenState extends State<FirstMeetingScreen> {
             ),
           ),
           const SizedBox(height: 18),
-          const MeetingNotice('최종 선택 안내', '완료 뒤에는 품종을 바꿀 수 없습니다.'),
+          const MeetingNotice(
+            '최종 선택 안내',
+            '완료 뒤에는 품종을 바꿀 수 없습니다.',
+            warning: true,
+          ),
           const SizedBox(height: 18),
           FilledButton(
             onPressed: enabled ? c.confirmCandidate : null,
@@ -659,7 +666,7 @@ class _FirstMeetingScreenState extends State<FirstMeetingScreen> {
                         decoration: BoxDecoration(
                           color: s.sex == sex
                               ? MeetingColors.soft
-                              : const Color(0xFFFFF9F0),
+                              : MeetingColors.well,
                           borderRadius: BorderRadius.circular(12),
                           border: Border.all(
                             color: s.sex == sex

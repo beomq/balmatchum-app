@@ -152,13 +152,14 @@ class _WardrobeScreenState extends State<WardrobeScreen> {
         builder: (context) => AlertDialog(
           title: Text(title),
           content: Text('${formatCount(price)}포인트가 사용돼요. 구매 후 착용은 따로 선택해요.'),
+          actionsOverflowButtonSpacing: 8,
           actions: [
-            TextButton(
+            OutlinedButton(
               key: const ValueKey('wardrobe_purchase_cancel'),
               onPressed: () => Navigator.pop(context, false),
               child: const Text('취소'),
             ),
-            TextButton(
+            FilledButton(
               key: const ValueKey('wardrobe_purchase_confirm'),
               onPressed: () => Navigator.pop(context, true),
               child: const Text('구매 확인'),

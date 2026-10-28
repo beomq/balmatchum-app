@@ -418,15 +418,16 @@ class _RecordDayScreenState extends State<RecordDayScreen> {
           '아직 받지 않은 포인트는 취소되고, 이미 받은 포인트는 그대로 유지돼요.\n'
           '삭제 후에는 되돌릴 수 없어요.',
         ),
+        actionsOverflowButtonSpacing: 8,
         actions: [
-          TextButton(
+          OutlinedButton(
             key: const ValueKey('records_delete_cancel'),
             onPressed: () => Navigator.pop(context, false),
             child: const Text('취소'),
           ),
-          TextButton(
+          FilledButton(
             key: const ValueKey('records_delete_confirm'),
-            style: TextButton.styleFrom(foregroundColor: ProductColors.error),
+            style: FilledButton.styleFrom(backgroundColor: ProductColors.error),
             onPressed: () => Navigator.pop(context, true),
             child: const Text('이 날짜 전체 삭제'),
           ),
