@@ -13,6 +13,14 @@ abstract final class ProductColors {
   static const warningSoft = Color(0xFFFFF1CC);
   static const attention = Color(0xFFA97600);
   static const raised = Colors.white;
+
+  /// Pen literals without a variable: the wrong result chip and the review
+  /// rows' divider (`dmEHl`), the correct quiz option's label and the quiz
+  /// result panel's shadow (`aZln1`).
+  static const errorSoft = Color(0xFFF8E3DF);
+  static const divider = Color(0xFFF3EADC);
+  static const recordInk = Color(0xFF2F3A1E);
+  static const panelShadow = Color(0x2450301E);
 }
 
 /// DESIGN.md spacing scale (space/1..8).
@@ -75,6 +83,8 @@ class ProductPage extends StatelessWidget {
     required this.onHome,
     required this.children,
     this.maxWidth = 640,
+    this.footer,
+    this.centerFooter = false,
     super.key,
   });
   final VoidCallback onBack;
@@ -82,40 +92,85 @@ class ProductPage extends StatelessWidget {
   final List<Widget> children;
   final double maxWidth;
 
+  /// The rest of a page that fills the screen: below [children], at the
+  /// bottom edge, or in the middle of the space left when [centerFooter].
+  /// It scrolls with [children] when the screen is too short. It gets the
+  /// page gutter, spans the safe width without it and pads the bottom inset
+  /// itself, so a panel can reach the bottom edge.
+  final Widget Function(double gutter)? footer;
+  final bool centerFooter;
+
   @override
   Widget build(BuildContext context) {
     final spec = DuoRailSpec(
       tools: duoBackHome(onBack: onBack, onHome: onHome),
     );
     final mode = duoRailMode(MediaQuery.of(context), spec);
+    final footer = this.footer;
     return Scaffold(
       body: Stack(
         fit: StackFit.expand,
         children: [
           SafeArea(
+            bottom: footer == null,
             child: LayoutBuilder(
               builder: (context, bounds) {
                 final gutter = pageGutter(bounds.maxWidth);
-                return SingleChildScrollView(
-                  padding: EdgeInsets.fromLTRB(
-                    gutter,
-                    Space.s2,
-                    gutter,
-                    Space.s6,
-                  ),
-                  child: Center(
-                    child: ConstrainedBox(
-                      constraints: BoxConstraints(maxWidth: maxWidth),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.stretch,
-                        children: [
-                          if (mode == null) ...[
-                            ProductTopBar(onBack: onBack, onHome: onHome),
-                            const SizedBox(height: Space.s3),
-                          ],
-                          ...children,
+                final content = Center(
+                  child: ConstrainedBox(
+                    constraints: BoxConstraints(maxWidth: maxWidth),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        if (mode == null) ...[
+                          ProductTopBar(onBack: onBack, onHome: onHome),
+                          const SizedBox(height: Space.s3),
                         ],
-                      ),
+                        ...children,
+                      ],
+                    ),
+                  ),
+                );
+                if (footer == null) {
+                  return SingleChildScrollView(
+                    padding: EdgeInsets.fromLTRB(
+                      gutter,
+                      Space.s2,
+                      gutter,
+                      Space.s6,
+                    ),
+                    child: content,
+                  );
+                }
+                // The leftover height is spread between the children, so
+                // no intrinsic layout pass is needed.
+                return SingleChildScrollView(
+                  child: ConstrainedBox(
+                    constraints: BoxConstraints(minHeight: bounds.maxHeight),
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        Padding(
+                          // Keeps a gap when the footer follows directly.
+                          padding: EdgeInsets.fromLTRB(
+                            gutter,
+                            Space.s2,
+                            gutter,
+                            Space.s4,
+                          ),
+                          child: content,
+                        ),
+                        Center(
+                          child: ConstrainedBox(
+                            constraints: BoxConstraints(
+                              maxWidth: maxWidth + gutter * 2,
+                            ),
+                            child: footer(gutter),
+                          ),
+                        ),
+                        if (centerFooter) const SizedBox.shrink(),
+                      ],
                     ),
                   ),
                 );
@@ -134,12 +189,14 @@ class ProductLoadState extends StatelessWidget {
   const ProductLoadState({
     required this.error,
     required this.onRetry,
+    this.retryKey = const ValueKey('product_retry'),
     super.key,
   });
 
   /// Null while loading.
   final String? error;
   final VoidCallback onRetry;
+  final Key retryKey;
 
   @override
   Widget build(BuildContext context) => Padding(
@@ -159,7 +216,7 @@ class ProductLoadState extends StatelessWidget {
                 Text(error!, style: Theme.of(context).textTheme.titleMedium),
                 const SizedBox(height: Space.s3),
                 FilledButton(
-                  key: const ValueKey('product_retry'),
+                  key: retryKey,
                   onPressed: onRetry,
                   child: const Text('다시 시도'),
                 ),

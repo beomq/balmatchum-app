@@ -201,7 +201,7 @@ void main() {
             .dogAsset,
         meeting.state.candidate!.spritePath,
       );
-      expect(find.byKey(const ValueKey('quiz_1_submit')), findsOneWidget);
+      expect(find.byKey(const ValueKey('quiz_1_choice_0')), findsOneWidget);
       container.updateOverrides([
         authenticatedMeetingControllerProvider.overrideWithValue(null),
         authenticatedProductControllerProvider.overrideWithValue(null),

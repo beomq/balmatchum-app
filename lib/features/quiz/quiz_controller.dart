@@ -88,7 +88,7 @@ class QuizController extends ChangeNotifier {
     try {
       await _refresh();
     } catch (_) {
-      if (isActive) notice = '오늘의 퀴즈를 불러오지 못했어요. 다시 조회해 주세요.';
+      if (isActive) notice = '오늘의 퀴즈를 불러오지 못했어요.';
     } finally {
       busy = false;
       _notify();
@@ -173,15 +173,17 @@ class QuizController extends ChangeNotifier {
       _ambiguous = false;
       pendingAnswer = null;
       verifiedIntent = null;
-      notice = wasAnswer
-          ? '답안 저장을 확인했어요. 이 문제의 지급 기록은 ${result.awardedPoints}P예요. 재전송은 추가 지급되지 않아요.'
-          : '추가 문제를 열었어요. 답을 제출하면 지급 기록을 확인할 수 있어요.';
-      // Unlock replay can contain the original unanswered DTO. Always reconcile.
+      // The screen shows a confirmed result itself; [notice] is kept for
+      // what still needs the user. The server's view of an answer shows at
+      // once (guide 6.1). Unlock replay can contain the original unanswered
+      // DTO, so only answers apply before the reconciling read.
+      if (wasAnswer) _apply(result);
       needsRefresh = true;
+      _notify();
       try {
         await _refresh();
       } catch (_) {
-        if (isActive) notice = '요청은 완료됐어요. 최신 문제를 다시 조회해 주세요.';
+        if (isActive) notice = '요청은 완료됐어요. 최신 문제를 다시 불러와 주세요.';
       }
     } on ProductException catch (e) {
       if (isActive) {
@@ -214,13 +216,31 @@ class QuizController extends ChangeNotifier {
       }
     } catch (_) {
       _ambiguous = true;
-      if (isActive) notice = '결과를 확인하지 못했어요. 선택을 바꾸지 말고 같은 요청으로 다시 확인해 주세요.';
+      if (isActive) {
+        notice = pendingAnswer != null
+            ? '답을 확인하지 못했어요. 다시 시도하면 고른 답 그대로 확인해요.'
+            : '결과를 확인하지 못했어요. 다시 시도하면 같은 요청으로 확인해요.';
+      }
     } finally {
       busy = false;
       _notify();
     }
     // An answered free question can open the ad-gated extra one.
     if (_premiumCheckDue) await checkPremium();
+  }
+
+  /// Puts the server's answered [question] in place of the open one.
+  void _apply(QuizQuestion question) {
+    final value = today;
+    if (value == null) return;
+    today = value.copyWith(
+      free: value.free?.assignmentId == question.assignmentId
+          ? question
+          : value.free,
+      extra: value.extra?.assignmentId == question.assignmentId
+          ? question
+          : value.extra,
+    );
   }
 
   Future<List<QuizQuestion>> history(int? before) async {

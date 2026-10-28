@@ -29,6 +29,52 @@ class StatusChip extends StatelessWidget {
   );
 }
 
+/// Fills of [TextChip]: a plain status, a good result, a wrong one.
+enum TextChipTone { neutral, record, error }
+
+/// `Chip/Text` (`ki4q7`): a 30 pt pill with a short status or result.
+/// Its 13 pt labels keep 4.5:1 contrast, so the olive tone writes in the
+/// darker olive the correct quiz option uses (Pen's record on record-soft
+/// is 4.4:1).
+class TextChip extends StatelessWidget {
+  const TextChip(
+    this.label, {
+    this.tone = TextChipTone.neutral,
+    this.textKey,
+    super.key,
+  });
+  final String label;
+  final TextChipTone tone;
+
+  /// Finds the label itself, whose text tests read.
+  final Key? textKey;
+
+  @override
+  Widget build(BuildContext context) {
+    final (fill, ink) = switch (tone) {
+      TextChipTone.neutral => (MeetingColors.soft, MeetingColors.ink),
+      TextChipTone.record => (
+        ProductColors.recordSoft,
+        ProductColors.recordInk,
+      ),
+      TextChipTone.error => (ProductColors.errorSoft, ProductColors.error),
+    };
+    return Container(
+      constraints: const BoxConstraints(minHeight: 30),
+      padding: const EdgeInsets.symmetric(horizontal: Space.s3, vertical: 6),
+      decoration: BoxDecoration(
+        color: fill,
+        borderRadius: const BorderRadius.all(Radius.circular(999)),
+      ),
+      child: Text(
+        label,
+        key: textKey,
+        style: meetingType(13, 18, FontWeight.w700, ink),
+      ),
+    );
+  }
+}
+
 /// `Home/Goal Ring` (`T63MNT`): the share of the day's goal. A null
 /// [progress] draws the track alone, for steps that are not known.
 class GoalRing extends StatelessWidget {

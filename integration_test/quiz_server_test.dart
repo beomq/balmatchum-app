@@ -181,34 +181,34 @@ void main() {
       expect(controller.today!.status, 'contentUnavailable');
       await capture('quiz-empty-bank');
       await seam('/bank');
-      await action(() => tap('quiz_reload'));
+      // The empty state has no reload button; entry reads today itself.
+      await action(controller.load);
       final free = controller.today!.free!;
       expect(free.fixtureLabel, 'quiz-test-fixture-not-production');
       expect(free.source, isNull);
       await capture('quiz-free-question');
-      await tap('quiz_${free.assignmentId}_choice_1');
-      await tester.pump();
-      await action(() => tap('quiz_${free.assignmentId}_submit'));
+      // One tap is the answer.
+      await action(() => tap('quiz_${free.assignmentId}_choice_1'));
       expect(controller.today!.free!.answerIndex, 1);
       expect(controller.today!.free!.correctIndex, 0);
       expect(controller.today!.free!.awardedPoints, 2);
       expect(controller.today!.extraStatus, 'adRequired');
       expect((await client.product.getWallet()).balance, 0);
       await tester.ensureVisible(
-        find.byKey(ValueKey('quiz_${free.assignmentId}_past_points')),
+        find.byKey(ValueKey('quiz_${free.assignmentId}_award_new')),
       );
       await capture('quiz-wrong-answer');
 
       // Exhaustion of the available IDs is distinct from an empty bank.
       await seam('/exhausted');
-      await action(() => tap('quiz_reload'));
+      await action(controller.load);
       expect(controller.today!.extraStatus, 'exhausted');
       await tester.ensureVisible(
         find.byKey(const ValueKey('quiz_extra_exhausted')),
       );
       await capture('quiz-exhausted');
       await seam('/bank');
-      await action(() => tap('quiz_reload'));
+      await action(controller.load);
 
       final verified = Completer<void>();
       ads.addListener(() {
@@ -237,16 +237,14 @@ void main() {
       final extra = controller.today!.extra!;
       expect((await client.ads.getIntent(intent)).status, 'consumed');
       await tester.ensureVisible(
-        find.byKey(ValueKey('quiz_${extra.assignmentId}_submit')),
+        find.byKey(ValueKey('quiz_${extra.assignmentId}_choice_0')),
       );
       await capture('quiz-extra-question');
-      await tap('quiz_${extra.assignmentId}_choice_0');
-      await tester.pump();
-      await action(() => tap('quiz_${extra.assignmentId}_submit'));
+      await action(() => tap('quiz_${extra.assignmentId}_choice_0'));
       expect(controller.today!.extra!.awardedPoints, 2);
       expect((await client.product.getWallet()).balance, 0);
       await tester.ensureVisible(
-        find.byKey(ValueKey('quiz_${extra.assignmentId}_past_points')),
+        find.byKey(ValueKey('quiz_${extra.assignmentId}_award_new')),
       );
       await capture('quiz-extra-answer');
 

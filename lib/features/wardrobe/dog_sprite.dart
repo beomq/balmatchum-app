@@ -1,9 +1,10 @@
 import 'package:flutter/material.dart';
 
 /// Pen sizes of the companion outside home (guide 3.6): beside a result or a
-/// record, and over an empty state.
+/// record, under an open quiz question, and over an empty state.
 abstract final class DogSpriteSize {
   static const companion = 72.0;
+  static const hint = 96.0;
   static const emptyState = 140.0;
 }
 
