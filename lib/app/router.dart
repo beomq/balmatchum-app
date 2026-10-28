@@ -212,8 +212,12 @@ final routerProvider = Provider<GoRouter>((ref) {
         routes: [
           GoRoute(
             path: 'billing',
-            builder: (context, state) =>
-                BillingScreen(key: ObjectKey(billing), controller: billing),
+            builder: (context, state) => BillingScreen(
+              key: ObjectKey(billing),
+              controller: billing,
+              onBack: () => context.pop(),
+              onHome: () => context.go('/'),
+            ),
           ),
           // Guide 6.4: the home button and the Duo rail open the same page;
           // billing pushed from here returns here.

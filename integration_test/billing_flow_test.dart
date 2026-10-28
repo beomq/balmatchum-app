@@ -39,7 +39,7 @@ void main() {
         MaterialApp(
           debugShowCheckedModeBanner: false,
           theme: ThemeData(brightness: brightness, useMaterial3: true),
-          home: BillingScreen(controller: c),
+          home: BillingScreen(controller: c, onBack: () {}, onHome: () {}),
         ),
       );
       await tester.pumpAndSettle();

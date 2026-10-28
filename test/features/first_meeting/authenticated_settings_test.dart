@@ -169,7 +169,10 @@ void main() {
       await tapVisible(tester, 'settings_billing');
       expect(location(router), '/billing');
       expect(find.byType(BillingScreen), findsOneWidget);
-      await tester.pageBack();
+      // Billing's own back, in the top bar or the Duo rail.
+      await tester.tap(
+        find.byKey(ValueKey(duo ? 'duo_rail_back' : 'product_back')),
+      );
       await tester.pumpAndSettle();
       expect(location(router), '/settings');
       await tester.tap(
