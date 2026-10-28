@@ -19,7 +19,7 @@ void main() {
     for (final stage in ['catalog', 'name', 'goal']) {
       testWidgets('$stage fits Duo ${viewport.key}', (tester) async {
         // Given a first meeting at this stage and the actual panel size.
-        useDuoViewport(tester, viewport.value);
+        useDuoViewport(tester, viewport.key);
         final c = FirstMeetingController(storage: MemoryStorage());
         addTearDown(c.dispose);
         await c.initialize();
@@ -53,7 +53,7 @@ void main() {
 
     testWidgets('home and steps fit Duo ${viewport.key}', (tester) async {
       // Given the existing authenticated profile and product fakes.
-      useDuoViewport(tester, viewport.value);
+      useDuoViewport(tester, viewport.key);
       final c = FirstMeetingController(
         storage: MemoryStorage(),
         profileRepository: Profiles()..current = view(),
@@ -97,7 +97,7 @@ void main() {
       tester,
     ) async {
       // Given an authenticated home with a successful URL launcher.
-      useDuoViewport(tester, viewport.value);
+      useDuoViewport(tester, viewport.key);
       final opened = <Uri>[];
       final c = FirstMeetingController(
         storage: MemoryStorage(),
@@ -136,7 +136,7 @@ void main() {
 
     testWidgets('login controls fit Duo ${viewport.key}', (tester) async {
       // Given the real login and existing unconfigured starter fake.
-      useDuoViewport(tester, viewport.value);
+      useDuoViewport(tester, viewport.key);
       // When the screen is rendered at the panel size.
       await tester.pumpWidget(
         duoHost(const SignInScreen(starter: NotConnectedSignInStarter())),

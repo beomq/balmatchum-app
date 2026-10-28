@@ -13,7 +13,7 @@ void main() {
   for (final viewport in duoViewports.entries) {
     testWidgets('calendar fits Duo ${viewport.key}', (tester) async {
       // Given a month with the existing confirmed step record fixture.
-      useDuoViewport(tester, viewport.value);
+      useDuoViewport(tester, viewport.key);
       // When the month is rendered.
       await tester.pumpWidget(
         duoHost(
@@ -37,7 +37,7 @@ void main() {
 
     testWidgets('day detail and steps fit Duo ${viewport.key}', (tester) async {
       // Given a confirmed day with claimable steps and rewards.
-      useDuoViewport(tester, viewport.value);
+      useDuoViewport(tester, viewport.key);
       // When the day detail screen loads.
       await tester.pumpWidget(duoHost(dayScreen(load: (_) async => day())));
       await tester.pumpAndSettle();
@@ -51,7 +51,7 @@ void main() {
 
     testWidgets('quiz fits Duo ${viewport.key}', (tester) async {
       // Given the existing question fixture.
-      useDuoViewport(tester, viewport.value);
+      useDuoViewport(tester, viewport.key);
       // When the daily quiz is rendered.
       await tester.pumpWidget(
         duoHost(
@@ -78,7 +78,7 @@ void main() {
       tester,
     ) async {
       // Given the existing owned and offered wardrobe fixtures.
-      useDuoViewport(tester, viewport.value);
+      useDuoViewport(tester, viewport.key);
       await tester.pumpWidget(duoHost(screen(load: () async => snap())));
       await tester.pumpAndSettle();
       expect(tester.takeException(), isNull);

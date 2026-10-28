@@ -13,11 +13,22 @@ const duoViewports = {
   'outer landscape': Size(678, 466),
 };
 
-void useDuoViewport(WidgetTester tester, Size size) {
+/// Physical (@3) safe-area padding for each viewport.
+const duoPaddings = {
+  // Measured on the iOS 27.1 simulator: right 84, bottom 34 pt.
+  'outer portrait': FakeViewPadding(right: 252, bottom: 102),
+  // Not measured; conservative values.
+  'inner portrait': FakeViewPadding(top: 186, bottom: 102),
+  // Not measured; assumes the right column and a 21 pt bottom.
+  'inner landscape': FakeViewPadding(right: 252, bottom: 63),
+  // Not measured; exercises the no-rail path.
+  'outer landscape': FakeViewPadding(top: 186, bottom: 102),
+};
+
+void useDuoViewport(WidgetTester tester, String name) {
   tester.view.devicePixelRatio = 3;
-  tester.view.physicalSize = size * 3;
-  // Conservative safe-area fixture, not measured camera/fold geometry.
-  tester.view.padding = const FakeViewPadding(top: 186, bottom: 102);
+  tester.view.physicalSize = duoViewports[name]! * 3;
+  tester.view.padding = duoPaddings[name]!;
   addTearDown(tester.view.resetDevicePixelRatio);
   addTearDown(tester.view.resetPhysicalSize);
   addTearDown(tester.view.resetPadding);
