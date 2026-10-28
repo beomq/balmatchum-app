@@ -867,40 +867,7 @@ class _FirstMeetingScreenState extends State<FirstMeetingScreen> {
                       ),
                   ],
                   const SizedBox(height: 12),
-                  LayoutBuilder(
-                    builder: (context, bounds) {
-                      final stack =
-                          bounds.maxWidth < 280 ||
-                          MediaQuery.textScalerOf(context).scale(16) > 21;
-                      final actions = [
-                        OutlinedButton(
-                          onPressed:
-                              widget.onOpenRecords ??
-                              () => unavailable('기록 보기'),
-                          child: const Text('기록 보기'),
-                        ),
-                        FilledButton(
-                          onPressed: reward,
-                          child: const Text('포인트 받기'),
-                        ),
-                      ];
-                      return stack
-                          ? Column(
-                              children: [
-                                actions[0],
-                                const SizedBox(height: 8),
-                                actions[1],
-                              ],
-                            )
-                          : Row(
-                              children: [
-                                Expanded(child: actions[0]),
-                                const SizedBox(width: 8),
-                                Expanded(child: actions[1]),
-                              ],
-                            );
-                    },
-                  ),
+                  FilledButton(onPressed: reward, child: const Text('포인트 받기')),
                 ],
               ),
             ),

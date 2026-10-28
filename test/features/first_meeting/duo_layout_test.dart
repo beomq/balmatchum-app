@@ -220,6 +220,7 @@ void main() {
           find.descendant(of: rail('settings'), matching: find.byTooltip('설정')),
           findsOneWidget,
         );
+        expect(find.text('기록 보기'), findsNothing);
         await tester.tap(find.text('기록'));
         await tester.tap(rail('photo'));
         expect(opened, ['records', 'photo']);
@@ -301,6 +302,7 @@ void main() {
         expect(find.byType(DuoRail), findsNothing);
         expect(find.byType(MeetingShortcuts), findsOneWidget);
         expect(find.byTooltip('설정'), findsOneWidget);
+        expect(find.text('기록 보기'), findsNothing);
         final records = find.text('기록');
         await tester.ensureVisible(records);
         await tester.tap(records);
