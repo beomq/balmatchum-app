@@ -260,6 +260,31 @@ void main() {
     expect(server.ids.toSet(), hasLength(1));
   });
 
+  testWidgets('a goal outside 1,000 to 30,000 stays in the sheet unsent', (
+    tester,
+  ) async {
+    final server = Profiles()..current = view(goal: 5000);
+    final c = await signedIn(server);
+    addTearDown(c.dispose);
+    await tester.pumpWidget(host(settings(c)));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('settings_goal_row')));
+    await tester.pumpAndSettle();
+    for (final input in ['999', '30001']) {
+      await tester.enterText(
+        find.byKey(const ValueKey('settings_goal')),
+        input,
+      );
+      await tester.tap(find.byKey(const ValueKey('settings_goal_save')));
+      await tester.pumpAndSettle();
+      // The sheet stays with its error and nothing reaches the server.
+      expect(find.byKey(const ValueKey('settings_edit_error')), findsOneWidget);
+      expect(find.byKey(const ValueKey('settings_goal')), findsOneWidget);
+    }
+    expect(server.ids, isEmpty);
+    expect(c.state.goal, 5000);
+  });
+
   testWidgets('a conflict keeps the sheet and shows the newer name', (
     tester,
   ) async {

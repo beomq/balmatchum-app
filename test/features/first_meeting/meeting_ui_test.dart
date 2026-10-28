@@ -257,8 +257,9 @@ void main() {
         await tester.tap(find.text('이름과 성별 저장'));
         await tester.pumpAndSettle();
         expect(c.state.step, FirstMeetingStep.goal);
-        await tester.ensureVisible(find.text('목표 저장하고 홈 보기'));
-        await tester.tap(find.text('목표 저장하고 홈 보기'));
+        final start = find.byKey(const ValueKey('meeting_goal_start'));
+        await tester.ensureVisible(start);
+        await tester.tap(start);
         await tester.pumpAndSettle();
         expect(c.state.isComplete, isTrue);
         final count = find.byKey(const ValueKey('daily_steps_count'));

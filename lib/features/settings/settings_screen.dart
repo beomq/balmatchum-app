@@ -410,6 +410,11 @@ class _EditSheetState extends State<_EditSheet> {
                 decoration: InputDecoration(
                   labelText: isName ? '강아지 이름' : '하루 걸음 목표',
                   suffixText: isName ? null : '걸음',
+                  // The range every saved goal keeps (9.1 ②).
+                  helperText: isName
+                      ? null
+                      : '${formatCount(FirstMeetingController.minGoal)}~'
+                            '${formatCount(FirstMeetingController.maxGoal)}걸음',
                 ),
               ),
               if (c.error != null || c.profileError != null) ...[

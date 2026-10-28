@@ -12,7 +12,7 @@ import '../daily_activity/product_repository.dart';
 import '../daily_activity/today_reward_sheet.dart';
 import '../quiz/quiz_controller.dart';
 import '../records/product_page.dart'
-    show PixelIcon, fixtureLabelsVisible, formatCount;
+    show PixelIcon, Space, fixtureLabelsVisible, formatCount;
 import '../records/status_widgets.dart';
 import '../wardrobe/dog_sprite.dart';
 import 'breed_pager.dart';
@@ -20,6 +20,7 @@ import 'domain/first_meeting.dart';
 import 'home_goal_card.dart';
 import 'meeting_theme.dart';
 import 'meeting_widgets.dart';
+import 'onboarding_widgets.dart';
 
 class FirstMeetingScreen extends StatefulWidget {
   const FirstMeetingScreen({
@@ -55,12 +56,15 @@ class _FirstMeetingScreenState extends State<FirstMeetingScreen> {
   FirstMeetingController? controller;
   String? loadError;
   final name = TextEditingController();
-  final goal = TextEditingController();
   final pageStorage = PageStorageBucket();
   late final AppLifecycleListener lifecycle;
 
   /// The home's entry refresh already ran for the current product.
   bool homeRefreshed = false;
+
+  /// The goal step's completion in flight. A second tap before the
+  /// controller turns busy queues nothing (guide 4.4-6).
+  Future<void>? starting;
 
   @override
   void initState() {
@@ -104,7 +108,6 @@ class _FirstMeetingScreenState extends State<FirstMeetingScreen> {
       }
       controller = value;
       name.text = value.state.name;
-      goal.text = value.state.goalInput;
       value.addListener(changed);
       setState(() {});
       enterHome();
@@ -164,7 +167,6 @@ class _FirstMeetingScreenState extends State<FirstMeetingScreen> {
     widget.quiz?.removeListener(changed);
     controller?.removeListener(changed);
     name.dispose();
-    goal.dispose();
     super.dispose();
   }
 
@@ -191,7 +193,6 @@ class _FirstMeetingScreenState extends State<FirstMeetingScreen> {
     if (confirmed == true) {
       await controller!.reset();
       name.text = controller!.state.name;
-      goal.text = controller!.state.goalInput;
     }
   }
 
@@ -303,6 +304,12 @@ class _FirstMeetingScreenState extends State<FirstMeetingScreen> {
       _ => DuoRailSpec(tools: [duoBack(c.isBusy ? null : c.back)]),
     };
     final railMode = duoRailMode(MediaQuery.of(context), railSpec);
+    // While the rail carries back, the header keeps its empty slot.
+    final onBack = railMode != null || !c.canGoBack || c.isBusy ? null : c.back;
+    final goalStep =
+        s.step == FirstMeetingStep.goal &&
+        c.error != FirstMeetingError.corruption &&
+        c.isRestored;
     return PopScope(
       canPop:
           s.step == FirstMeetingStep.login || s.step == FirstMeetingStep.home,
@@ -316,8 +323,13 @@ class _FirstMeetingScreenState extends State<FirstMeetingScreen> {
           onRefresh: s.step == FirstMeetingStep.home ? refreshHome : null,
           showHeader: s.step != FirstMeetingStep.home,
           wide: s.step == FirstMeetingStep.home,
-          // While the rail carries back, the header keeps its empty slot.
-          onBack: railMode != null || !c.canGoBack || c.isBusy ? null : c.back,
+          onBack: onBack,
+          // Pen ONB-09: back sits in the 3/3 step bar and the start at the
+          // bottom; the save result and retry stay above the content.
+          header: goalStep
+              ? OnboardingStepNav(step: 3, total: 3, onBack: onBack)
+              : null,
+          footer: goalStep ? goalFooter(c) : null,
           rail: railMode == null
               ? null
               : DuoRail(spec: railSpec, mode: railMode),
@@ -346,7 +358,10 @@ class _FirstMeetingScreenState extends State<FirstMeetingScreen> {
                   '체험 기록이 손상되었습니다. 자동으로 덮어쓰지 않았습니다.',
                 FirstMeetingError.storage =>
                   '기기에 저장하지 못했습니다. 입력을 유지했으니 다시 시도해 주세요.',
-                FirstMeetingError.validation => '이름·성별과 양의 정수 목표를 확인해 주세요.',
+                FirstMeetingError.validation =>
+                  '이름·성별과 ${formatCount(FirstMeetingController.minGoal)}~'
+                      '${formatCount(FirstMeetingController.maxGoal)}걸음 '
+                      '사이의 목표를 확인해 주세요.',
               }),
               const SizedBox(height: 16),
               if (c.error == FirstMeetingError.corruption &&
@@ -359,7 +374,6 @@ class _FirstMeetingScreenState extends State<FirstMeetingScreen> {
                       : () async {
                           await c.initialize();
                           name.text = c.state.name;
-                          goal.text = c.state.goalInput;
                         },
                   child: const Text('체험 기록 다시 읽기'),
                 ),
@@ -627,27 +641,72 @@ class _FirstMeetingScreenState extends State<FirstMeetingScreen> {
           ),
         ];
       case FirstMeetingStep.goal:
+        // The stepper, cards, number, estimate and line all read this one
+        // saved draft. A draft that is no number shows a dash.
+        final draft = int.tryParse(s.goalInput.trim());
+        final goal = FirstMeetingController.parseGoal(s.goalInput);
+        final base = draft ?? FirstMeetingController.recommendedGoal;
+        // Saves queue in order, so quick taps are kept; only an unresolved
+        // save or the start in flight locks the choice.
+        final editable = !c.hasPendingMutation && starting == null;
         return [
-          const MeetingHeading(
-            '하루 목표를 정해 볼까요?',
-            '기본 목표는 5,000걸음이에요. 나에게 맞게 정해 주세요.',
+          const MeetingHeading('하루 목표를 정해 볼까요?', '언제든 설정에서 바꿀 수 있어요.'),
+          GoalStepper(
+            value: draft,
+            onDecrease: editable && base > FirstMeetingController.minGoal
+                ? () => unawaited(c.stepGoal(up: false))
+                : null,
+            onIncrease: editable && base < FirstMeetingController.maxGoal
+                ? () => unawaited(c.stepGoal(up: true))
+                : null,
           ),
-          TextField(
-            key: const ValueKey('meeting_goal'),
-            controller: goal,
-            keyboardType: TextInputType.number,
-            onChanged: (value) => unawaited(c.updateGoal(value)),
-            decoration: const InputDecoration(
-              labelText: '하루 걸음 목표',
-              suffixText: '걸음',
+          const SizedBox(height: Space.s4),
+          if (goal == null)
+            Text(
+              '${formatCount(FirstMeetingController.minGoal)}~'
+              '${formatCount(FirstMeetingController.maxGoal)}걸음 사이로 정해 주세요',
+              key: const ValueKey('meeting_goal_range'),
+              textAlign: TextAlign.center,
+              style: meetingType(
+                13.5,
+                18,
+                FontWeight.w600,
+                MeetingColors.error,
+              ),
+            )
+          else
+            Text(
+              _estimate(goal),
+              key: const ValueKey('meeting_goal_estimate'),
+              textAlign: TextAlign.center,
+              style: meetingType(
+                13.5,
+                18,
+                FontWeight.w600,
+                MeetingColors.muted,
+              ),
             ),
+          const SizedBox(height: Space.s4),
+          GoalPresetGrid(
+            children: [
+              for (final value in FirstMeetingController.goalPresets)
+                GoalPresetCard(
+                  key: ValueKey('meeting_goal_preset_$value'),
+                  value: value,
+                  label: _presetLabels[value]!,
+                  recommended: value == FirstMeetingController.recommendedGoal,
+                  selected: value == goal,
+                  onTap: editable
+                      ? () => unawaited(c.updateGoal('$value'))
+                      : null,
+                ),
+            ],
           ),
-          const SizedBox(height: 20),
-          const MeetingNotice('가볍게 시작해요', '목표를 채우지 못해도 벌점은 없어요.'),
-          const SizedBox(height: 20),
-          FilledButton(
-            onPressed: enabled ? c.complete : null,
-            child: const Text('목표 저장하고 홈 보기'),
+          const SizedBox(height: Space.s4),
+          DogSpeechPreview(
+            sprite: s.candidate!.spritePath,
+            line: _goalLine(goal),
+            lineKey: const ValueKey('meeting_goal_line'),
           ),
         ];
       case FirstMeetingStep.home:
@@ -871,6 +930,43 @@ class _FirstMeetingScreenState extends State<FirstMeetingScreen> {
     }
   }
 
+  /// The no-penalty note and the start under the goal step (guide 4.4-6).
+  /// The start saves through the existing complete path with the draft the
+  /// queued saves left, once.
+  Widget goalFooter(FirstMeetingController c) {
+    final ready =
+        !c.isBusy &&
+        !c.hasPendingMutation &&
+        starting == null &&
+        FirstMeetingController.parseGoal(c.state.goalInput) != null;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      spacing: OnboardingMetrics.gap,
+      children: [
+        Text(
+          '목표를 채우지 못해도 벌점은 없어요',
+          key: const ValueKey('meeting_goal_no_penalty'),
+          textAlign: TextAlign.center,
+          style: Theme.of(context).textTheme.bodySmall,
+        ),
+        FilledButton(
+          key: const ValueKey('meeting_goal_start'),
+          onPressed: ready ? () => startGoal(c) : null,
+          child: const Text('이 목표로 시작하기'),
+        ),
+      ],
+    );
+  }
+
+  void startGoal(FirstMeetingController c) {
+    if (starting != null) return;
+    setState(() {
+      starting = c.complete().whenComplete(() {
+        if (mounted) setState(() => starting = null);
+      });
+    });
+  }
+
   /// The quiz tile's state; null while it is not known, never "done".
   String? quizStatus(String today) {
     if (widget.quiz case final quiz?) {
@@ -936,6 +1032,35 @@ class _FirstMeetingScreenState extends State<FirstMeetingScreen> {
       ),
     ),
   );
+}
+
+/// Pen's preset titles for the owner's preset values (9.1 ②).
+const _presetLabels = {3000: '가볍게', 5000: '보통', 8000: '활발하게', 10000: '도전'};
+
+/// "대략 50분 · 3.5km 걷기" for a goal, from the controller's estimate.
+String _estimate(int goal) {
+  final (:minutes, :tenthsKm) = FirstMeetingController.estimateGoal(goal);
+  final hours = minutes ~/ 60;
+  final time = hours == 0
+      ? '$minutes분'
+      : minutes % 60 == 0
+      ? '$hours시간'
+      : '$hours시간 ${minutes % 60}분';
+  final km = tenthsKm % 10 == 0
+      ? '${tenthsKm ~/ 10}'
+      : '${tenthsKm ~/ 10}.${tenthsKm % 10}';
+  return '대략 $time · ${km}km 걷기';
+}
+
+/// The companion's reaction to the goal on screen (guide 4.4-5): the number
+/// and a word for its preset band.
+String _goalLine(int? goal) {
+  if (goal == null) return '하루에 얼마나\n같이 걸을까?';
+  final steps = '${formatCount(goal)}걸음';
+  if (goal < 5000) return '$steps이면\n가볍게 시작하기 좋아!';
+  if (goal < 8000) return '$steps이면\n매일 산책하기 딱 좋아!';
+  if (goal < 10000) return '$steps이면\n신나게 걸을 수 있겠다!';
+  return '$steps이라니\n같이 도전해 보자!';
 }
 
 /// The companion's line. Numbers stay in the goal card and never repeat
