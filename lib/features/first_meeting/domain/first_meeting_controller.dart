@@ -232,12 +232,6 @@ class FirstMeetingController extends ChangeNotifier {
     }
   });
 
-  Future<void> toggleCatalogPage() => _run(() async {
-    if (_at(FirstMeetingStep.catalog)) {
-      await _save(_state.copyWith(catalogPage: 1 - _state.catalogPage));
-    }
-  });
-
   Future<void> chooseRecommendation() => _run(() async {
     if (_at(FirstMeetingStep.method)) {
       await _save(

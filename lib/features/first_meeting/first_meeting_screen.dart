@@ -14,6 +14,7 @@ import '../daily_activity/product_repository.dart';
 import '../auth/kakao_auth_service.dart';
 import '../auth/account_deletion_dialog.dart';
 import '../wardrobe/dog_sprite.dart';
+import 'breed_pager.dart';
 import 'domain/first_meeting.dart';
 import 'meeting_theme.dart';
 import 'meeting_widgets.dart';
@@ -354,9 +355,7 @@ class _FirstMeetingScreenState extends State<FirstMeetingScreen> {
         child: MeetingPage(
           key: ValueKey(s.step),
           showHeader: s.step != FirstMeetingStep.home,
-          wide:
-              s.step == FirstMeetingStep.catalog ||
-              s.step == FirstMeetingStep.home,
+          wide: s.step == FirstMeetingStep.home,
           onBack:
               s.step == FirstMeetingStep.login ||
                   s.step == FirstMeetingStep.home ||
@@ -416,7 +415,6 @@ class _FirstMeetingScreenState extends State<FirstMeetingScreen> {
 
   List<Widget> screen(FirstMeetingController c) {
     final s = c.state;
-    final catalogPage = s.catalogPage;
     final enabled = !c.isBusy && !c.hasPendingMutation;
     switch (s.step) {
       case FirstMeetingStep.login:
@@ -525,73 +523,14 @@ class _FirstMeetingScreenState extends State<FirstMeetingScreen> {
         ];
       case FirstMeetingStep.catalog:
         return [
-          MeetingHeading(
-            '30종 직접 고르기 · ${catalogPage + 1}/2',
-            '${catalogPage == 0 ? 'G1–G4' : 'G5–G8'} · 품종을 누르면 최종 확인으로 이동',
-          ),
-          LayoutBuilder(
-            builder: (context, bounds) {
-              final columns = bounds.maxWidth < 552
-                  ? (bounds.maxWidth >= 328 &&
-                            MediaQuery.textScalerOf(context).scale(16) <= 21
-                        ? 2
-                        : 1)
-                  : ((bounds.maxWidth + 16) / 256).floor().clamp(1, 4);
-              final width = (bounds.maxWidth - 16 * (columns - 1)) / columns;
-              return Wrap(
-                spacing: 16,
-                runSpacing: 16,
-                children: [
-                  for (final group
-                      in FirstMeetingCatalog.groups
-                          .skip(catalogPage * 4)
-                          .take(4))
-                    Container(
-                      key: ValueKey('group_${group.id}'),
-                      width: width,
-                      padding: const EdgeInsets.all(12),
-                      decoration: BoxDecoration(
-                        color: Colors.white,
-                        border: Border.all(color: MeetingColors.line),
-                        borderRadius: BorderRadius.circular(16),
-                      ),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.stretch,
-                        children: [
-                          Text(
-                            '${group.id} · ${group.name}',
-                            style: Theme.of(context).textTheme.titleMedium,
-                          ),
-                          const SizedBox(height: 12),
-                          for (final breed in group.breeds)
-                            TextButton(
-                              key: ValueKey('breed_${breed.id}'),
-                              onPressed: enabled
-                                  ? () => c.selectCandidate(
-                                      breed.id,
-                                      origin: CandidateOrigin.catalog,
-                                    )
-                                  : null,
-                              child: Text(breed.name),
-                            ),
-                          Image.asset(
-                            group.breeds.first.spritePath,
-                            height: 96,
-                            fit: BoxFit.contain,
-                            filterQuality: FilterQuality.none,
-                          ),
-                        ],
-                      ),
-                    ),
-                ],
-              );
-            },
-          ),
-          const SizedBox(height: 16),
-          OutlinedButton(
-            key: const ValueKey('meeting_catalog_page'),
-            onPressed: enabled ? c.toggleCatalogPage : null,
-            child: Text(catalogPage == 0 ? '다음 그룹 보기' : '이전 그룹 보기'),
+          const MeetingHeading('30종 직접 고르기', '넘겨 보고 카드를 누르면 최종 확인으로 이동'),
+          BreedPager(
+            initialBreedId: s.candidateOrigin == CandidateOrigin.catalog
+                ? s.candidateBreedId
+                : null,
+            enabled: enabled,
+            onSelect: (breed) =>
+                c.selectCandidate(breed.id, origin: CandidateOrigin.catalog),
           ),
         ];
       case FirstMeetingStep.confirm:

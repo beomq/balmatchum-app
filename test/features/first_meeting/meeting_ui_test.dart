@@ -31,9 +31,8 @@ class MemoryStore implements FirstMeetingStorage {
 }
 
 void main() {
-  testWidgets('catalog pages preserve the candidate return group', (
-    tester,
-  ) async {
+  testWidgets('catalog pager reopens at the chosen breed', (tester) async {
+    // Given the catalog step of a fresh local meeting.
     final c = FirstMeetingController(storage: MemoryStore());
     await c.initialize();
     await c.enter();
@@ -45,33 +44,35 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
-    expect(find.byKey(const ValueKey('group_G1')), findsOneWidget);
-    final page = find.byKey(const ValueKey('meeting_catalog_page'));
-    await tester.ensureVisible(page);
-    await tester.tap(page);
-    await tester.pumpAndSettle();
-    expect(find.byKey(const ValueKey('group_G1')), findsNothing);
-    expect(find.byKey(const ValueKey('group_G5')), findsOneWidget);
-    final restored = FirstMeetingController(storage: c.storage);
-    await restored.initialize();
-    expect(restored.state.catalogPage, 1);
-    expect(restored.state.step, FirstMeetingStep.catalog);
-    restored.dispose();
+    final position = find.byKey(const ValueKey('breed_pager_position'));
+    expect(tester.widget<Text>(position).data, '1 / 30');
+    // When G5's first breed is selected from its tab.
     final breed = FirstMeetingCatalog.groups[4].breeds.first;
-    final card = find.byKey(ValueKey('breed_${breed.id}'));
-    await tester.ensureVisible(card);
-    await tester.tap(card);
+    await tester.tap(find.byKey(const ValueKey('breed_group_G5')));
     await tester.pumpAndSettle();
+    await tester.tap(find.byKey(ValueKey('breed_${breed.id}')));
+    await tester.pumpAndSettle();
+    expect(c.state.step, FirstMeetingStep.confirm);
     expect(c.state.candidate!.id, breed.id);
+    // Then going back, and a restart, show that breed's card again.
     await tester.ensureVisible(find.text('다시 고르기'));
     await tester.tap(find.text('다시 고르기'));
     await tester.pumpAndSettle();
-    expect(find.byKey(const ValueKey('group_G5')), findsOneWidget);
-    await tester.ensureVisible(page);
-    await tester.tap(page);
-    await tester.pumpAndSettle();
-    expect(find.byKey(const ValueKey('group_G1')), findsOneWidget);
+    final shown = '${FirstMeetingCatalog.breeds.indexOf(breed) + 1} / 30';
+    expect(tester.widget<Text>(position).data, shown);
+    final restored = FirstMeetingController(storage: c.storage);
     await tester.pumpWidget(const SizedBox.shrink());
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: meetingTheme(),
+        home: FirstMeetingScreen(controller: restored),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(restored.state.step, FirstMeetingStep.catalog);
+    expect(tester.widget<Text>(position).data, shown);
+    await tester.pumpWidget(const SizedBox.shrink());
+    restored.dispose();
     c.dispose();
   });
 

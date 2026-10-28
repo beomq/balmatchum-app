@@ -39,7 +39,7 @@ void main() {
         await tester.pumpAndSettle();
         // Then the final control is reachable without a layout exception.
         final control = switch (stage) {
-          'catalog' => find.byKey(const ValueKey('meeting_catalog_page')),
+          'catalog' => find.byKey(const ValueKey('breed_pager_next')),
           'name' => find.text('이름과 성별 저장'),
           'goal' => find.text('목표 저장하고 홈 보기'),
           _ => throw StateError('Unknown fixture stage'),
