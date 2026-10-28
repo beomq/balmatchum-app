@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import '../../app/duo_rail.dart';
 import '../first_meeting/domain/dog_catalog.dart';
 import '../first_meeting/meeting_theme.dart';
+import '../first_meeting/onboarding_widgets.dart' show wrapByWords;
 import '../records/product_page.dart';
 import '../records/status_widgets.dart';
 import 'dog_sprite.dart';
@@ -145,31 +146,36 @@ class _WardrobeScreenState extends State<WardrobeScreen> {
     }
   }
 
-  Future<bool> confirmSpend(String title, int price) async =>
+  /// Asks before points are spent (Pen 'V2 · WARD-02', XmVOx): the product's
+  /// own picture, the balance before and after when both are known and one
+  /// button naming the price. Only that button returns true; cancel and a
+  /// tap outside send nothing.
+  Future<bool> confirmSpend({
+    required String title,
+    required String note,
+    required int price,
+    required Widget thumbnail,
+  }) async =>
       await showDialog<bool>(
         context: context,
-        builder: (context) => AlertDialog(
-          title: Text(title),
-          content: Text('${formatCount(price)}포인트가 사용돼요. 구매 후 착용은 따로 선택해요.'),
-          actionsOverflowButtonSpacing: 8,
-          actions: [
-            OutlinedButton(
-              key: const ValueKey('wardrobe_purchase_cancel'),
-              onPressed: () => Navigator.pop(context, false),
-              child: const Text('취소'),
-            ),
-            FilledButton(
-              key: const ValueKey('wardrobe_purchase_confirm'),
-              onPressed: () => Navigator.pop(context, true),
-              child: const Text('구매 확인'),
-            ),
-          ],
+        builder: (context) => _SpendDialog(
+          title: title,
+          note: note,
+          price: price,
+          // The latest server balance as the dialog opens.
+          balance: snapshot?.balance,
+          thumbnail: thumbnail,
         ),
       ) ==
       true;
 
   Future<void> confirmPurchase(WardrobeTheme theme) async {
-    final ok = await confirmSpend('${theme.name} 배경을 구매할까요?', theme.price!);
+    final ok = await confirmSpend(
+      title: '${theme.name} 배경을 살까요?',
+      note: '산 배경은 꾸미기에서 언제든 바꿀 수 있어요.\n구매 후 착용은 따로 선택해요.',
+      price: theme.price!,
+      thumbnail: _ThemeSurface(theme, keyPrefix: 'wardrobe_purchase'),
+    );
     if (ok && mounted) {
       await run(_Shelf.theme, () => widget.purchaseTheme(theme));
     }
@@ -178,8 +184,23 @@ class _WardrobeScreenState extends State<WardrobeScreen> {
   Future<void> changeOutfit(WardrobeOutfit outfit, OutfitChange change) async {
     final ok = switch (change) {
       OutfitChange.purchase => await confirmSpend(
-        '${outfit.name} 의상을 구매할까요?',
-        outfit.price,
+        title: '${outfit.name} 의상을 살까요?',
+        note: '산 의상은 꾸미기에서 언제든 입히고 벗길 수 있어요.\n구매 후 착용은 따로 선택해요.',
+        price: outfit.price,
+        // This breed's own layer on its own sprite; the shelf's hanger icon
+        // is not the product.
+        thumbnail: ColoredBox(
+          color: MeetingColors.stage,
+          child: Padding(
+            padding: const EdgeInsets.all(Space.s2),
+            child: DogSprite(
+              asset: widget.dog.spritePath,
+              layer: outfit.layerFor(widget.dog.id),
+              spriteKey: const ValueKey('wardrobe_purchase_dog'),
+              layerKey: const ValueKey('wardrobe_purchase_outfit'),
+            ),
+          ),
+        ),
       ),
       OutfitChange.wear || OutfitChange.remove => true,
     };
@@ -749,6 +770,155 @@ class _ThemeTile extends StatelessWidget {
                 ],
               ),
             ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Pen 'V2 · WARD-02' (XmVOx) in the app's shared dialog theme (style 40).
+class _SpendDialog extends StatelessWidget {
+  const _SpendDialog({
+    required this.title,
+    required this.note,
+    required this.price,
+    required this.balance,
+    required this.thumbnail,
+  });
+  final String title;
+  final String note;
+  final int price;
+
+  /// Null when the server balance is unknown: no estimate is drawn and none
+  /// is made up from 0. The server's answer is the balance that counts.
+  final int? balance;
+  final Widget thumbnail;
+
+  static const _unknown = '보유 포인트를 아직 확인하지 못했어요. 부족하면 사지 않고 알려 드려요.';
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context).dialogTheme;
+    final points = balance;
+    final amount = meetingType(15, 20, FontWeight.w700, MeetingColors.muted);
+    Text centered(String text, Key key, TextStyle? style) => Text(
+      wrapByWords(text),
+      key: key,
+      semanticsLabel: text,
+      textAlign: TextAlign.center,
+      style: style,
+    );
+    return Dialog(
+      insetPadding: const EdgeInsets.symmetric(
+        horizontal: Space.s8,
+        vertical: Space.s6,
+      ),
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 360),
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.all(Space.s5),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            spacing: Space.s3,
+            children: [
+              Center(
+                // Pen 'Purchase Thumb': 132 x 96, the line drawn over the
+                // picture's edge.
+                child: Container(
+                  key: const ValueKey('wardrobe_purchase_thumb'),
+                  width: 132,
+                  height: 96,
+                  clipBehavior: Clip.antiAlias,
+                  decoration: const BoxDecoration(
+                    borderRadius: BorderRadius.all(Radius.circular(14)),
+                  ),
+                  foregroundDecoration: BoxDecoration(
+                    borderRadius: const BorderRadius.all(Radius.circular(14)),
+                    border: Border.all(color: MeetingColors.line),
+                  ),
+                  child: thumbnail,
+                ),
+              ),
+              centered(
+                title,
+                const ValueKey('wardrobe_purchase_title'),
+                theme.titleTextStyle,
+              ),
+              if (points == null)
+                centered(
+                  _unknown,
+                  const ValueKey('wardrobe_purchase_balance_unknown'),
+                  theme.contentTextStyle,
+                )
+              else
+                Center(
+                  child: Semantics(
+                    container: true,
+                    label:
+                        '구매 전 ${formatCount(points)}P, '
+                        '구매 후 예상 ${formatCount(points - price)}P',
+                    excludeSemantics: true,
+                    child: Container(
+                      key: const ValueKey('wardrobe_purchase_balance'),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: Space.s4,
+                        vertical: Space.s2,
+                      ),
+                      decoration: const BoxDecoration(
+                        color: MeetingColors.soft,
+                        borderRadius: BorderRadius.all(Radius.circular(999)),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        spacing: Space.s2,
+                        children: [
+                          const PixelIcon('points', size: 20),
+                          Text(
+                            '${formatCount(points)}P',
+                            key: const ValueKey('wardrobe_purchase_before'),
+                            style: amount,
+                          ),
+                          Text('→', style: amount),
+                          Text(
+                            '${formatCount(points - price)}P',
+                            key: const ValueKey('wardrobe_purchase_after'),
+                            style: meetingType(15, 20, FontWeight.w800),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              centered(
+                note,
+                const ValueKey('wardrobe_purchase_note'),
+                theme.contentTextStyle,
+              ),
+              Padding(
+                padding: const EdgeInsets.only(top: Space.s1),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  spacing: Space.s2,
+                  children: [
+                    FilledButton(
+                      key: const ValueKey('wardrobe_purchase_confirm'),
+                      style: FilledButton.styleFrom(
+                        minimumSize: const Size.fromHeight(52),
+                      ),
+                      onPressed: () => Navigator.pop(context, true),
+                      child: Text('${formatCount(price)}P로 사기'),
+                    ),
+                    OutlinedButton(
+                      key: const ValueKey('wardrobe_purchase_cancel'),
+                      onPressed: () => Navigator.pop(context, false),
+                      child: const Text('취소'),
+                    ),
+                  ],
+                ),
+              ),
+            ],
           ),
         ),
       ),

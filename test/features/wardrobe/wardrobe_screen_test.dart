@@ -885,4 +885,236 @@ void main() {
       }
     });
   });
+  group('purchase confirmation (guide 7.7)', () {
+    Future<void> openNightPurchase(WidgetTester tester) async {
+      await tester.tap(find.byKey(const ValueKey('wardrobe_theme_night')));
+      await tester.pump();
+      await tester.tap(find.byKey(const ValueKey('wardrobe_action')));
+      await tester.pumpAndSettle();
+    }
+
+    String dialogText(WidgetTester t, String key) =>
+        t.widget<Text>(find.byKey(ValueKey('wardrobe_purchase_$key'))).data!;
+
+    String? titleLabel(WidgetTester t) => t
+        .widget<Text>(find.byKey(const ValueKey('wardrobe_purchase_title')))
+        .semanticsLabel;
+
+    Finder confirmShowing(int price) => find.descendant(
+      of: find.byKey(const ValueKey('wardrobe_purchase_confirm')),
+      matching: find.textContaining(formatCount(price)),
+    );
+
+    testWidgets('shows the pick with its tile surface, price and balance', (
+      tester,
+    ) async {
+      await tester.pumpWidget(host(screen(load: () async => snap())));
+      await tester.pumpAndSettle();
+      await openNightPurchase(tester);
+      final thumb = find.descendant(
+        of: find.byKey(const ValueKey('wardrobe_purchase_thumb')),
+        matching: find.byKey(const ValueKey('wardrobe_purchase_color_night')),
+      );
+      expect(
+        tester.widget<ColoredBox>(thumb).color,
+        tester
+            .widget<ColoredBox>(
+              find.byKey(const ValueKey('wardrobe_tile_color_night')),
+            )
+            .color,
+      );
+      expect(titleLabel(tester), contains(store.name));
+      expect(dialogText(tester, 'before'), contains(formatCount(500)));
+      expect(dialogText(tester, 'after'), contains(formatCount(500 - 300)));
+      expect(confirmShowing(300), findsOneWidget);
+      expect(
+        find.byKey(const ValueKey('wardrobe_purchase_balance_unknown')),
+        findsNothing,
+      );
+    });
+
+    testWidgets('an unknown balance gets no estimate and the price buys once', (
+      tester,
+    ) async {
+      final purchases = <String>[];
+      await tester.pumpWidget(
+        host(
+          screen(
+            load: () async => snap(balance: null),
+            purchase: (t) async {
+              purchases.add(t.id);
+              return snap(balance: null);
+            },
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      await openNightPurchase(tester);
+      expect(
+        find.byKey(const ValueKey('wardrobe_purchase_balance')),
+        findsNothing,
+      );
+      expect(
+        find.byKey(const ValueKey('wardrobe_purchase_balance_unknown')),
+        findsOneWidget,
+      );
+      // The confirmed price is the only number; no balance is invented.
+      final texts = tester
+          .widgetList<Text>(
+            find.descendant(
+              of: find.byType(Dialog),
+              matching: find.byType(Text),
+            ),
+          )
+          .map((t) => t.data ?? '')
+          .join(' ');
+      expect(RegExp(r'\d+').allMatches(texts).map((m) => m[0]).toSet(), {
+        '300',
+      });
+      await tester.tap(find.byKey(const ValueKey('wardrobe_purchase_confirm')));
+      await tester.pumpAndSettle();
+      expect(purchases, ['night']);
+    });
+
+    testWidgets('cancel or a tap outside buys nothing; confirm buys once', (
+      tester,
+    ) async {
+      final purchases = <String>[];
+      var equips = 0;
+      await tester.pumpWidget(
+        host(
+          screen(
+            load: () async => snap(),
+            purchase: (t) async {
+              purchases.add(t.id);
+              return snap(
+                themes: const [sunny, plain, ownedNight, unpriced],
+                balance: 200,
+              );
+            },
+            equip: (_) async {
+              equips++;
+              return snap();
+            },
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      await openNightPurchase(tester);
+      await tester.tap(find.byKey(const ValueKey('wardrobe_purchase_cancel')));
+      await tester.pumpAndSettle();
+      expect(find.byType(Dialog), findsNothing);
+      await tester.tap(find.byKey(const ValueKey('wardrobe_action')));
+      await tester.pumpAndSettle();
+      await tester.tapAt(const Offset(4, 4));
+      await tester.pumpAndSettle();
+      expect(find.byType(Dialog), findsNothing);
+      expect(purchases, isEmpty);
+      await tester.tap(find.byKey(const ValueKey('wardrobe_action')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('wardrobe_purchase_confirm')));
+      await tester.pumpAndSettle();
+      expect(purchases, ['night']);
+      // Bought, not worn: the server still wears sunny.
+      expect(equips, 0);
+      expect(wornBadge('sunny'), findsOneWidget);
+      expect(wornBadge('night'), findsNothing);
+      expect(previewState('trial'), findsOneWidget);
+    });
+
+    testWidgets('after a lost answer the next dialog asks the re-read price', (
+      tester,
+    ) async {
+      var loads = 0;
+      final purchases = <String>[];
+      const repriced = WardrobeTheme(
+        id: 'night',
+        name: '저녁 마당',
+        owned: false,
+        colorValue: 0xffdce8ef,
+        price: 350,
+      );
+      await tester.pumpWidget(
+        host(
+          screen(
+            load: () async => ++loads == 1
+                ? snap()
+                : snap(themes: const [sunny, plain, repriced, unpriced]),
+            purchase: (t) async {
+              purchases.add(t.id);
+              throw Exception('response lost');
+            },
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      await buyNight(tester);
+      // The lost answer was re-read from the server, never resent.
+      expect(loads, 2);
+      expect(purchases, ['night']);
+      expect(find.byKey(const ValueKey('wardrobe_error')), findsOneWidget);
+      await tester.tap(find.byKey(const ValueKey('wardrobe_action')));
+      await tester.pumpAndSettle();
+      expect(confirmShowing(350), findsOneWidget);
+      expect(dialogText(tester, 'after'), contains(formatCount(500 - 350)));
+      await tester.tap(find.byKey(const ValueKey('wardrobe_purchase_cancel')));
+      await tester.pumpAndSettle();
+      expect(purchases, ['night']);
+    });
+
+    testWidgets('a refused purchase keeps the server state and says why', (
+      tester,
+    ) async {
+      await tester.pumpWidget(
+        host(
+          screen(
+            load: () async => snap(),
+            purchase: (_) async => throw const WardrobeActionException(
+              WardrobeFailureReason.unavailable,
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      await buyNight(tester);
+      expect(find.byKey(const ValueKey('wardrobe_error')), findsOneWidget);
+      expect(statusText(tester, 'night'), contains(formatCount(300)));
+      expect(balanceText(tester), contains(formatCount(500)));
+    });
+
+    testWidgets('the vest dialog shows this breed\'s own layer', (
+      tester,
+    ) async {
+      await tester.pumpWidget(host(screen(load: () async => snap())));
+      await tester.pumpAndSettle();
+      await tester.ensureVisible(outfitAction);
+      await tester.tap(outfitAction);
+      await tester.pumpAndSettle();
+      final dialog = find.byType(Dialog);
+      Image image(String key) => tester.widget<Image>(
+        find.descendant(of: dialog, matching: find.byKey(ValueKey(key))),
+      );
+      expect(
+        image('wardrobe_purchase_dog').image,
+        const AssetImage('assets/first_meeting/dogs/shih-tzu.png'),
+      );
+      expect(
+        image('wardrobe_purchase_outfit').image,
+        const AssetImage('assets/wardrobe/vest/shih-tzu.png'),
+      );
+      // The shelf's hanger icon is not offered as the product.
+      expect(
+        find.descendant(
+          of: dialog,
+          matching: find.image(
+            const AssetImage('assets/first_meeting/icons/wardrobe.png'),
+          ),
+        ),
+        findsNothing,
+      );
+      expect(titleLabel(tester), contains('조끼'));
+      expect(confirmShowing(3), findsOneWidget);
+      expect(dialogText(tester, 'after'), contains(formatCount(500 - 3)));
+    });
+  });
 }
