@@ -30,8 +30,9 @@ abstract final class ProductColors {
   static const dayUnknown = Color(0xFFEFE7DC);
   static const dayEmpty = Color(0xFFD9CEC2);
 
-  /// Pen literals of the photo screens: the example tag (`opawe`), the
-  /// canvas hint (`rov6I`) and the saved notice (`PGjdt`).
+  /// Pen literals of the photo screens: the example tag (`opawe`, also the
+  /// wardrobe preview tag of `QoNLP`), the canvas hint (`rov6I`) and the
+  /// saved notice (`PGjdt`).
   static const photoTag = Color(0xD9FFFFFF);
   static const photoHint = Color(0xB33D291F);
   static const photoSaved = Color(0xE6637348);

@@ -146,8 +146,6 @@ void main() {
       () => tapText('꾸미기'),
     );
     await tester.pumpAndSettle();
-    await tapText('상점');
-    await tester.pumpAndSettle();
     final cloudy = find.byKey(const ValueKey('wardrobe_theme_cloudy'));
     await tester.ensureVisible(cloudy);
     await tester.tap(cloudy);
@@ -158,11 +156,10 @@ void main() {
     await tester.tap(themeAction);
     await tester.pump();
     await tester.pumpAndSettle();
-    await changedTo(
-      product,
-      () => product.store?.balance == 7,
-      () => tapText('구매 확인'),
-    );
+    await changedTo(product, () => product.store?.balance == 7, () async {
+      await tester.tap(find.byKey(const ValueKey('wardrobe_purchase_confirm')));
+      await tester.pump();
+    });
     await tester.pumpAndSettle();
     await changedTo(
       product,
