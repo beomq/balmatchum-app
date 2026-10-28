@@ -11,6 +11,9 @@ import '../features/daily_activity/daily_activity_providers.dart';
 import '../features/photo/photo_screen.dart';
 import '../features/photo/platform_photo_adapter.dart';
 import '../features/records/records_screen.dart';
+import '../features/settings/account_deletion_screen.dart';
+import '../features/settings/settings_pages.dart';
+import '../features/settings/settings_screen.dart';
 import '../features/quiz/quiz_screen.dart';
 import '../features/quiz/authenticated_quiz_screen.dart';
 import '../features/quiz/quiz_providers.dart';
@@ -157,7 +160,9 @@ final routerProvider = Provider<GoRouter>((ref) {
               path == '/quiz' ||
               path == '/wardrobe' ||
               path == '/records' ||
-              path.startsWith('/records/')) &&
+              path.startsWith('/records/') ||
+              path == '/settings' ||
+              path.startsWith('/settings/')) &&
           (authenticated == null || !authenticated.state.isComplete)) {
         return '/';
       }
@@ -187,19 +192,91 @@ final routerProvider = Provider<GoRouter>((ref) {
                 quiz: authenticated.state.isComplete
                     ? ref.read(authenticatedQuizControllerProvider)
                     : null,
-                onLogout: ref.read(logoutProvider),
-                onDeleteAccount: ref.read(accountDeletionProvider)?.delete,
                 onOpenPhoto: () => context.push('/photo'),
                 onOpenRecords: () => context.push('/records'),
                 onOpenQuiz: () => context.push('/quiz'),
                 onOpenWardrobe: () => context.push('/wardrobe'),
-                onOpenBilling: () => context.push('/billing'),
+                onOpenSettings: () => context.push('/settings'),
               ),
         routes: [
           GoRoute(
             path: 'billing',
             builder: (context, state) =>
                 BillingScreen(key: ObjectKey(billing), controller: billing),
+          ),
+          // Guide 6.4: the home button and the Duo rail open the same page;
+          // billing pushed from here returns here.
+          GoRoute(
+            path: 'settings',
+            builder: (context, state) {
+              final dog = authenticated!.state.candidate!;
+              return SettingsScreen(
+                key: ObjectKey(authenticated),
+                controller: authenticated,
+                dailySteps: ref.read(dailyStepsControllerProvider),
+                dogLayer: ref
+                    .read(authenticatedProductControllerProvider)
+                    ?.wornLayer(dog.id),
+                onBack: () => context.pop(),
+                onHome: () => context.go('/'),
+                onOpenSteps: () => context.push('/settings/steps'),
+                onOpenPhoto: () => context.push('/settings/photo'),
+                onOpenLogout: ref.read(logoutProvider) == null
+                    ? null
+                    : () => context.push('/settings/logout'),
+                onOpenBilling: () => context.push('/billing'),
+                onOpenServiceInfo: () => context.push('/settings/info'),
+                onOpenDeletion: ref.read(accountDeletionProvider) == null
+                    ? null
+                    : () => context.push('/settings/delete'),
+              );
+            },
+            routes: [
+              for (final (path, permission) in [
+                ('steps', SettingsPermission.steps),
+                ('photo', SettingsPermission.photo),
+              ])
+                GoRoute(
+                  path: path,
+                  builder: (context, state) => PermissionScreen(
+                    permission: permission,
+                    dailySteps: ref.read(dailyStepsControllerProvider),
+                    onBack: () => context.pop(),
+                    onHome: () => context.go('/'),
+                  ),
+                ),
+              GoRoute(
+                path: 'info',
+                builder: (context, state) => ServiceInfoScreen(
+                  onBack: () => context.pop(),
+                  onHome: () => context.go('/'),
+                ),
+              ),
+              GoRoute(
+                path: 'logout',
+                redirect: (context, state) =>
+                    ref.read(logoutProvider) == null ? '/settings' : null,
+                builder: (context, state) => LogoutScreen(
+                  key: ObjectKey(authenticated),
+                  onLogout: ref.read(logoutProvider)!,
+                  onBack: () => context.pop(),
+                  onHome: () => context.go('/'),
+                ),
+              ),
+              GoRoute(
+                path: 'delete',
+                redirect: (context, state) =>
+                    ref.read(accountDeletionProvider) == null
+                    ? '/settings'
+                    : null,
+                builder: (context, state) => AccountDeletionScreen(
+                  key: ObjectKey(authenticated),
+                  onDelete: ref.read(accountDeletionProvider)!.delete,
+                  onBack: () => context.pop(),
+                  onHome: () => context.go('/'),
+                ),
+              ),
+            ],
           ),
           GoRoute(
             path: 'quiz',

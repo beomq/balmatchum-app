@@ -71,6 +71,11 @@ void main() {
           '/quiz',
           '/billing',
           '/wardrobe',
+          '/settings',
+          '/settings/steps',
+          '/settings/info',
+          '/settings/logout',
+          '/settings/delete',
         ]) {
           router.go(route);
           await tester.pumpAndSettle();
@@ -141,6 +146,10 @@ void main() {
       await capture(tester, boundary, 'records-home');
       await tester.tap(find.byTooltip('설정'));
       await tester.pumpAndSettle();
+      expect(
+        router.routerDelegate.currentConfiguration.last.matchedLocation,
+        '/settings',
+      );
       await tester.ensureVisible(
         find.byKey(const ValueKey('settings_billing')),
       );

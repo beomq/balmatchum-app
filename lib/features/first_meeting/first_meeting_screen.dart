@@ -2,10 +2,8 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart' show SchedulerPhase;
-import 'package:flutter/services.dart';
 import 'package:social_signin_kit/social_signin_kit.dart';
 
-import '../../app/dependencies.dart';
 import '../../app/duo_rail.dart';
 import '../daily_activity/daily_steps_controller.dart';
 import '../daily_activity/product_controller.dart';
@@ -16,8 +14,6 @@ import '../quiz/quiz_controller.dart';
 import '../records/product_page.dart'
     show PixelIcon, fixtureLabelsVisible, formatCount;
 import '../records/status_widgets.dart';
-import '../auth/kakao_auth_service.dart';
-import '../auth/account_deletion_dialog.dart';
 import '../wardrobe/dog_sprite.dart';
 import 'breed_pager.dart';
 import 'domain/first_meeting.dart';
@@ -33,12 +29,9 @@ class FirstMeetingScreen extends StatefulWidget {
     this.onOpenRecords,
     this.onOpenQuiz,
     this.onOpenWardrobe,
-    this.onOpenBilling,
+    this.onOpenSettings,
     this.product,
     this.quiz,
-    this.onLogout,
-    this.onDeleteAccount,
-    this.openUrl = openExternalUrl,
     super.key,
   });
   final FirstMeetingController controller;
@@ -47,21 +40,19 @@ class FirstMeetingScreen extends StatefulWidget {
   final VoidCallback? onOpenRecords;
   final VoidCallback? onOpenQuiz;
   final VoidCallback? onOpenWardrobe;
-  final VoidCallback? onOpenBilling;
+
+  /// The account settings screen (guide 6.4); the Dev local flow resets.
+  final VoidCallback? onOpenSettings;
   final ProductController? product;
 
   /// A signed-in account's quiz, read for the home's quiz tile.
   final QuizController? quiz;
-  final Future<LogoutOutcome> Function()? onLogout;
-  final Future<void> Function()? onDeleteAccount;
-  final Future<bool> Function(Uri url) openUrl;
   @override
   State<FirstMeetingScreen> createState() => _FirstMeetingScreenState();
 }
 
 class _FirstMeetingScreenState extends State<FirstMeetingScreen> {
   FirstMeetingController? controller;
-  final deletingAccount = ValueNotifier(false);
   String? loadError;
   final name = TextEditingController();
   final goal = TextEditingController();
@@ -122,172 +113,6 @@ class _FirstMeetingScreenState extends State<FirstMeetingScreen> {
     }
   }
 
-  Future<void> settings() async {
-    final c = controller!;
-    final settingsName = TextEditingController(text: c.state.name);
-    final settingsGoal = TextEditingController(text: '${c.state.goal}');
-    await showModalBottomSheet<void>(
-      context: context,
-      isScrollControlled: true,
-      builder: (context) => ListenableBuilder(
-        listenable: Listenable.merge([c, deletingAccount]),
-        builder: (context, _) => AbsorbPointer(
-          absorbing: deletingAccount.value,
-          child: SafeArea(
-            child: SingleChildScrollView(
-              padding: EdgeInsets.fromLTRB(
-                24,
-                24,
-                24,
-                24 + MediaQuery.viewInsetsOf(context).bottom,
-              ),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  const MeetingHeading('설정', '이름과 하루 목표를 변경할 수 있어요.'),
-                  if (deletingAccount.value) const LinearProgressIndicator(),
-                  TextField(
-                    key: const ValueKey('settings_name'),
-                    controller: settingsName,
-                    enabled: !c.isBusy && !c.hasPendingMutation,
-                    decoration: const InputDecoration(labelText: '강아지 이름'),
-                  ),
-                  const SizedBox(height: 12),
-                  // Two equal saves: neither is the sheet's one primary (3.3).
-                  OutlinedButton(
-                    onPressed: c.isBusy || c.hasPendingMutation
-                        ? null
-                        : () => c.renameDog(settingsName.text),
-                    child: const Text('이름 저장'),
-                  ),
-                  const SizedBox(height: 20),
-                  TextField(
-                    key: const ValueKey('settings_goal'),
-                    controller: settingsGoal,
-                    enabled: !c.isBusy && !c.hasPendingMutation,
-                    keyboardType: TextInputType.number,
-                    decoration: const InputDecoration(labelText: '하루 걸음 목표'),
-                  ),
-                  const SizedBox(height: 12),
-                  OutlinedButton(
-                    onPressed: c.isBusy || c.hasPendingMutation
-                        ? null
-                        : () => c.changeGoal(settingsGoal.text),
-                    child: const Text('목표 저장'),
-                  ),
-                  if (c.error != null || c.profileError != null)
-                    Text(
-                      c.profileError == 'staleRevision'
-                          ? '다른 기기에서 변경되었어요. 최신 정보를 확인하고 다시 저장해 주세요.'
-                          : '저장하지 못했어요. 입력 또는 연결 상태를 확인해 주세요.',
-                    ),
-                  if (c.hasPendingMutation)
-                    OutlinedButton(
-                      onPressed: c.isBusy ? null : c.retryMutation,
-                      child: const Text('저장 결과 확인 · 재시도'),
-                    ),
-                  Text(
-                    '현재 이름 ${c.state.name} · '
-                    '목표 ${formatCount(c.state.goal)}걸음',
-                  ),
-                  const SizedBox(height: 20),
-                  if (widget.onOpenBilling != null) ...[
-                    OutlinedButton(
-                      key: const ValueKey('settings_billing'),
-                      onPressed: c.isBusy
-                          ? null
-                          : () {
-                              Navigator.pop(context);
-                              widget.onOpenBilling!();
-                            },
-                      child: const Text('구매 및 복원'),
-                    ),
-                    const SizedBox(height: 12),
-                  ],
-                  OutlinedButton(
-                    onPressed: c.isBusy || widget.onLogout == null
-                        ? null
-                        : () async {
-                            final result = await widget.onLogout!();
-                            if (context.mounted) {
-                              if (result.session.localCleared) {
-                                Navigator.pop(context);
-                              } else {
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  const SnackBar(
-                                    content: Text('로그아웃하지 못했어요. 다시 시도해 주세요.'),
-                                  ),
-                                );
-                              }
-                            }
-                          },
-                    child: const Text('로그아웃'),
-                  ),
-                  TextButton(
-                    key: const ValueKey('settings_privacy_policy'),
-                    onPressed: openPrivacyPolicy,
-                    child: const Text('개인정보처리방침'),
-                  ),
-                  if (widget.onDeleteAccount != null)
-                    // Destructive entry: red text at the very bottom (3.3).
-                    TextButton(
-                      key: const ValueKey('settings_delete_account'),
-                      style: TextButton.styleFrom(
-                        foregroundColor: MeetingColors.error,
-                      ),
-                      onPressed: c.isBusy ? null : deleteAccount,
-                      child: const Text('회원 탈퇴'),
-                    ),
-                ],
-              ),
-            ),
-          ),
-        ),
-      ),
-    );
-    // Modal route transitions may still reference the fields until unmounted.
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      settingsName.dispose();
-      settingsGoal.dispose();
-    });
-  }
-
-  Future<void> openPrivacyPolicy() async {
-    bool opened;
-    try {
-      opened = await widget.openUrl(Uri.parse(privacyPolicyUrl));
-    } on PlatformException {
-      opened = false;
-    }
-    if (!opened && mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('개인정보처리방침을 열지 못했어요. 잠시 후 다시 시도해 주세요.')),
-      );
-    }
-  }
-
-  Future<void> deleteAccount() async {
-    if (deletingAccount.value) return;
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (context) => const AccountDeletionDialog(),
-    );
-    if (confirmed != true || !mounted) return;
-    deletingAccount.value = true;
-    try {
-      await widget.onDeleteAccount!();
-    } catch (_) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('탈퇴 처리를 완료하지 못했어요. 다시 시도해 주세요.')),
-        );
-      }
-    } finally {
-      if (mounted) deletingAccount.value = false;
-    }
-  }
-
   void changed() {
     if (!mounted) return;
     // A shared controller can notify while another route builds, such as the
@@ -338,7 +163,6 @@ class _FirstMeetingScreenState extends State<FirstMeetingScreen> {
     widget.product?.removeListener(changed);
     widget.quiz?.removeListener(changed);
     controller?.removeListener(changed);
-    deletingAccount.dispose();
     name.dispose();
     goal.dispose();
     super.dispose();
@@ -428,7 +252,9 @@ class _FirstMeetingScreenState extends State<FirstMeetingScreen> {
           key: const ValueKey('duo_rail_settings'),
           label: c.profileRepository == null ? 'Dev 체험 초기화' : '설정',
           icon: const PixelIcon('settings'),
-          onPressed: c.profileRepository == null ? reset : settings,
+          onPressed: c.profileRepository == null
+              ? reset
+              : widget.onOpenSettings,
         ),
       ],
       destinations: [
@@ -825,15 +651,7 @@ class _FirstMeetingScreenState extends State<FirstMeetingScreen> {
           ),
         ];
       case FirstMeetingStep.home:
-        final today = DateTime.now().toUtc().add(const Duration(hours: 9));
-        final met = s.firstMetAtUTC!.add(const Duration(hours: 9));
-        final days =
-            DateTime.utc(
-              today.year,
-              today.month,
-              today.day,
-            ).difference(DateTime.utc(met.year, met.month, met.day)).inDays +
-            1;
+        final days = s.daysTogether(DateTime.now())!;
         final product = widget.product;
         final todayKey = ProductRepository.dateKey(ProductRepository.today);
         final goal = HomeGoal.of(widget.dailySteps, s.goal, todayKey);
@@ -865,7 +683,7 @@ class _FirstMeetingScreenState extends State<FirstMeetingScreen> {
                       IconButton(
                         onPressed: c.profileRepository == null
                             ? reset
-                            : settings,
+                            : widget.onOpenSettings,
                         tooltip: c.profileRepository == null
                             ? 'Dev 체험 초기화'
                             : '설정',

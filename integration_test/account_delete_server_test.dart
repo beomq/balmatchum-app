@@ -1,8 +1,9 @@
 import 'package:balmatchum_app/app/dependencies.dart';
 import 'package:balmatchum_app/features/first_meeting/data/first_meeting_file_storage.dart';
 import 'package:balmatchum_app/features/first_meeting/first_meeting_providers.dart';
-import 'package:balmatchum_app/features/first_meeting/first_meeting_screen.dart';
 import 'package:balmatchum_app/features/first_meeting/meeting_theme.dart';
+import 'package:balmatchum_app/features/settings/account_deletion_screen.dart';
+import 'package:balmatchum_app/features/settings/settings_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -26,21 +27,32 @@ void main() {
     await tester.pumpWidget(
       MaterialApp(
         theme: meetingTheme(),
-        home: FirstMeetingScreen(
-          controller: controller,
-          onDeleteAccount: deletion.delete,
+        home: Builder(
+          builder: (context) => SettingsScreen(
+            controller: controller,
+            onBack: () {},
+            onHome: () {},
+            onOpenDeletion: () => Navigator.of(context).push(
+              MaterialPageRoute<void>(
+                builder: (context) => AccountDeletionScreen(
+                  onDelete: deletion.delete,
+                  onBack: () => Navigator.of(context).pop(),
+                  onHome: () => Navigator.of(context).pop(),
+                ),
+              ),
+            ),
+          ),
         ),
       ),
     );
     await tester.pumpAndSettle();
-    await tester.tap(find.byTooltip('설정'));
-    await tester.pumpAndSettle();
-    await tester.ensureVisible(find.text('회원 탈퇴'));
-    await tester.tap(find.text('회원 탈퇴'));
+    final entry = find.byKey(const ValueKey('settings_delete_account'));
+    await tester.ensureVisible(entry);
+    await tester.tap(entry);
     await tester.pumpAndSettle();
     // Execute through the same service and await its exact completion rather
     // than polling authentication or relying on animation settling for HTTP.
-    await tester.tap(find.text('취소'));
+    await tester.tap(find.byKey(const ValueKey('account_deletion_cancel')));
     await tester.pumpAndSettle();
     await tester.pumpWidget(const SizedBox.shrink());
     await deletion.delete();
