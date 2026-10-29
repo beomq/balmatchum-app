@@ -78,7 +78,7 @@ OutfitStore outfitStore({
 );
 
 class AccountRepository extends ProductRepository {
-  AccountRepository() : super(Client('http://localhost/'));
+  AccountRepository({super.billing}) : super(Client('http://localhost/'));
   Completer<DailyRecord>? pending;
   bool failRead = false;
   bool failThemes = false;
@@ -132,6 +132,18 @@ class AccountRepository extends ProductRepository {
   Future<List<DailyRecord>> month(DateTime month) async {
     calls.add('month');
     return [record()];
+  }
+
+  /// The streak read's answer; null fails it.
+  List<DailyRecord>? recentDays = const [];
+  final dayRanges = <(DateTime, DateTime)>[];
+  @override
+  Future<List<DailyRecord>> days(DateTime from, DateTime to) async {
+    calls.add('days');
+    dayRanges.add((from, to));
+    final value = recentDays;
+    if (value == null) throw Exception('Days offline');
+    return value;
   }
 
   @override

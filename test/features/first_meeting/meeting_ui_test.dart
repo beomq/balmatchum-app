@@ -48,6 +48,9 @@ void main() {
     expect(tester.widget<Text>(position).data, '1 / 30');
     // When G5's first breed is selected from its tab.
     final breed = FirstMeetingCatalog.groups[4].breeds.first;
+    // The named tabs scroll sideways, so G5 is brought into the strip first.
+    await tester.ensureVisible(find.byKey(const ValueKey('breed_group_G5')));
+    await tester.pumpAndSettle();
     await tester.tap(find.byKey(const ValueKey('breed_group_G5')));
     await tester.pumpAndSettle();
     await tester.tap(find.byKey(ValueKey('breed_${breed.id}')));
@@ -96,8 +99,8 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
-    await tester.ensureVisible(find.text('포인트 받기'));
-    await tester.tap(find.text('포인트 받기'));
+    await tester.ensureVisible(find.byKey(const ValueKey('home_reward')));
+    await tester.tap(find.byKey(const ValueKey('home_reward')));
     await tester.pumpAndSettle();
     expect(find.textContaining('포함되지 않은 기능'), findsOneWidget);
     await tester.tap(find.text('확인'));
@@ -253,15 +256,18 @@ void main() {
         await tester.ensureVisible(find.text('암컷'));
         await tester.tap(find.text('암컷'));
         await tester.pumpAndSettle();
-        await tester.ensureVisible(find.text('이름과 성별 저장'));
-        await tester.tap(find.text('이름과 성별 저장'));
+        final save = find.byKey(const ValueKey('meeting_name_submit'));
+        await tester.ensureVisible(save);
+        await tester.tap(save);
         await tester.pumpAndSettle();
         expect(c.state.step, FirstMeetingStep.goal);
-        await tester.ensureVisible(find.text('목표 저장하고 홈 보기'));
-        await tester.tap(find.text('목표 저장하고 홈 보기'));
+        final start = find.byKey(const ValueKey('meeting_goal_start'));
+        await tester.ensureVisible(start);
+        await tester.tap(start);
         await tester.pumpAndSettle();
         expect(c.state.isComplete, isTrue);
-        expect(find.text('— 걸음'), findsOneWidget);
+        final count = find.byKey(const ValueKey('daily_steps_count'));
+        expect(count, findsOneWidget);
         final dog = find.byWidgetPredicate(
           (widget) =>
               widget is Image &&
@@ -278,7 +284,7 @@ void main() {
           tester.getRect(dog).top,
           greaterThan(tester.getRect(bubble).bottom),
         );
-        final status = tester.getRect(find.text('— 걸음'));
+        final status = tester.getRect(count);
         if (width >= 840) {
           expect(status.left, greaterThan(tester.getRect(dog).right));
         } else {

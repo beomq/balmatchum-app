@@ -1,35 +1,57 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 
 import 'meeting_theme.dart';
 
+/// The home's `Home/Status Tile` grid (`F9fHc6`): two columns, or one once
+/// the text size no longer fits a status line beside a tile icon.
 class MeetingShortcuts extends StatelessWidget {
   const MeetingShortcuts({required this.children, super.key});
   final List<Widget> children;
+
+  static const _gap = 8.0;
 
   @override
   Widget build(BuildContext context) => LayoutBuilder(
     builder: (context, bounds) {
       final label = TextPainter(
         text: TextSpan(
-          text: '꾸미기',
-          style: Theme.of(context).textTheme.labelLarge,
+          text: '착용 중 · 조끼',
+          style: Theme.of(context).textTheme.bodySmall,
         ),
         textDirection: Directionality.of(context),
         textScaler: MediaQuery.textScalerOf(context),
       )..layout();
-      final minimum = (label.width + 48).clamp(72.0, double.infinity);
+      // Icon 32, its gap 12 and the tile's 12 padding on both sides.
+      final minimum = label.width + 32 + 12 * 3;
       label.dispose();
-      final columns = (bounds.maxWidth - 36) / 4 >= minimum
-          ? 4
-          : (bounds.maxWidth - 12) / 2 >= minimum
-          ? 2
-          : 1;
-      final width = (bounds.maxWidth - 12 * (columns - 1)) / columns;
-      return Wrap(
-        spacing: 12,
-        runSpacing: 12,
+      if ((bounds.maxWidth - _gap) / 2 < minimum) {
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          spacing: _gap,
+          children: children,
+        );
+      }
+      return Column(
+        spacing: _gap,
         children: [
-          for (final child in children) SizedBox(width: width, child: child),
+          for (var i = 0; i < children.length; i += 2)
+            // Both tiles of a row share the taller one's height.
+            IntrinsicHeight(
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Expanded(child: children[i]),
+                  const SizedBox(width: _gap),
+                  Expanded(
+                    child: i + 1 < children.length
+                        ? children[i + 1]
+                        : const SizedBox.shrink(),
+                  ),
+                ],
+              ),
+            ),
         ],
       );
     },
@@ -42,7 +64,7 @@ class MeetingHomeLayout extends StatelessWidget {
     required this.scene,
     required this.status,
     required this.shortcuts,
-    required this.footer,
+    this.footer,
     super.key,
   });
   final Widget header;
@@ -51,7 +73,9 @@ class MeetingHomeLayout extends StatelessWidget {
 
   /// Null while the Duo side rail carries the shortcuts.
   final Widget? shortcuts;
-  final Widget footer;
+
+  /// Only the Dev local flow says where it saves; Pen home A has no footer.
+  final Widget? footer;
 
   @override
   Widget build(BuildContext context) => LayoutBuilder(
@@ -91,8 +115,10 @@ class MeetingHomeLayout extends StatelessWidget {
                 const SizedBox(height: 16),
                 details,
               ],
-              const SizedBox(height: 16),
-              footer,
+              if (footer case final footer?) ...[
+                const SizedBox(height: 16),
+                footer,
+              ],
             ],
           ),
         ),
@@ -108,6 +134,9 @@ class MeetingPage extends StatelessWidget {
     this.wide = false,
     this.showHeader = true,
     this.rail,
+    this.onRefresh,
+    this.header,
+    this.footer,
     super.key,
   });
   final List<Widget> children;
@@ -115,8 +144,19 @@ class MeetingPage extends StatelessWidget {
   final bool wide;
   final bool showHeader;
 
+  /// Replaces the back slot, as the goal step's step bar does (guide 4.4-1).
+  final Widget? header;
+
+  /// Sits at the bottom of a short page and follows the children on a long
+  /// one, as the goal step's start button does (guide 4.4-6).
+  final Widget? footer;
+
   /// Duo side-column rail, painted outside the SafeArea.
   final Widget? rail;
+
+  /// Pull-to-refresh, given only by the home; onboarding keeps a plain
+  /// scroll (guide 3.1).
+  final RefreshCallback? onRefresh;
 
   @override
   Widget build(BuildContext context) => Scaffold(
@@ -133,47 +173,88 @@ class MeetingPage extends StatelessWidget {
                   : constraints.maxWidth < 840
                   ? 24.0
                   : 32.0;
-              return SingleChildScrollView(
+              const top = 16.0;
+              const bottom = 24.0;
+              final content = Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  // The slot stays while the rail or a busy step
+                  // hides back, so the focused name field never moves.
+                  if (showHeader) ...[
+                    header ??
+                        SizedBox(
+                          height: 48,
+                          child: Align(
+                            alignment: Alignment.centerLeft,
+                            child: onBack == null
+                                ? const SizedBox.shrink()
+                                : IconButton(
+                                    key: const ValueKey('meeting_back'),
+                                    tooltip: '이전 단계',
+                                    onPressed: onBack,
+                                    icon: Image.asset(
+                                      'assets/first_meeting/icons/back.png',
+                                      width: 32,
+                                      height: 32,
+                                      filterQuality: FilterQuality.none,
+                                    ),
+                                  ),
+                          ),
+                        ),
+                    SizedBox(height: header == null ? 18 : 16),
+                  ],
+                  ...children,
+                ],
+              );
+              final footer = this.footer;
+              final scroll = SingleChildScrollView(
                 // Busy callbacks must not replace the focused name field subtree.
                 key: PageStorageKey(key ?? 'meeting_root_scroll'),
-                padding: EdgeInsets.fromLTRB(padding, 16, padding, 24),
+                padding: EdgeInsets.fromLTRB(padding, top, padding, bottom),
+                // A short home must still be pullable.
+                physics: onRefresh == null
+                    ? null
+                    : const AlwaysScrollableScrollPhysics(),
                 child: MediaQuery(
                   data: MediaQuery.of(context)
                       .copyWith(size: constraints.biggest),
                   child: Center(
                     child: ConstrainedBox(
-                      constraints: BoxConstraints(maxWidth: wide ? 960 : 480),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.stretch,
-                        children: [
-                          if (showHeader)
-                            SizedBox(
-                              height: 48,
-                              child: Align(
-                                alignment: Alignment.centerLeft,
-                                child: onBack == null
-                                    ? const SizedBox.shrink()
-                                    : IconButton(
-                                        key: const ValueKey('meeting_back'),
-                                        tooltip: '이전 단계',
-                                        onPressed: onBack,
-                                        icon: Image.asset(
-                                          'assets/first_meeting/icons/back.png',
-                                          width: 32,
-                                          height: 32,
-                                          filterQuality: FilterQuality.none,
-                                        ),
-                                      ),
+                      constraints: BoxConstraints(
+                        maxWidth: wide ? 960 : 480,
+                        // The page fills the viewport so a footer can rest at
+                        // its bottom; no intrinsic pass is needed.
+                        minHeight: footer == null
+                            ? 0
+                            : math.max(
+                                0.0,
+                                constraints.maxHeight - top - bottom,
                               ),
-                            ),
-                          if (showHeader) const SizedBox(height: 18),
-                          ...children,
-                        ],
                       ),
+                      child: footer == null
+                          ? content
+                          : Column(
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              crossAxisAlignment: CrossAxisAlignment.stretch,
+                              children: [
+                                content,
+                                Padding(
+                                  padding: const EdgeInsets.only(top: 16),
+                                  child: footer,
+                                ),
+                              ],
+                            ),
                     ),
                   ),
                 ),
               );
+              return switch (onRefresh) {
+                final refresh? => RefreshIndicator(
+                  onRefresh: refresh,
+                  child: scroll,
+                ),
+                null => scroll,
+              };
             },
           ),
         ),

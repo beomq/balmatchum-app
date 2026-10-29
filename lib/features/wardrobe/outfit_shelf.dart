@@ -81,7 +81,7 @@ class OutfitShelf extends StatelessWidget {
     final short = !item.owned && balance != null && item.price > balance!;
     final status = item.owned
         ? (worn ? '보유 · 착용 중' : '보유')
-        : '미보유 · ${formatCount(item.price)}포인트';
+        : '미보유 · ${formatCount(item.price)}P';
     final (String label, VoidCallback? onPressed) = !wearable
         ? (item.owned ? '입히기' : '구매하기', null)
         : worn
@@ -93,20 +93,13 @@ class OutfitShelf extends StatelessWidget {
         : ('구매하기', () => onChange(item, OutfitChange.purchase));
     final key = ValueKey('wardrobe_outfit_action_${item.id}');
     final child = Text(busy ? '처리 중…' : label);
-    const size = Size(132, 48);
-    final button = worn && wearable
-        ? OutlinedButton(
-            key: key,
-            style: OutlinedButton.styleFrom(minimumSize: size),
-            onPressed: busy ? null : onPressed,
-            child: child,
-          )
-        : FilledButton(
-            key: key,
-            style: FilledButton.styleFrom(minimumSize: size),
-            onPressed: busy ? null : onPressed,
-            child: child,
-          );
+    // The pinned background action is the screen's one primary (guide 3.3).
+    final button = OutlinedButton(
+      key: key,
+      style: OutlinedButton.styleFrom(minimumSize: const Size(132, 48)),
+      onPressed: busy ? null : onPressed,
+      child: child,
+    );
     final info = Row(
       children: [
         Image.asset(

@@ -1,24 +1,27 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
+import 'package:flutter/scheduler.dart' show SchedulerPhase;
 import 'package:social_signin_kit/social_signin_kit.dart';
 
-import '../../app/dependencies.dart';
 import '../../app/duo_rail.dart';
 import '../daily_activity/daily_steps_controller.dart';
-import '../daily_activity/daily_steps_readout.dart';
 import '../daily_activity/product_controller.dart';
 import '../daily_activity/record_mapping.dart';
-import '../daily_activity/reward_panel.dart';
 import '../daily_activity/product_repository.dart';
-import '../auth/kakao_auth_service.dart';
-import '../auth/account_deletion_dialog.dart';
+import '../daily_activity/today_reward_sheet.dart';
+import '../quiz/quiz_controller.dart';
+import '../records/product_page.dart'
+    show PixelIcon, Space, fixtureLabelsVisible, formatCount;
+import '../records/status_widgets.dart';
 import '../wardrobe/dog_sprite.dart';
 import 'breed_pager.dart';
 import 'domain/first_meeting.dart';
+import 'home_goal_card.dart';
 import 'meeting_theme.dart';
 import 'meeting_widgets.dart';
+import 'onboarding_widgets.dart';
+import 'particles.dart';
 
 class FirstMeetingScreen extends StatefulWidget {
   const FirstMeetingScreen({
@@ -28,11 +31,9 @@ class FirstMeetingScreen extends StatefulWidget {
     this.onOpenRecords,
     this.onOpenQuiz,
     this.onOpenWardrobe,
-    this.onOpenBilling,
+    this.onOpenSettings,
     this.product,
-    this.onLogout,
-    this.onDeleteAccount,
-    this.openUrl = openExternalUrl,
+    this.quiz,
     super.key,
   });
   final FirstMeetingController controller;
@@ -41,30 +42,67 @@ class FirstMeetingScreen extends StatefulWidget {
   final VoidCallback? onOpenRecords;
   final VoidCallback? onOpenQuiz;
   final VoidCallback? onOpenWardrobe;
-  final VoidCallback? onOpenBilling;
+
+  /// The account settings screen (guide 6.4); the Dev local flow resets.
+  final VoidCallback? onOpenSettings;
   final ProductController? product;
-  final Future<LogoutOutcome> Function()? onLogout;
-  final Future<void> Function()? onDeleteAccount;
-  final Future<bool> Function(Uri url) openUrl;
+
+  /// A signed-in account's quiz, read for the home's quiz tile.
+  final QuizController? quiz;
   @override
   State<FirstMeetingScreen> createState() => _FirstMeetingScreenState();
 }
 
 class _FirstMeetingScreenState extends State<FirstMeetingScreen> {
   FirstMeetingController? controller;
-  final deletingAccount = ValueNotifier(false);
   String? loadError;
   final name = TextEditingController();
-  final goal = TextEditingController();
   final pageStorage = PageStorageBucket();
+  late final AppLifecycleListener lifecycle;
+
+  /// The home's entry refresh already ran for the current product.
+  bool homeRefreshed = false;
+
+  /// The goal step's completion in flight. A second tap before the
+  /// controller turns busy queues nothing (guide 4.4-6).
+  Future<void>? starting;
+
+  /// The catalog step's centered card, shared by the pager and the bottom
+  /// button so both name one breed (guide 4.2-5). Null outside the step, so
+  /// every visit opens at the previous candidate.
+  int? catalogIndex;
 
   @override
   void initState() {
     super.initState();
     widget.dailySteps?.addListener(changed);
     widget.product?.addListener(changed);
-    if (widget.product?.account != null) unawaited(widget.product!.connect());
+    widget.quiz?.addListener(changed);
+    // Coming back to the app refreshes the home like a pull (guide 3.1).
+    lifecycle = AppLifecycleListener(
+      onShow: () {
+        if (controller?.state.step == FirstMeetingStep.home) {
+          unawaited(refreshHome());
+        }
+      },
+    );
     unawaited(load());
+  }
+
+  @override
+  void didUpdateWidget(FirstMeetingScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.quiz != widget.quiz) {
+      oldWidget.quiz?.removeListener(changed);
+      widget.quiz?.addListener(changed);
+    }
+    if (oldWidget.product != widget.product) {
+      oldWidget.product?.removeListener(changed);
+      widget.product?.addListener(changed);
+      // The router hands over the product once the first meeting completes.
+      homeRefreshed = false;
+      enterHome();
+    }
   }
 
   Future<void> load() async {
@@ -76,183 +114,69 @@ class _FirstMeetingScreenState extends State<FirstMeetingScreen> {
       }
       controller = value;
       name.text = value.state.name;
-      goal.text = value.state.goalInput;
       value.addListener(changed);
       setState(() {});
+      enterHome();
     } on Exception {
       if (mounted) setState(() => loadError = '체험 기록을 읽지 못했습니다. 다시 시도해 주세요.');
     }
   }
 
-  Future<void> settings() async {
-    final c = controller!;
-    final settingsName = TextEditingController(text: c.state.name);
-    final settingsGoal = TextEditingController(text: '${c.state.goal}');
-    await showModalBottomSheet<void>(
-      context: context,
-      isScrollControlled: true,
-      builder: (context) => ListenableBuilder(
-        listenable: Listenable.merge([c, deletingAccount]),
-        builder: (context, _) => AbsorbPointer(
-          absorbing: deletingAccount.value,
-          child: SafeArea(
-            child: SingleChildScrollView(
-              padding: EdgeInsets.fromLTRB(
-                24,
-                24,
-                24,
-                24 + MediaQuery.viewInsetsOf(context).bottom,
-              ),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  const MeetingHeading('설정', '이름과 하루 목표를 변경할 수 있어요.'),
-                  if (deletingAccount.value) const LinearProgressIndicator(),
-                  TextField(
-                    key: const ValueKey('settings_name'),
-                    controller: settingsName,
-                    enabled: !c.isBusy && !c.hasPendingMutation,
-                    decoration: const InputDecoration(labelText: '강아지 이름'),
-                  ),
-                  const SizedBox(height: 12),
-                  FilledButton(
-                    onPressed: c.isBusy || c.hasPendingMutation
-                        ? null
-                        : () => c.renameDog(settingsName.text),
-                    child: const Text('이름 저장'),
-                  ),
-                  const SizedBox(height: 20),
-                  TextField(
-                    key: const ValueKey('settings_goal'),
-                    controller: settingsGoal,
-                    enabled: !c.isBusy && !c.hasPendingMutation,
-                    keyboardType: TextInputType.number,
-                    decoration: const InputDecoration(labelText: '하루 걸음 목표'),
-                  ),
-                  const SizedBox(height: 12),
-                  FilledButton(
-                    onPressed: c.isBusy || c.hasPendingMutation
-                        ? null
-                        : () => c.changeGoal(settingsGoal.text),
-                    child: const Text('목표 저장'),
-                  ),
-                  if (c.error != null || c.profileError != null)
-                    Text(
-                      c.profileError == 'staleRevision'
-                          ? '다른 기기에서 변경되었어요. 최신 정보를 확인하고 다시 저장해 주세요.'
-                          : '저장하지 못했어요. 입력 또는 연결 상태를 확인해 주세요.',
-                    ),
-                  if (c.hasPendingMutation)
-                    OutlinedButton(
-                      onPressed: c.isBusy ? null : c.retryMutation,
-                      child: const Text('저장 결과 확인 · 재시도'),
-                    ),
-                  Text('현재 이름 ${c.state.name} · 목표 ${c.state.goal}걸음'),
-                  const SizedBox(height: 20),
-                  if (widget.onOpenBilling != null) ...[
-                    OutlinedButton(
-                      key: const ValueKey('settings_billing'),
-                      onPressed: c.isBusy
-                          ? null
-                          : () {
-                              Navigator.pop(context);
-                              widget.onOpenBilling!();
-                            },
-                      child: const Text('구매 및 복원'),
-                    ),
-                    const SizedBox(height: 12),
-                  ],
-                  OutlinedButton(
-                    onPressed: c.isBusy || widget.onLogout == null
-                        ? null
-                        : () async {
-                            final result = await widget.onLogout!();
-                            if (context.mounted) {
-                              if (result.session.localCleared) {
-                                Navigator.pop(context);
-                              } else {
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  const SnackBar(
-                                    content: Text('로그아웃하지 못했어요. 다시 시도해 주세요.'),
-                                  ),
-                                );
-                              }
-                            }
-                          },
-                    child: const Text('로그아웃'),
-                  ),
-                  TextButton(
-                    key: const ValueKey('settings_privacy_policy'),
-                    onPressed: openPrivacyPolicy,
-                    child: const Text('개인정보처리방침'),
-                  ),
-                  if (widget.onDeleteAccount != null)
-                    TextButton(
-                      onPressed: c.isBusy ? null : deleteAccount,
-                      child: const Text('회원 탈퇴'),
-                    ),
-                ],
-              ),
-            ),
-          ),
-        ),
-      ),
-    );
-    // Modal route transitions may still reference the fields until unmounted.
+  void changed() {
+    if (!mounted) return;
+    // A shared controller can notify while another route builds, such as the
+    // quiz screen loading in its initState; repaint after that frame.
+    if (WidgetsBinding.instance.schedulerPhase ==
+        SchedulerPhase.persistentCallbacks) {
+      WidgetsBinding.instance.addPostFrameCallback((_) => changed());
+      return;
+    }
+    setState(() {
+      if (controller?.state.step != FirstMeetingStep.catalog) {
+        catalogIndex = null;
+      }
+    });
+    enterHome();
+  }
+
+  /// Refreshes once per product when the home first shows. The post-frame hop
+  /// lets the router hand over a product created with the completed meeting.
+  void enterHome() {
+    if (homeRefreshed || controller?.state.step != FirstMeetingStep.home) {
+      return;
+    }
+    homeRefreshed = true;
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      settingsName.dispose();
-      settingsGoal.dispose();
+      if (mounted) unawaited(refreshHome());
     });
   }
 
-  Future<void> openPrivacyPolicy() async {
-    bool opened;
-    try {
-      opened = await widget.openUrl(Uri.parse(privacyPolicyUrl));
-    } on PlatformException {
-      opened = false;
+  /// Entry, app return, pull and retry share one refresh (guide 3.1). A real
+  /// account reconnects first; the dev test user connects only by its button.
+  Future<void> refreshHome() async {
+    final product = widget.product;
+    if (product != null && !product.connected && product.account != null) {
+      await product.connect();
     }
-    if (!opened && mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('개인정보처리방침을 열지 못했어요. 잠시 후 다시 시도해 주세요.')),
-      );
+    if (product != null && product.connected) {
+      await product.sync();
+      // A sync still running for another trigger reads these itself.
+      if (!product.busy) await product.loadStreak();
+    } else {
+      await widget.dailySteps?.refresh();
     }
-  }
-
-  Future<void> deleteAccount() async {
-    if (deletingAccount.value) return;
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (context) => const AccountDeletionDialog(),
-    );
-    if (confirmed != true || !mounted) return;
-    deletingAccount.value = true;
-    try {
-      await widget.onDeleteAccount!();
-    } catch (_) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('탈퇴 처리를 완료하지 못했어요. 다시 시도해 주세요.')),
-        );
-      }
-    } finally {
-      if (mounted) deletingAccount.value = false;
-    }
-  }
-
-  void changed() {
-    if (mounted) setState(() {});
+    // The tile shows today's quiz state; the quiz screen observes benefits.
+    await widget.quiz?.load(observePremium: false);
   }
 
   @override
   void dispose() {
+    lifecycle.dispose();
     widget.dailySteps?.removeListener(changed);
     widget.product?.removeListener(changed);
+    widget.quiz?.removeListener(changed);
     controller?.removeListener(changed);
-    deletingAccount.dispose();
     name.dispose();
-    goal.dispose();
     super.dispose();
   }
 
@@ -269,6 +193,7 @@ class _FirstMeetingScreenState extends State<FirstMeetingScreen> {
             child: const Text('취소'),
           ),
           FilledButton(
+            style: FilledButton.styleFrom(backgroundColor: MeetingColors.error),
             onPressed: () => Navigator.pop(context, true),
             child: const Text('체험 초기화'),
           ),
@@ -278,7 +203,6 @@ class _FirstMeetingScreenState extends State<FirstMeetingScreen> {
     if (confirmed == true) {
       await controller!.reset();
       name.text = controller!.state.name;
-      goal.text = controller!.state.goalInput;
     }
   }
 
@@ -286,7 +210,12 @@ class _FirstMeetingScreenState extends State<FirstMeetingScreen> {
     context: context,
     builder: (context) => AlertDialog(
       title: Text(title),
-      content: const Text('이번 Dev 체험 범위에 포함되지 않은 기능입니다.'),
+      // An account build lands here only before today's record is loaded.
+      content: Text(
+        controller?.profileRepository == null
+            ? '이번 Dev 체험 범위에 포함되지 않은 기능입니다.'
+            : '기록을 불러오지 못했어요. 연결 상태를 확인해 주세요.',
+      ),
       actions: [
         FilledButton(
           onPressed: () => Navigator.pop(context),
@@ -312,24 +241,17 @@ class _FirstMeetingScreenState extends State<FirstMeetingScreen> {
         return;
       }
     }
-    await showModalBottomSheet<void>(
-      context: context,
-      isScrollControlled: true,
-      builder: (context) => SafeArea(
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.all(24),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Text('오늘 포인트', style: Theme.of(context).textTheme.headlineSmall),
-              const SizedBox(height: 16),
-              RewardPanel(controller: product, day: recordDay(product.today!)),
-            ],
-          ),
-        ),
-      ),
+    final dog = controller!.state.candidate!;
+    final wardrobe = await showTodayRewardSheet(
+      context,
+      product: product,
+      day: recordDay(product.today!),
+      dogAsset: dog.spritePath,
+      dogLayer: product.wornLayer(dog.id),
+      canOpenWardrobe: widget.onOpenWardrobe != null,
     );
+    // Navigates from the home once the sheet's route is gone.
+    if (wardrobe && mounted) widget.onOpenWardrobe?.call();
   }
 
   /// Same labels and actions as the home header and shortcuts.
@@ -340,21 +262,24 @@ class _FirstMeetingScreenState extends State<FirstMeetingScreen> {
         DuoRailItem(
           key: const ValueKey('duo_rail_settings'),
           label: c.profileRepository == null ? 'Dev 체험 초기화' : '설정',
-          icon: Image.asset('assets/first_meeting/icons/settings.png'),
-          onPressed: c.profileRepository == null ? reset : settings,
+          icon: const PixelIcon('settings'),
+          onPressed: c.profileRepository == null
+              ? reset
+              : widget.onOpenSettings,
         ),
       ],
       destinations: [
         for (final (id, label, icon, open) in [
           ('records', '기록', 'calendar-record', widget.onOpenRecords),
           ('quiz', '퀴즈', 'question-quiz', widget.onOpenQuiz),
-          ('wardrobe', '꾸미기', 'wardrobe', widget.onOpenWardrobe),
+          // Pen draws the decorate brush for this destination.
+          ('wardrobe', '꾸미기', 'decorate-shortcut', widget.onOpenWardrobe),
           ('photo', '사진', 'camera-photo', widget.onOpenPhoto),
         ])
           DuoRailItem(
             key: ValueKey('duo_rail_$id'),
             label: label,
-            icon: Image.asset('assets/first_meeting/icons/$icon.png'),
+            icon: PixelIcon(icon),
             onPressed: open ?? () => unavailable(label),
             badgeLabel: id == 'quiz' && quiz != null && quiz.answerIndex == null
                 ? '오늘 퀴즈 미응답'
@@ -368,7 +293,11 @@ class _FirstMeetingScreenState extends State<FirstMeetingScreen> {
   Widget build(BuildContext context) {
     final c = controller;
     if (c == null) {
+      const empty = DuoRailSpec();
+      final mode = duoRailMode(MediaQuery.of(context), empty);
       return MeetingPage(
+        // Nothing to go back to yet; the Duo column is painted empty.
+        rail: mode == null ? null : DuoRail(spec: empty, mode: mode),
         children: [
           Text(loadError ?? '이 기기의 체험 기록을 읽고 있어요.'),
           if (loadError != null)
@@ -377,10 +306,26 @@ class _FirstMeetingScreenState extends State<FirstMeetingScreen> {
       );
     }
     final s = c.state;
-    final railSpec = s.step == FirstMeetingStep.home ? homeRailSpec(c) : null;
-    final railMode = railSpec == null
-        ? null
-        : duoRailMode(MediaQuery.of(context), railSpec);
+    final railSpec = switch (s.step) {
+      FirstMeetingStep.home => homeRailSpec(c),
+      // No back action: the column is painted without buttons.
+      _ when !c.canGoBack => const DuoRailSpec(),
+      // Same callback and enabled state as the top-bar back.
+      _ => DuoRailSpec(tools: [duoBack(c.isBusy ? null : c.back)]),
+    };
+    final railMode = duoRailMode(MediaQuery.of(context), railSpec);
+    // While the rail carries back, the header keeps its empty slot.
+    final onBack = railMode != null || !c.canGoBack || c.isBusy ? null : c.back;
+    final shown = c.error != FirstMeetingError.corruption && c.isRestored;
+    // The user-facing three steps; the confirm step between keeps its page.
+    final onboardingStep = shown
+        ? switch (s.step) {
+            FirstMeetingStep.catalog => 1,
+            FirstMeetingStep.name => 2,
+            FirstMeetingStep.goal => 3,
+            _ => null,
+          }
+        : null;
     return PopScope(
       canPop:
           s.step == FirstMeetingStep.login || s.step == FirstMeetingStep.home,
@@ -391,17 +336,31 @@ class _FirstMeetingScreenState extends State<FirstMeetingScreen> {
         bucket: pageStorage,
         child: MeetingPage(
           key: ValueKey(s.step),
+          onRefresh: s.step == FirstMeetingStep.home ? refreshHome : null,
           showHeader: s.step != FirstMeetingStep.home,
           wide: s.step == FirstMeetingStep.home,
-          onBack:
-              s.step == FirstMeetingStep.login ||
-                  s.step == FirstMeetingStep.home ||
-                  c.isBusy
+          onBack: onBack,
+          // Pen ONB-06, 08 and 09: back sits in the n/3 step bar and the
+          // main action at the bottom; the save result and retry stay above
+          // the content.
+          header: onboardingStep == null
               ? null
-              : c.back,
-          rail: railSpec != null && railMode != null
-              ? DuoRail(spec: railSpec, mode: railMode)
-              : null,
+              : OnboardingStepNav(
+                  step: onboardingStep,
+                  total: 3,
+                  onBack: onBack,
+                ),
+          footer: !shown
+              ? null
+              : switch (s.step) {
+                  FirstMeetingStep.catalog => catalogFooter(c),
+                  FirstMeetingStep.name => nameFooter(c),
+                  FirstMeetingStep.goal => goalFooter(c),
+                  _ => null,
+                },
+          rail: railMode == null
+              ? null
+              : DuoRail(spec: railSpec, mode: railMode),
           children: [
             if (c.hasPendingMutation)
               OutlinedButton(
@@ -427,7 +386,10 @@ class _FirstMeetingScreenState extends State<FirstMeetingScreen> {
                   '체험 기록이 손상되었습니다. 자동으로 덮어쓰지 않았습니다.',
                 FirstMeetingError.storage =>
                   '기기에 저장하지 못했습니다. 입력을 유지했으니 다시 시도해 주세요.',
-                FirstMeetingError.validation => '이름·성별과 양의 정수 목표를 확인해 주세요.',
+                FirstMeetingError.validation =>
+                  '이름·성별과 ${formatCount(FirstMeetingController.minGoal)}~'
+                      '${formatCount(FirstMeetingController.maxGoal)}걸음 '
+                      '사이의 목표를 확인해 주세요.',
               }),
               const SizedBox(height: 16),
               if (c.error == FirstMeetingError.corruption &&
@@ -440,7 +402,6 @@ class _FirstMeetingScreenState extends State<FirstMeetingScreen> {
                       : () async {
                           await c.initialize();
                           name.text = c.state.name;
-                          goal.text = c.state.goalInput;
                         },
                   child: const Text('체험 기록 다시 읽기'),
                 ),
@@ -563,14 +524,12 @@ class _FirstMeetingScreenState extends State<FirstMeetingScreen> {
         ];
       case FirstMeetingStep.catalog:
         return [
-          const MeetingHeading('30종 직접 고르기', '넘겨 보고 카드를 누르면 최종 확인으로 이동'),
+          const MeetingHeading('어떤 친구와 걸을까요?', '넘겨 보고 마음에 드는 친구를 골라 주세요.'),
           BreedPager(
-            initialBreedId: s.candidateOrigin == CandidateOrigin.catalog
-                ? s.candidateBreedId
-                : null,
+            index: catalogShown(s),
             enabled: enabled,
-            onSelect: (breed) =>
-                c.selectCandidate(breed.id, origin: CandidateOrigin.catalog),
+            onChanged: (index) => setState(() => catalogIndex = index),
+            onSelect: (breed) => pickBreed(c, breed),
           ),
         ];
       case FirstMeetingStep.confirm:
@@ -611,318 +570,505 @@ class _FirstMeetingScreenState extends State<FirstMeetingScreen> {
           ),
         ];
       case FirstMeetingStep.name:
+        final breed = s.candidate!;
         return [
-          const MeetingHeading('이름을 지어 주세요', '이름을 짓고 암컷·수컷을 선택해 주세요.'),
-          const Text('강아지 이름'),
-          const SizedBox(height: 8),
+          const MeetingHeading(
+            '이름을 지어 주세요',
+            '부르기 쉬운 이름이 좋아요. 나중에 설정에서 바꿀 수 있어요.',
+          ),
+          // The stage, the count and the save listen to the name controller
+          // itself, so they follow every IME edit; the field below is never
+          // rebuilt for them (guide 4.3-6).
+          ValueListenableBuilder<TextEditingValue>(
+            valueListenable: name,
+            builder: (context, value, _) => DogNameStage(
+              sprite: breed.spritePath,
+              line: _nameLine(value.text),
+              note: '${breed.name} · 품종은 이후 바꿀 수 없어요',
+              lineKey: const ValueKey('meeting_name_line'),
+              noteKey: const ValueKey('meeting_name_breed'),
+            ),
+          ),
+          const SizedBox(height: OnboardingMetrics.section),
+          Text('강아지 이름', style: meetingType(14, 20, FontWeight.w700)),
+          const SizedBox(height: Space.s2),
           TextField(
             key: const ValueKey('meeting_name'),
             controller: name,
             onChanged: (value) => unawaited(c.updateName(value)),
             decoration: const InputDecoration(
-              hintText: '강아지 이름',
-              helperText: '한글·영문·숫자·공백 1–12글자',
-              helperMaxLines: 3,
+              hintText: '한글·영문·숫자로 지어 주세요',
+              focusedBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.all(Radius.circular(12)),
+                borderSide: BorderSide(
+                  color: MeetingColors.primaryStrong,
+                  width: 2,
+                ),
+              ),
             ),
           ),
-          const SizedBox(height: 20),
-          const Text('강아지 성별'),
-          const SizedBox(height: 10),
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
+          const SizedBox(height: Space.s2),
+          ValueListenableBuilder<TextEditingValue>(
+            valueListenable: name,
+            builder: (context, value, _) => nameHelp(value.text),
+          ),
+          const SizedBox(height: OnboardingMetrics.section),
+          Text('성별', style: meetingType(14, 20, FontWeight.w700)),
+          const SizedBox(height: Space.s2),
+          SexSegment(
+            value: s.sex,
+            onChanged: enabled ? (sex) => unawaited(c.updateSex(sex)) : null,
+          ),
+        ];
+      case FirstMeetingStep.goal:
+        // The stepper, cards, number, estimate and line all read this one
+        // saved draft. A draft that is no number shows a dash.
+        final draft = int.tryParse(s.goalInput.trim());
+        final goal = FirstMeetingController.parseGoal(s.goalInput);
+        final base = draft ?? FirstMeetingController.recommendedGoal;
+        // Saves queue in order, so quick taps are kept; only an unresolved
+        // save or the start in flight locks the choice.
+        final editable = !c.hasPendingMutation && starting == null;
+        return [
+          const MeetingHeading('하루 목표를 정해 볼까요?', '언제든 설정에서 바꿀 수 있어요.'),
+          GoalStepper(
+            value: draft,
+            onDecrease: editable && base > FirstMeetingController.minGoal
+                ? () => unawaited(c.stepGoal(up: false))
+                : null,
+            onIncrease: editable && base < FirstMeetingController.maxGoal
+                ? () => unawaited(c.stepGoal(up: true))
+                : null,
+          ),
+          const SizedBox(height: Space.s4),
+          if (goal == null)
+            Text(
+              '${formatCount(FirstMeetingController.minGoal)}~'
+              '${formatCount(FirstMeetingController.maxGoal)}걸음 사이로 정해 주세요',
+              key: const ValueKey('meeting_goal_range'),
+              textAlign: TextAlign.center,
+              style: meetingType(
+                13.5,
+                18,
+                FontWeight.w600,
+                MeetingColors.error,
+              ),
+            )
+          else
+            Text(
+              _estimate(goal),
+              key: const ValueKey('meeting_goal_estimate'),
+              textAlign: TextAlign.center,
+              style: meetingType(
+                13.5,
+                18,
+                FontWeight.w600,
+                MeetingColors.muted,
+              ),
+            ),
+          const SizedBox(height: Space.s4),
+          GoalPresetGrid(
             children: [
-              for (final sex in DogSex.values) ...[
-                if (sex == DogSex.male) const SizedBox(width: 12),
-                Expanded(
-                  child: Semantics(
-                    selected: s.sex == sex,
-                    button: true,
-                    child: InkWell(
-                      onTap: enabled ? () => c.updateSex(sex) : null,
-                      child: Container(
-                        constraints: const BoxConstraints(minHeight: 120),
-                        padding: const EdgeInsets.all(14),
-                        decoration: BoxDecoration(
-                          color: s.sex == sex
-                              ? MeetingColors.soft
-                              : MeetingColors.well,
-                          borderRadius: BorderRadius.circular(12),
-                          border: Border.all(
-                            color: s.sex == sex
-                                ? MeetingColors.primary
-                                : MeetingColors.line,
-                            width: s.sex == sex ? 2 : 1,
+              for (final value in FirstMeetingController.goalPresets)
+                GoalPresetCard(
+                  key: ValueKey('meeting_goal_preset_$value'),
+                  value: value,
+                  label: _presetLabels[value]!,
+                  recommended: value == FirstMeetingController.recommendedGoal,
+                  selected: value == goal,
+                  onTap: editable
+                      ? () => unawaited(c.updateGoal('$value'))
+                      : null,
+                ),
+            ],
+          ),
+          const SizedBox(height: Space.s4),
+          DogSpeechPreview(
+            sprite: s.candidate!.spritePath,
+            line: _goalLine(goal),
+            lineKey: const ValueKey('meeting_goal_line'),
+          ),
+        ];
+      case FirstMeetingStep.home:
+        final days = s.daysTogether(DateTime.now())!;
+        final product = widget.product;
+        final todayKey = ProductRepository.dateKey(ProductRepository.today);
+        final goal = HomeGoal.of(widget.dailySteps, s.goal, todayKey);
+        final point = homeReward(product, todayKey);
+        final streak = product?.streak;
+        final wallet = product?.wallet;
+        final streakShown = streak != null && streak.days > 0;
+        return [
+          MeetingHomeLayout(
+            header: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        '${s.name} · 함께한 지 $days일',
+                        textAlign: TextAlign.center,
+                        // Pen's home header is a small muted line (5.1).
+                        style: meetingType(
+                          18,
+                          24,
+                          FontWeight.w700,
+                          MeetingColors.muted,
+                        ),
+                      ),
+                    ),
+                    if (rail == null)
+                      IconButton(
+                        onPressed: c.profileRepository == null
+                            ? reset
+                            : widget.onOpenSettings,
+                        tooltip: c.profileRepository == null
+                            ? 'Dev 체험 초기화'
+                            : '설정',
+                        icon: Image.asset(
+                          'assets/first_meeting/icons/settings.png',
+                          width: 32,
+                          height: 32,
+                        ),
+                      ),
+                  ],
+                ),
+                // Unknown values leave their chip out; nothing reads as 0.
+                if (streakShown || wallet != null) ...[
+                  const SizedBox(height: 12),
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: [
+                      if (streakShown)
+                        StatusChip(
+                          streak.atLeast
+                              ? '${streak.days}일 이상 연속 기록'
+                              : '${streak.days}일 연속 기록',
+                          icon: 'goal-target',
+                          textKey: const ValueKey('home_streak'),
+                        ),
+                      if (wallet != null)
+                        StatusChip(
+                          '${formatCount(wallet.balance)}P'
+                          '${fixtureLabelsVisible && wallet.fixtureLabel != null ? ' · 개발 검증용' : ''}',
+                          icon: 'points',
+                          textKey: const ValueKey('reward_wallet'),
+                        ),
+                    ],
+                  ),
+                ],
+              ],
+            ),
+            scene: LayoutBuilder(
+              builder: (context, bounds) => ClipRRect(
+                borderRadius: BorderRadius.circular(16),
+                child: SizedBox(
+                  // Pen's 358 x 250 stage at 390 pt, scaled with the body.
+                  // Large text keeps the tall stage for its wrapped line.
+                  height: MediaQuery.textScalerOf(context).scale(16) > 21
+                      ? 330
+                      : MediaQuery.sizeOf(context).height < 600
+                      ? 220
+                      : (bounds.maxWidth * 250 / 358).clamp(220.0, 330.0),
+                  child: Stack(
+                    fit: StackFit.expand,
+                    children: [
+                      if (product?.store == null ||
+                          product!.store!.equippedTheme == 'sunny')
+                        Image.asset(
+                          'assets/first_meeting/sunny.png',
+                          fit: BoxFit.cover,
+                        )
+                      else
+                        ColoredBox(
+                          color: Color(
+                            product.store!.items
+                                .firstWhere(
+                                  (item) =>
+                                      item.themeId ==
+                                      product.store!.equippedTheme,
+                                )
+                                .colorValue,
                           ),
                         ),
+                      Padding(
+                        padding: const EdgeInsets.all(18),
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Image.asset(
-                              'assets/first_meeting/icons/${sex.name}.png',
-                              width: 32,
-                              height: 32,
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 14,
+                                vertical: 10,
+                              ),
+                              decoration: BoxDecoration(
+                                color: Colors.white,
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                              child: Text(
+                                _bubble(goal, point),
+                                key: const ValueKey('home_bubble'),
+                                style: Theme.of(context).textTheme.titleMedium
+                                    ?.copyWith(fontFamily: 'Galmuri11'),
+                              ),
                             ),
-                            const SizedBox(height: 6),
-                            Text(sex == DogSex.female ? '암컷' : '수컷'),
-                            Text(
-                              s.sex == sex ? '선택됨' : '선택하기',
-                              style: Theme.of(context).textTheme.bodySmall,
+                            const SizedBox(height: 8),
+                            Expanded(
+                              child: Center(
+                                child: DogSprite(
+                                  asset: s.candidate!.spritePath,
+                                  layer: product?.wornLayer(s.candidate!.id),
+                                  layerKey: const ValueKey('home_dog_outfit'),
+                                ),
+                              ),
                             ),
                           ],
                         ),
                       ),
-                    ),
+                    ],
                   ),
-                ),
-              ],
-            ],
-          ),
-          const SizedBox(height: 20),
-          Container(
-            padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              color: MeetingColors.soft,
-              borderRadius: BorderRadius.circular(16),
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text('선택한 친구', style: Theme.of(context).textTheme.bodySmall),
-                const SizedBox(height: 6),
-                Text(
-                  s.candidate!.name,
-                  style: Theme.of(context).textTheme.titleLarge,
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(height: 20),
-          FilledButton(
-            onPressed:
-                enabled &&
-                    s.sex != null &&
-                    FirstMeetingController.isValidName(name.text)
-                ? c.submitName
-                : null,
-            child: const Text('이름과 성별 저장'),
-          ),
-        ];
-      case FirstMeetingStep.goal:
-        return [
-          const MeetingHeading(
-            '하루 목표를 정해 볼까요?',
-            '기본 목표는 5,000걸음이에요. 나에게 맞게 정해 주세요.',
-          ),
-          TextField(
-            key: const ValueKey('meeting_goal'),
-            controller: goal,
-            keyboardType: TextInputType.number,
-            onChanged: (value) => unawaited(c.updateGoal(value)),
-            decoration: const InputDecoration(
-              labelText: '하루 걸음 목표',
-              suffixText: '걸음',
-            ),
-          ),
-          const SizedBox(height: 20),
-          const MeetingNotice('가볍게 시작해요', '목표를 채우지 못해도 벌점은 없어요.'),
-          const SizedBox(height: 20),
-          FilledButton(
-            onPressed: enabled ? c.complete : null,
-            child: const Text('목표 저장하고 홈 보기'),
-          ),
-        ];
-      case FirstMeetingStep.home:
-        final today = DateTime.now().toUtc().add(const Duration(hours: 9));
-        final met = s.firstMetAtUTC!.add(const Duration(hours: 9));
-        final days =
-            DateTime.utc(
-              today.year,
-              today.month,
-              today.day,
-            ).difference(DateTime.utc(met.year, met.month, met.day)).inDays +
-            1;
-        return [
-          MeetingHomeLayout(
-            header: Row(
-              children: [
-                Expanded(
-                  child: Text(
-                    '${s.name} · 함께한 지 $days일',
-                    textAlign: TextAlign.center,
-                    style: Theme.of(context).textTheme.titleLarge,
-                  ),
-                ),
-                if (rail == null)
-                  IconButton(
-                    onPressed: c.profileRepository == null ? reset : settings,
-                    tooltip: c.profileRepository == null ? 'Dev 체험 초기화' : '설정',
-                    icon: Image.asset(
-                      'assets/first_meeting/icons/settings.png',
-                      width: 32,
-                      height: 32,
-                    ),
-                  ),
-              ],
-            ),
-            scene: ClipRRect(
-              borderRadius: BorderRadius.circular(16),
-              child: SizedBox(
-                height:
-                    MediaQuery.sizeOf(context).height < 600 &&
-                        MediaQuery.textScalerOf(context).scale(16) <= 21
-                    ? 220
-                    : 330,
-                child: Stack(
-                  fit: StackFit.expand,
-                  children: [
-                    if (widget.product?.store == null ||
-                        widget.product!.store!.equippedTheme == 'sunny')
-                      Image.asset(
-                        'assets/first_meeting/sunny.png',
-                        fit: BoxFit.cover,
-                      )
-                    else
-                      ColoredBox(
-                        color: Color(
-                          widget.product!.store!.items
-                              .firstWhere(
-                                (item) =>
-                                    item.themeId ==
-                                    widget.product!.store!.equippedTheme,
-                              )
-                              .colorValue,
-                        ),
-                      ),
-                    Padding(
-                      padding: const EdgeInsets.all(18),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Container(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 14,
-                              vertical: 10,
-                            ),
-                            decoration: BoxDecoration(
-                              color: Colors.white,
-                              borderRadius: BorderRadius.circular(12),
-                            ),
-                            child: Text(
-                              '오늘도 네 옆에서 걸을게',
-                              style: Theme.of(context).textTheme.titleMedium
-                                  ?.copyWith(fontFamily: 'Galmuri11'),
-                            ),
-                          ),
-                          const SizedBox(height: 8),
-                          Expanded(
-                            child: Center(
-                              child: DogSprite(
-                                asset: s.candidate!.spritePath,
-                                layer: widget.product?.wornLayer(
-                                  s.candidate!.id,
-                                ),
-                                layerKey: const ValueKey('home_dog_outfit'),
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
                 ),
               ),
             ),
-            status: Container(
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(16),
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  Text('오늘 걸음 · 목표 ${s.goal}'),
-                  const SizedBox(height: 12),
-                  DailyStepsReadout(controller: widget.dailySteps),
-                  if (widget.product case final product?) ...[
+            status: HomeGoalCard(
+              goal: goal,
+              reward: point,
+              onReward: reward,
+              onRetry: refreshHome,
+              notices: [
+                if (product != null) ...[
+                  // Sync runs by itself (3.1). Only the dev build's test
+                  // user, which has no account, connects by hand.
+                  if (product.account == null && !product.connected)
                     TextButton(
-                      onPressed: product.busy
-                          ? null
-                          : product.connected
-                          ? product.sync
-                          : product.connect,
-                      child: Text(
-                        product.connected
-                            ? '서버 동기화'
-                            : product.account == null
-                            ? '개발 테스트 사용자 연결'
-                            : '서버 다시 연결',
-                      ),
+                      key: const ValueKey('home_dev_connect'),
+                      onPressed: product.busy ? null : product.connect,
+                      child: const Text('개발 테스트 사용자 연결'),
                     ),
-                    if (product.error != null) Text(product.error!),
-                    if (product.wallet case final wallet?)
-                      Text(
-                        '${wallet.balance} P${wallet.fixtureLabel == null ? '' : ' · 개발 검증용'}',
-                        key: const ValueKey('reward_wallet'),
-                      ),
-                  ],
-                  const SizedBox(height: 12),
-                  FilledButton(onPressed: reward, child: const Text('포인트 받기')),
+                  if (product.error != null) Text(product.error!),
+                  if (product.error != null && product.account != null)
+                    OutlinedButton(
+                      key: const ValueKey('home_sync_retry'),
+                      onPressed: product.busy ? null : refreshHome,
+                      child: const Text('다시 시도'),
+                    ),
                 ],
-              ),
+              ],
             ),
+            // The rail carries these destinations while it shows.
             shortcuts: rail != null
                 ? null
                 : MeetingShortcuts(
                     children: [
-                      for (final entry in [
-                        ('기록', 'calendar-record'),
-                        ('퀴즈', 'question-quiz'),
-                        ('꾸미기', 'wardrobe'),
-                        ('사진', 'camera-photo'),
-                      ])
-                        OutlinedButton(
-                          style: OutlinedButton.styleFrom(
-                            minimumSize: const Size(72, 80),
-                          ),
-                          onPressed:
-                              switch (entry.$1) {
-                                '사진' => widget.onOpenPhoto,
-                                '기록' => widget.onOpenRecords,
-                                '퀴즈' => widget.onOpenQuiz,
-                                '꾸미기' => widget.onOpenWardrobe,
-                                _ => null,
-                              } ??
-                              () => unavailable(entry.$1),
-                          child: Column(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Image.asset(
-                                'assets/first_meeting/icons/${entry.$2}.png',
-                                width: 32,
-                                height: 32,
-                              ),
-                              const SizedBox(height: 8),
-                              Text(entry.$1),
-                              if (entry.$1 == '퀴즈' &&
-                                  widget.product?.quiz != null &&
-                                  widget.product!.quiz!.answerIndex == null)
-                                Semantics(
-                                  label: '오늘 퀴즈 미응답',
-                                  child: const Text('·'),
-                                ),
-                            ],
-                          ),
-                        ),
+                      StatusTile(
+                        key: const ValueKey('home_tile_records'),
+                        icon: 'assets/first_meeting/icons/calendar-record.png',
+                        title: '기록',
+                        status: streak == null
+                            ? null
+                            : '이번 주 기록 ${streak.thisWeek}일',
+                        statusKey: const ValueKey('home_tile_records_status'),
+                        onTap: widget.onOpenRecords ?? () => unavailable('기록'),
+                      ),
+                      StatusTile(
+                        key: const ValueKey('home_tile_quiz'),
+                        icon: 'assets/first_meeting/icons/question-quiz.png',
+                        title: '퀴즈',
+                        status: quizStatus(todayKey),
+                        statusKey: const ValueKey('home_tile_quiz_status'),
+                        onTap: widget.onOpenQuiz ?? () => unavailable('퀴즈'),
+                      ),
+                      StatusTile(
+                        key: const ValueKey('home_tile_wardrobe'),
+                        icon:
+                            'assets/first_meeting/icons/decorate-shortcut.png',
+                        title: '꾸미기',
+                        status: wardrobeStatus(),
+                        statusKey: const ValueKey('home_tile_wardrobe_status'),
+                        onTap:
+                            widget.onOpenWardrobe ?? () => unavailable('꾸미기'),
+                      ),
+                      StatusTile(
+                        key: const ValueKey('home_tile_photo'),
+                        icon: 'assets/first_meeting/icons/camera-photo.png',
+                        title: '사진',
+                        // An invitation, not a claim that a photo exists.
+                        status: '${withWa(s.name)} 한 장',
+                        statusKey: const ValueKey('home_tile_photo_status'),
+                        onTap: widget.onOpenPhoto ?? () => unavailable('사진'),
+                      ),
                     ],
                   ),
-            footer: Text(
-              c.profileRepository == null ? 'Dev 체험 · 이 기기에 저장' : '계정에 저장된 친구',
-              textAlign: TextAlign.center,
-            ),
+            // Only the Dev local flow says where it saves (owner, 10-28).
+            footer: c.profileRepository == null
+                ? const Text('Dev 체험 · 이 기기에 저장', textAlign: TextAlign.center)
+                : null,
           ),
         ];
     }
+  }
+
+  /// The card the catalog shows: the one moved to in this visit, else the
+  /// previous catalog candidate, else G1's first.
+  int catalogShown(FirstMeetingState s) =>
+      catalogIndex ??
+      BreedPager.indexOf(
+        s.candidateOrigin == CandidateOrigin.catalog
+            ? s.candidateBreedId
+            : null,
+      );
+
+  /// A tap on the centered card and the bottom button both land here. The
+  /// controller saves only while the catalog step is current, so a second
+  /// tap queued behind the first saves nothing.
+  void pickBreed(FirstMeetingController c, DogBreed breed) =>
+      unawaited(c.selectCandidate(breed.id, origin: CandidateOrigin.catalog));
+
+  /// The pick named after the centered breed and the recommendation under
+  /// the catalog (guide 4.2-5, 4.2-6).
+  Widget catalogFooter(FirstMeetingController c) {
+    final enabled = !c.isBusy && !c.hasPendingMutation;
+    final breed = FirstMeetingCatalog.breeds[catalogShown(c.state)];
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      spacing: Space.s1,
+      children: [
+        FilledButton(
+          key: const ValueKey('breed_choose'),
+          onPressed: enabled ? () => pickBreed(c, breed) : null,
+          child: Text('${withRo(breed.name)} 할게요'),
+        ),
+        TextButton(
+          key: const ValueKey('breed_recommend'),
+          onPressed: enabled
+              ? () =>
+                    unawaited(c.chooseMethod(FirstMeetingMethod.recommendation))
+              : null,
+          style: TextButton.styleFrom(foregroundColor: MeetingColors.muted),
+          child: const Text('성향으로 추천받기'),
+        ),
+      ],
+    );
+  }
+
+  /// "12자까지" and the count under the name field, with the same trim and
+  /// character rule as the save (guide 4.3-3). A too-long name turns both
+  /// red; other characters say which ones are allowed.
+  Widget nameHelp(String text) {
+    const most = FirstMeetingController.maxNameLength;
+    final count = FirstMeetingController.normalizeName(text).characters.length;
+    final tooLong = count > most;
+    final wrong =
+        !tooLong && count > 0 && !FirstMeetingController.isValidName(text);
+    final color = tooLong || wrong ? MeetingColors.error : MeetingColors.muted;
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      spacing: Space.s2,
+      children: [
+        Expanded(
+          child: Text(
+            wrong ? '한글·영문·숫자·공백만 쓸 수 있어요' : '$most자까지 쓸 수 있어요',
+            key: const ValueKey('meeting_name_help'),
+            style: Theme.of(context).textTheme.bodySmall
+                ?.copyWith(color: color),
+          ),
+        ),
+        Text(
+          '$count/$most',
+          key: const ValueKey('meeting_name_count'),
+          semanticsLabel: '$most자 중 $count자',
+          style: meetingType(12, 17, FontWeight.w700, color),
+        ),
+      ],
+    );
+  }
+
+  /// The save under the name step, named after the typed name (guide 4.3-5).
+  /// A valid name, a chosen sex and no save in flight enable it; the label
+  /// and the check follow the name controller like the stage does.
+  Widget nameFooter(FirstMeetingController c) {
+    final ready = !c.isBusy && !c.hasPendingMutation && c.state.sex != null;
+    return ValueListenableBuilder<TextEditingValue>(
+      valueListenable: name,
+      builder: (context, value, _) => FilledButton(
+        key: const ValueKey('meeting_name_submit'),
+        onPressed: ready && FirstMeetingController.isValidName(value.text)
+            ? c.submitName
+            : null,
+        child: Text(_nameSave(value.text)),
+      ),
+    );
+  }
+
+  /// The no-penalty note and the start under the goal step (guide 4.4-6).
+  /// The start saves through the existing complete path with the draft the
+  /// queued saves left, once.
+  Widget goalFooter(FirstMeetingController c) {
+    final ready =
+        !c.isBusy &&
+        !c.hasPendingMutation &&
+        starting == null &&
+        FirstMeetingController.parseGoal(c.state.goalInput) != null;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      spacing: OnboardingMetrics.gap,
+      children: [
+        Text(
+          '목표를 채우지 못해도 벌점은 없어요',
+          key: const ValueKey('meeting_goal_no_penalty'),
+          textAlign: TextAlign.center,
+          style: Theme.of(context).textTheme.bodySmall,
+        ),
+        FilledButton(
+          key: const ValueKey('meeting_goal_start'),
+          onPressed: ready ? () => startGoal(c) : null,
+          child: const Text('이 목표로 시작하기'),
+        ),
+      ],
+    );
+  }
+
+  void startGoal(FirstMeetingController c) {
+    if (starting != null) return;
+    setState(() {
+      starting = c.complete().whenComplete(() {
+        if (mounted) setState(() => starting = null);
+      });
+    });
+  }
+
+  /// The quiz tile's state; null while it is not known, never "done".
+  String? quizStatus(String today) {
+    if (widget.quiz case final quiz?) {
+      final value = quiz.today;
+      if (value == null || value.date != today) return null;
+      return switch (value.status) {
+        'ready' => switch (value.free) {
+          null => null,
+          final question =>
+            question.answerIndex == null ? '아직 안 풀었어요' : '오늘 완료',
+        },
+        'contentUnavailable' || 'exhausted' => '문제 준비 중',
+        _ => null,
+      };
+    }
+    // The dev build reads its fixture question with the product.
+    final question = widget.product?.quiz;
+    if (question == null || question.date != today) return null;
+    return question.answerIndex == null ? '아직 안 풀었어요' : '오늘 완료';
+  }
+
+  /// The outfit the stage draws, from the last confirmed server state; null
+  /// while that state is not known.
+  String? wardrobeStatus() {
+    final outfits = widget.product?.outfits;
+    if (outfits == null) return null;
+    for (final item in outfits.items) {
+      if (item.outfitId == outfits.equippedOutfit) return '착용 중 · ${item.name}';
+    }
+    return '착용한 옷 없음';
   }
 
   Widget dogCard(
@@ -959,3 +1105,58 @@ class _FirstMeetingScreenState extends State<FirstMeetingScreen> {
     ),
   );
 }
+
+/// Pen's preset titles for the owner's preset values (9.1 ②).
+const _presetLabels = {3000: '가볍게', 5000: '보통', 8000: '활발하게', 10000: '도전'};
+
+/// "대략 50분 · 3.5km 걷기" for a goal, from the controller's estimate.
+String _estimate(int goal) {
+  final (:minutes, :tenthsKm) = FirstMeetingController.estimateGoal(goal);
+  final hours = minutes ~/ 60;
+  final time = hours == 0
+      ? '$minutes분'
+      : minutes % 60 == 0
+      ? '$hours시간'
+      : '$hours시간 ${minutes % 60}분';
+  final km = tenthsKm % 10 == 0
+      ? '${tenthsKm ~/ 10}'
+      : '${tenthsKm ~/ 10}.${tenthsKm % 10}';
+  return '대략 $time · ${km}km 걷기';
+}
+
+/// The companion's reaction to the goal on screen (guide 4.4-5): the number
+/// and a word for its preset band.
+String _goalLine(int? goal) {
+  if (goal == null) return '하루에 얼마나\n같이 걸을까?';
+  final steps = '${formatCount(goal)}걸음';
+  if (goal < 5000) return '$steps이면\n가볍게 시작하기 좋아!';
+  if (goal < 8000) return '$steps이면\n매일 산책하기 딱 좋아!';
+  if (goal < 10000) return '$steps이면\n신나게 걸을 수 있겠다!';
+  return '$steps이라니\n같이 도전해 보자!';
+}
+
+/// The companion's line. Numbers stay in the goal card and never repeat
+/// here (guide 5.1); "almost there" is kept for the last stretch only.
+String _bubble(HomeGoal goal, HomeReward point) {
+  if (goal.state != StepsState.counted) {
+    return goal.retryable ? '오늘 걸음을\n아직 못 가져왔어' : '오늘도 네 옆에서 걸을게';
+  }
+  if (point == HomeReward.claimed) {
+    return goal.achieved ? '포인트 받았어!\n오늘 정말 잘 걸었어' : '포인트 받았어!\n남은 걸음도 같이 가자';
+  }
+  if (goal.achieved) return '오늘 목표 달성!\n같이 걸어서 좋았어';
+  if (goal.percent >= 80) return '거의 다 왔어!\n조금만 더 같이 걷자';
+  return '오늘도 네 옆에서 걸을게';
+}
+
+/// The companion introducing itself with the typed name (guide 4.3-2), or
+/// asking for one while the name is empty or breaks the rule.
+String _nameLine(String input) => FirstMeetingController.isValidName(input)
+    ? '안녕, 나는 ${withIya(FirstMeetingController.normalizeName(input))}!'
+    : '안녕, 내 이름을 지어 줘!';
+
+/// The name step's save label: the typed name with 로 or 으로, or a neutral
+/// label while the name is empty or breaks the rule.
+String _nameSave(String input) => FirstMeetingController.isValidName(input)
+    ? '${withRo(FirstMeetingController.normalizeName(input))} 정할게요'
+    : '이름을 정할게요';

@@ -42,6 +42,14 @@ class FirstMeetingController extends ChangeNotifier {
   bool _isBusy = false;
   bool get isBusy => _isBusy;
   bool get isRestored => _restored;
+
+  /// Whether [back] moves to another step. The authenticated flow starts at
+  /// method, so there is nothing before it.
+  bool get canGoBack => switch (_state.step) {
+    FirstMeetingStep.login || FirstMeetingStep.home => false,
+    FirstMeetingStep.method => profileRepository == null,
+    _ => true,
+  };
   bool _restored = false;
   bool _corrupt = false;
   Future<void> _tail = Future.value();
@@ -49,11 +57,15 @@ class FirstMeetingController extends ChangeNotifier {
   String? _pendingGroupId;
   DateTime? _pendingFirstMet;
 
+  /// The most characters a name keeps; the name step counts with the same
+  /// trim and character rule (guide 4.3-3).
+  static const maxNameLength = 12;
+
   static String normalizeName(String input) => input.trim();
   static bool isValidName(String input) {
     final name = normalizeName(input);
     return name.isNotEmpty &&
-        name.characters.length <= 12 &&
+        name.characters.length <= maxNameLength &&
         name.runes.every(
           (rune) =>
               rune == 32 ||
@@ -68,10 +80,32 @@ class FirstMeetingController extends ChangeNotifier {
         );
   }
 
+  /// Owner decision 9.1 ② (2026-10-28): the goal step's presets with 5,000
+  /// recommended, a 500-step −/+ and the range every saved goal keeps.
+  static const goalPresets = [3000, 5000, 8000, 10000];
+  static const recommendedGoal = 5000;
+  static const goalStep = 500;
+  static const minGoal = 1000;
+  static const maxGoal = 30000;
+
   static int? parseGoal(String input) {
     final value = int.tryParse(input.trim());
-    return value != null && value > 0 ? value : null;
+    return value != null && value >= minGoal && value <= maxGoal ? value : null;
   }
+
+  /// The −/+ result from [value]: the next [goalStep] mark below or above it,
+  /// kept in range. An off-mark draft such as 7,777 lands on a mark.
+  static int nextGoal(int value, {required bool up}) =>
+      (up
+              ? (value ~/ goalStep + 1) * goalStep
+              : ((value - 1) ~/ goalStep) * goalStep)
+          .clamp(minGoal, maxGoal);
+
+  /// Rough walk for [goal] (guide 4.4-4): 100 steps a minute and 0.7 m a
+  /// step, rounded half up to whole minutes and tenths of a kilometre. A hint
+  /// on the goal step, never a measurement.
+  static ({int minutes, int tenthsKm}) estimateGoal(int goal) =>
+      (minutes: (goal + 50) ~/ 100, tenthsKm: (goal * 7 + 500) ~/ 1000);
 
   Future<void> initialize() => restore();
   Future<void> chooseMethod(FirstMeetingMethod method) =>
@@ -233,7 +267,12 @@ class FirstMeetingController extends ChangeNotifier {
   });
 
   Future<void> chooseRecommendation() => _run(() async {
-    if (_at(FirstMeetingStep.method)) {
+    // The catalog offers the questions too (guide 4.2-6).
+    if (_canEdit() &&
+        [
+          FirstMeetingStep.method,
+          FirstMeetingStep.catalog,
+        ].contains(_state.step)) {
       await _save(
         _state.copyWith(
           step: _state.representativeBreedId == null
@@ -358,6 +397,15 @@ class FirstMeetingController extends ChangeNotifier {
   Future<void> updateGoal(String input) => _run(() async {
     if (!_at(FirstMeetingStep.goal)) return;
     _state = _state.copyWith(goalInput: input);
+    await _save(_state);
+  });
+
+  /// −/+ on the goal step. The next value is read from the latest draft
+  /// inside the queue, so quick taps never start from a stale number.
+  Future<void> stepGoal({required bool up}) => _run(() async {
+    if (!_at(FirstMeetingStep.goal)) return;
+    final draft = int.tryParse(_state.goalInput.trim()) ?? recommendedGoal;
+    _state = _state.copyWith(goalInput: '${nextGoal(draft, up: up)}');
     await _save(_state);
   });
 

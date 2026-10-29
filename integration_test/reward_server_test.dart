@@ -205,26 +205,21 @@ void main() {
     expect(product.wallet!.balance, 20);
     expect(find.byKey(const ValueKey('reward_free_claim')), findsNothing);
     await capture('reward-expired-remains');
+    // Owner decision ⑤: the ad button plays at once and a server-verified
+    // view is claimed with the same request, without a second tap.
+    changed = Completer<RecordDay>();
     await tester.tap(find.byKey(const ValueKey('reward_watch_ad')));
-    await tester.pumpAndSettle();
-    await tester.tap(find.byKey(const ValueKey('ads_start')));
+    await tester.pump();
     await tester.runAsync(
       () => verified.future.timeout(const Duration(seconds: 20)),
     );
-    await tester.pumpAndSettle();
-    expect((await product.repository.wallet()).balance, 20);
-    await capture('reward-ssv-verified');
     final intentId = ads.intent!.id;
-    await tester.tap(find.byKey(const ValueKey('ads_close')));
     await tester.pumpAndSettle();
-    expect((await product.repository.wallet()).balance, 20);
-    await capture('reward-explicit-ad-claim');
-    changed = Completer<RecordDay>();
-    await tester.tap(find.byKey(const ValueKey('reward_ad_claim')));
     day = (await tester.runAsync(
       () => changed.future.timeout(const Duration(seconds: 20)),
     ))!;
     await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('reward_ad_claim')), findsNothing);
     expect(day.rewardStatus, DayRewardStatus.paid);
     expect(day.grantedPoints, 160);
     expect(product.wallet!.balance, 160);

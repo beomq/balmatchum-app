@@ -5,12 +5,12 @@ import 'package:flutter/material.dart';
 import '../../app/duo_rail.dart';
 import '../first_meeting/domain/dog_catalog.dart';
 import '../first_meeting/meeting_theme.dart';
+import '../first_meeting/onboarding_widgets.dart' show wrapByWords;
 import '../records/product_page.dart';
+import '../records/status_widgets.dart';
 import 'dog_sprite.dart';
 import 'outfit_shelf.dart';
 import 'wardrobe_models.dart';
-
-enum WardrobeScope { owned, store }
 
 /// The shelf whose action produced the current message.
 enum _Shelf { theme, outfit }
@@ -50,7 +50,6 @@ class _WardrobeScreenState extends State<WardrobeScreen> {
   WardrobeSnapshot? snapshot;
   String? loadError;
   String? selectedId;
-  WardrobeScope scope = WardrobeScope.owned;
   bool busy = false;
   _Shelf shelf = _Shelf.theme;
   String? actionError;
@@ -147,31 +146,36 @@ class _WardrobeScreenState extends State<WardrobeScreen> {
     }
   }
 
-  Future<bool> confirmSpend(String title, int price) async =>
+  /// Asks before points are spent (Pen 'V2 · WARD-02', XmVOx): the product's
+  /// own picture, the balance before and after when both are known and one
+  /// button naming the price. Only that button returns true; cancel and a
+  /// tap outside send nothing.
+  Future<bool> confirmSpend({
+    required String title,
+    required String note,
+    required int price,
+    required Widget thumbnail,
+  }) async =>
       await showDialog<bool>(
         context: context,
-        builder: (context) => AlertDialog(
-          title: Text(title),
-          content: Text('${formatCount(price)}포인트가 사용돼요. 구매 후 착용은 따로 선택해요.'),
-          actionsOverflowButtonSpacing: 8,
-          actions: [
-            OutlinedButton(
-              key: const ValueKey('wardrobe_purchase_cancel'),
-              onPressed: () => Navigator.pop(context, false),
-              child: const Text('취소'),
-            ),
-            FilledButton(
-              key: const ValueKey('wardrobe_purchase_confirm'),
-              onPressed: () => Navigator.pop(context, true),
-              child: const Text('구매 확인'),
-            ),
-          ],
+        builder: (context) => _SpendDialog(
+          title: title,
+          note: note,
+          price: price,
+          // The latest server balance as the dialog opens.
+          balance: snapshot?.balance,
+          thumbnail: thumbnail,
         ),
       ) ==
       true;
 
   Future<void> confirmPurchase(WardrobeTheme theme) async {
-    final ok = await confirmSpend('${theme.name} 배경을 구매할까요?', theme.price!);
+    final ok = await confirmSpend(
+      title: '${theme.name} 배경을 살까요?',
+      note: '산 배경은 꾸미기에서 언제든 바꿀 수 있어요.\n구매 후 착용은 따로 선택해요.',
+      price: theme.price!,
+      thumbnail: _ThemeSurface(theme, keyPrefix: 'wardrobe_purchase'),
+    );
     if (ok && mounted) {
       await run(_Shelf.theme, () => widget.purchaseTheme(theme));
     }
@@ -180,8 +184,23 @@ class _WardrobeScreenState extends State<WardrobeScreen> {
   Future<void> changeOutfit(WardrobeOutfit outfit, OutfitChange change) async {
     final ok = switch (change) {
       OutfitChange.purchase => await confirmSpend(
-        '${outfit.name} 의상을 구매할까요?',
-        outfit.price,
+        title: '${outfit.name} 의상을 살까요?',
+        note: '산 의상은 꾸미기에서 언제든 입히고 벗길 수 있어요.\n구매 후 착용은 따로 선택해요.',
+        price: outfit.price,
+        // This breed's own layer on its own sprite; the shelf's hanger icon
+        // is not the product.
+        thumbnail: ColoredBox(
+          color: MeetingColors.stage,
+          child: Padding(
+            padding: const EdgeInsets.all(Space.s2),
+            child: DogSprite(
+              asset: widget.dog.spritePath,
+              layer: outfit.layerFor(widget.dog.id),
+              spriteKey: const ValueKey('wardrobe_purchase_dog'),
+              layerKey: const ValueKey('wardrobe_purchase_outfit'),
+            ),
+          ),
+        ),
       ),
       OutfitChange.wear || OutfitChange.remove => true,
     };
@@ -207,8 +226,13 @@ class _WardrobeScreenState extends State<WardrobeScreen> {
         fit: StackFit.expand,
         children: [
           SafeArea(
+            // The pinned bar reaches the bottom edge and pads the inset
+            // itself; the scrolling content pads it at its end.
+            bottom: false,
             child: LayoutBuilder(
               builder: (context, bounds) {
+                final inset = MediaQuery.paddingOf(context).bottom;
+                final height = bounds.maxHeight - inset;
                 final w = bounds.maxWidth;
                 final gutter = pageGutter(w);
                 final content = (w - gutter * 2).clamp(0.0, 1200.0);
@@ -216,26 +240,31 @@ class _WardrobeScreenState extends State<WardrobeScreen> {
                 // RESPONSIVE.md 3: when a fixed action would leave no product row,
                 // release it into the single scroll.
                 final pinned =
-                    bounds.maxHeight >= 600 &&
+                    !split &&
+                    height >= 600 &&
                     MediaQuery.textScalerOf(context).scale(1) < 1.5;
                 final previewWidth = w >= 840
                     ? (content * .38).clamp(280.0, 360.0)
                     : 240.0;
                 final s = snapshot;
-                final header = mode == null
-                    ? Padding(
-                        padding: EdgeInsets.fromLTRB(
-                          gutter,
-                          Space.s2,
-                          gutter,
-                          0,
-                        ),
-                        child: ProductTopBar(
+                final header = Padding(
+                  padding: EdgeInsets.fromLTRB(gutter, Space.s2, gutter, 0),
+                  child: mode == null
+                      ? ProductTopBar(
                           onBack: widget.onBack,
                           onHome: widget.onHome,
+                          title: '꾸미기',
+                        )
+                      // The rail takes back and home; the title keeps the
+                      // bar's row, as on the other sub screens.
+                      : const SizedBox(
+                          height: 48,
+                          child: Align(
+                            alignment: AlignmentDirectional.centerStart,
+                            child: ProductTitle('꾸미기'),
+                          ),
                         ),
-                      )
-                    : const SizedBox(height: Space.s2);
+                );
                 if (s == null) {
                   return Column(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -272,16 +301,14 @@ class _WardrobeScreenState extends State<WardrobeScreen> {
                   theme: selected,
                   equipped:
                       selected != null && selected!.id == s.equippedThemeId,
-                  compact: !split && bounds.maxHeight < 600,
+                  balance: s.balance,
+                  compact: !split && height < 600,
                 );
                 final list = _Catalog(
                   snapshot: s,
-                  scope: scope,
                   selectedId: selectedId,
-                  onScope: (v) => setState(() => scope = v),
                   onSelect: select,
-                  narrow: !split,
-                  wide: w >= 840,
+                  maxColumns: w >= 840 ? 4 : 3,
                 );
                 final action = _ActionBar(
                   theme: selected,
@@ -305,6 +332,7 @@ class _WardrobeScreenState extends State<WardrobeScreen> {
                   onReload: load,
                   onEarnPoints: widget.onHome,
                 );
+                final panel = ProductPanel(child: action);
                 final body = split
                     ? Row(
                         crossAxisAlignment: CrossAxisAlignment.start,
@@ -312,12 +340,15 @@ class _WardrobeScreenState extends State<WardrobeScreen> {
                           SizedBox(
                             width: previewWidth,
                             child: SingleChildScrollView(
+                              padding: EdgeInsets.only(
+                                bottom: Space.s3 + inset,
+                              ),
                               child: Column(
                                 crossAxisAlignment: CrossAxisAlignment.stretch,
                                 children: [
                                   preview,
                                   const SizedBox(height: Space.s3),
-                                  action,
+                                  panel,
                                 ],
                               ),
                             ),
@@ -325,20 +356,40 @@ class _WardrobeScreenState extends State<WardrobeScreen> {
                           const SizedBox(width: Space.s6),
                           Expanded(
                             child: SingleChildScrollView(
+                              padding: EdgeInsets.only(
+                                bottom: Space.s3 + inset,
+                              ),
                               child: Column(
                                 crossAxisAlignment: CrossAxisAlignment.stretch,
                                 children: [
                                   list,
                                   const SizedBox(height: Space.s6),
                                   outfitShelf,
-                                  const SizedBox(height: Space.s3),
                                 ],
                               ),
                             ),
                           ),
                         ],
                       )
-                    : null;
+                    : SingleChildScrollView(
+                        padding: EdgeInsets.only(
+                          bottom: Space.s3 + (pinned ? 0 : inset),
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            preview,
+                            const SizedBox(height: Space.s3),
+                            list,
+                            const SizedBox(height: Space.s6),
+                            outfitShelf,
+                            if (!pinned) ...[
+                              const SizedBox(height: Space.s3),
+                              panel,
+                            ],
+                          ],
+                        ),
+                      );
                 return Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
@@ -355,39 +406,31 @@ class _WardrobeScreenState extends State<WardrobeScreen> {
                               gutter,
                               0,
                             ),
-                            child:
-                                body ??
-                                SingleChildScrollView(
-                                  child: Column(
-                                    crossAxisAlignment:
-                                        CrossAxisAlignment.stretch,
-                                    children: [
-                                      preview,
-                                      const SizedBox(height: Space.s3),
-                                      list,
-                                      const SizedBox(height: Space.s6),
-                                      outfitShelf,
-                                      const SizedBox(height: Space.s3),
-                                      if (!pinned) ...[
-                                        action,
-                                        const SizedBox(height: Space.s3),
-                                      ],
-                                    ],
-                                  ),
-                                ),
+                            child: body,
                           ),
                         ),
                       ),
                     ),
-                    if (!split && pinned)
-                      Padding(
-                        padding: EdgeInsets.fromLTRB(
-                          gutter,
-                          Space.s2,
-                          gutter,
-                          Space.s2,
+                    if (pinned)
+                      // Pen 'Wardrobe Action Bar': raised, a line on top,
+                      // down to the bottom edge.
+                      DecoratedBox(
+                        key: const ValueKey('wardrobe_action_bar'),
+                        decoration: const BoxDecoration(
+                          color: ProductColors.raised,
+                          border: Border(
+                            top: BorderSide(color: MeetingColors.line),
+                          ),
                         ),
-                        child: action,
+                        child: Padding(
+                          padding: EdgeInsets.fromLTRB(
+                            gutter,
+                            Space.s3,
+                            gutter,
+                            Space.s3 + inset,
+                          ),
+                          child: action,
+                        ),
                       ),
                   ],
                 );
@@ -407,6 +450,7 @@ class _Preview extends StatelessWidget {
     required this.outfitLayer,
     required this.theme,
     required this.equipped,
+    required this.balance,
     required this.compact,
   });
   final String dogAsset;
@@ -414,38 +458,40 @@ class _Preview extends StatelessWidget {
   /// Server-confirmed worn layer on the [dogAsset] canvas; never a try-on.
   final String? outfitLayer;
   final WardrobeTheme? theme;
+
+  /// The previewed theme is the one the server has applied.
   final bool equipped;
+
+  /// Null while the server balance is unknown; never shown as 0.
+  final int? balance;
   final bool compact;
 
   @override
   Widget build(BuildContext context) {
     final t = theme;
-    final caption = t == null
-        ? '배경 없음'
+    // The tag tells a try-out from what the server applied (guide 7.6 3).
+    final (String state, String caption) = t == null
+        ? ('none', '배경 없음')
         : equipped
-        ? '실제 적용 상태'
-        : t.owned
-        ? '보유함 · 실제 적용 전'
-        : '미리보기 · 실제 적용 전';
+        ? ('equipped', '착용 중 · ${t.name}')
+        : ('trial', '미리보기 · ${t.name}');
+    final points = balance;
+    final amount = points == null ? '확인 전' : '${formatCount(points)}P';
     return ClipRRect(
-      borderRadius: BorderRadius.circular(16),
+      key: const ValueKey('wardrobe_preview'),
+      borderRadius: BorderRadius.circular(20),
       child: SizedBox(
-        height: compact ? 140 : 210,
+        height: compact ? 140 : 206,
         child: Stack(
           fit: StackFit.expand,
           children: [
-            if (t?.backgroundAsset != null)
-              Image.asset(
-                t!.backgroundAsset!,
-                key: ValueKey('wardrobe_preview_bg_${t.id}'),
-                fit: BoxFit.cover,
-                filterQuality: FilterQuality.none,
+            if (t == null)
+              const ColoredBox(
+                key: ValueKey('wardrobe_preview_color_null'),
+                color: MeetingColors.soft,
               )
             else
-              ColoredBox(
-                key: ValueKey('wardrobe_preview_color_${t?.id}'),
-                color: t == null ? MeetingColors.soft : Color(t.colorValue),
-              ),
+              _ThemeSurface(t, keyPrefix: 'wardrobe_preview'),
             Padding(
               padding: const EdgeInsets.fromLTRB(
                 Space.s8,
@@ -464,26 +510,44 @@ class _Preview extends StatelessWidget {
               left: Space.s3,
               top: Space.s3,
               right: Space.s3,
-              child: Align(
-                alignment: Alignment.centerLeft,
-                child: Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: Space.s3,
-                    vertical: Space.s1,
-                  ),
-                  decoration: BoxDecoration(
-                    color: ProductColors.raised,
-                    borderRadius: BorderRadius.circular(999),
-                  ),
-                  child: Text(
-                    caption,
-                    key: const ValueKey('wardrobe_preview_caption'),
-                    style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                      color: MeetingColors.ink,
-                      fontWeight: FontWeight.w700,
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Flexible(
+                    child: Container(
+                      key: ValueKey('wardrobe_preview_$state'),
+                      // Pen 'Wardrobe Preview Tag' (QoNLP), as the photo
+                      // example tag.
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 11,
+                        vertical: 5,
+                      ),
+                      decoration: const BoxDecoration(
+                        color: ProductColors.photoTag,
+                        borderRadius: BorderRadius.all(Radius.circular(999)),
+                      ),
+                      child: Text(
+                        caption,
+                        key: const ValueKey('wardrobe_preview_caption'),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: meetingType(12.5, 16, FontWeight.w700),
+                      ),
                     ),
                   ),
-                ),
+                  const SizedBox(width: Space.s2),
+                  Semantics(
+                    label: '보유 포인트 $amount',
+                    excludeSemantics: true,
+                    child: StatusChip(
+                      amount,
+                      icon: 'points',
+                      key: const ValueKey('wardrobe_balance_chip'),
+                      textKey: const ValueKey('wardrobe_balance'),
+                    ),
+                  ),
+                ],
               ),
             ),
           ],
@@ -493,106 +557,109 @@ class _Preview extends StatelessWidget {
   }
 }
 
+/// A theme's surface wherever the shop draws it: its approved bundled
+/// picture, else the server colour. Until more pictures are approved (guide
+/// 9.1 ⑨) only sunny has one. The tile, the preview and the purchase dialog
+/// share it, so a theme never looks different between them.
+class _ThemeSurface extends StatelessWidget {
+  const _ThemeSurface(this.theme, {required this.keyPrefix});
+  final WardrobeTheme theme;
+  final String keyPrefix;
+
+  @override
+  Widget build(BuildContext context) => switch (theme.backgroundAsset) {
+    final asset? => Image.asset(
+      asset,
+      key: ValueKey('${keyPrefix}_bg_${theme.id}'),
+      fit: BoxFit.cover,
+      filterQuality: FilterQuality.none,
+    ),
+    null => ColoredBox(
+      key: ValueKey('${keyPrefix}_color_${theme.id}'),
+      color: Color(theme.colorValue),
+    ),
+  };
+}
+
 class _Catalog extends StatelessWidget {
   const _Catalog({
     required this.snapshot,
-    required this.scope,
     required this.selectedId,
-    required this.onScope,
     required this.onSelect,
-    required this.narrow,
-    required this.wide,
+    required this.maxColumns,
   });
   final WardrobeSnapshot snapshot;
-  final WardrobeScope scope;
   final String? selectedId;
-  final ValueChanged<WardrobeScope> onScope;
   final ValueChanged<WardrobeTheme> onSelect;
-  final bool narrow;
-  final bool wide;
+
+  /// Three on a phone (guide 7.6 2); a wide pane may fit more.
+  final int maxColumns;
+
+  /// Narrowest readable tile; Pen 'Wardrobe/Shop Tile' (ERSyr) is 112.
+  static const minTileWidth = 104.0;
 
   @override
   Widget build(BuildContext context) {
-    final items = [
-      for (final t in snapshot.themes)
-        if ((scope == WardrobeScope.owned) == t.owned) t,
-    ];
-    final balance = snapshot.balance;
+    final themes = snapshot.themes;
+    final owned = themes.where((t) => t.owned).length;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        Wrap(
-          alignment: WrapAlignment.spaceBetween,
-          crossAxisAlignment: WrapCrossAlignment.center,
-          spacing: Space.s3,
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.baseline,
+          textBaseline: TextBaseline.alphabetic,
           children: [
-            Text('배경', style: Theme.of(context).textTheme.titleLarge),
+            Expanded(
+              child: Text('배경', style: Theme.of(context).textTheme.titleLarge),
+            ),
             Text(
-              balance == null ? '포인트 확인 전' : '보유 ${formatCount(balance)}포인트',
-              key: const ValueKey('wardrobe_balance'),
+              '${themes.length}종 · 보유 $owned종',
+              key: const ValueKey('wardrobe_theme_counts'),
+              style: meetingType(13, 18, FontWeight.w700, MeetingColors.muted),
             ),
           ],
         ),
-        if (snapshot.fixtureLabel != null) ...[
+        if (fixtureLabelsVisible && snapshot.fixtureLabel != null) ...[
           const SizedBox(height: Space.s2),
           FixtureBadge(snapshot.fixtureLabel!),
         ],
-        const SizedBox(height: Space.s2),
-        SegmentedButton<WardrobeScope>(
-          showSelectedIcon: false,
-          segments: const [
-            ButtonSegment(
-              value: WardrobeScope.owned,
-              label: Text('보유함', key: ValueKey('wardrobe_scope_owned')),
-            ),
-            ButtonSegment(
-              value: WardrobeScope.store,
-              label: Text('상점', key: ValueKey('wardrobe_scope_store')),
-            ),
-          ],
-          selected: {scope},
-          onSelectionChanged: (v) => onScope(v.single),
-          style: SegmentedButton.styleFrom(
-            minimumSize: const Size.fromHeight(44),
-            selectedBackgroundColor: MeetingColors.soft,
-            foregroundColor: MeetingColors.ink,
-          ),
-        ),
         const SizedBox(height: Space.s3),
-        if (items.isEmpty)
-          ProductPanel(
+        if (themes.isEmpty)
+          const ProductPanel(
             color: MeetingColors.pressed,
-            child: Text(
-              scope == WardrobeScope.owned
-                  ? '아직 보유한 배경이 없어요. 상점에서 둘러보세요.'
-                  : '지금 상점에 새 배경이 없어요.',
-            ),
+            child: Text('지금 고를 수 있는 배경이 없어요.'),
           )
         else
           LayoutBuilder(
             builder: (context, bounds) {
-              final gap = narrow ? Space.s2 : Space.s3;
-              final min = narrow
-                  ? 136.0
-                  : wide
-                  ? 240.0
-                  : 144.0;
-              final cols = ((bounds.maxWidth + gap) / (min + gap))
+              const gap = Space.s2;
+              final columns = ((bounds.maxWidth + gap) / (minTileWidth + gap))
                   .floor()
-                  .clamp(1, wide ? 3 : 2);
-              final width = (bounds.maxWidth - gap * (cols - 1)) / cols;
-              return Wrap(
+                  .clamp(1, maxColumns);
+              return Column(
                 spacing: gap,
-                runSpacing: gap,
                 children: [
-                  for (final t in items)
-                    SizedBox(
-                      width: width,
-                      child: _ThemeTile(
-                        theme: t,
-                        selected: t.id == selectedId,
-                        equipped: t.id == snapshot.equippedThemeId,
-                        onTap: () => onSelect(t),
+                  for (var row = 0; row < themes.length; row += columns)
+                    // Tiles of a row share the tallest one's height.
+                    IntrinsicHeight(
+                      child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        spacing: gap,
+                        children: [
+                          for (var i = row; i < row + columns; i++)
+                            Expanded(
+                              child: i < themes.length
+                                  ? _ThemeTile(
+                                      theme: themes[i],
+                                      selected: themes[i].id == selectedId,
+                                      equipped:
+                                          themes[i].id ==
+                                          snapshot.equippedThemeId,
+                                      onTap: () => onSelect(themes[i]),
+                                    )
+                                  : const SizedBox.shrink(),
+                            ),
+                        ],
                       ),
                     ),
                 ],
@@ -604,6 +671,9 @@ class _Catalog extends StatelessWidget {
   }
 }
 
+/// Pen 'Wardrobe/Shop Tile' (ERSyr): the theme's own surface, its name and
+/// its price or ownership. Selection draws the strong outline; the worn
+/// badge marks what the server applied. They are separate states.
 class _ThemeTile extends StatelessWidget {
   const _ThemeTile({
     required this.theme,
@@ -618,54 +688,109 @@ class _ThemeTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final status = [
-      theme.owned
-          ? (equipped ? '보유 · 착용 중' : '보유')
-          : theme.price == null
-          ? '미보유 · 가격 확인 전'
-          : '미보유 · ${formatCount(theme.price!)}포인트',
-      if (selected) '선택됨',
-    ].join(' · ');
-    return Semantics(
-      selected: selected,
-      child: Material(
-        color: selected ? MeetingColors.soft : ProductColors.raised,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(16),
-          side: BorderSide(
-            color: selected ? MeetingColors.primary : MeetingColors.line,
+    final meta = meetingType(12.5, 16, FontWeight.w700, MeetingColors.muted);
+    final statusKey = ValueKey('wardrobe_theme_status_${theme.id}');
+    final price = theme.price;
+    final Widget status = theme.owned
+        ? Text('보유', key: statusKey, style: meta)
+        : price == null
+        ? Text('가격 확인 전', key: statusKey, style: meta)
+        : Row(
+            spacing: Space.s1,
+            children: [
+              const PixelIcon('points', size: 14),
+              Flexible(
+                child: Text(
+                  '${formatCount(price)}P',
+                  key: statusKey,
+                  style: meta,
+                ),
+              ),
+            ],
+          );
+    return MergeSemantics(
+      child: Semantics(
+        button: true,
+        selected: selected,
+        child: Material(
+          key: ValueKey('wardrobe_tile_${theme.id}'),
+          color: selected ? MeetingColors.well : ProductColors.raised,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(14),
+            side: selected
+                ? const BorderSide(color: MeetingColors.primaryStrong, width: 2)
+                : const BorderSide(color: MeetingColors.line),
           ),
-        ),
-        clipBehavior: Clip.antiAlias,
-        child: InkWell(
-          key: ValueKey('wardrobe_theme_${theme.id}'),
-          onTap: onTap,
-          child: Padding(
-            padding: const EdgeInsets.all(Space.s2),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                ClipRRect(
-                  borderRadius: BorderRadius.circular(12),
-                  child: AspectRatio(
-                    aspectRatio: 3 / 2,
-                    child: theme.backgroundAsset == null
-                        ? ColoredBox(color: Color(theme.colorValue))
-                        : Image.asset(
-                            theme.backgroundAsset!,
-                            fit: BoxFit.cover,
-                            filterQuality: FilterQuality.none,
-                          ),
+          clipBehavior: Clip.antiAlias,
+          child: InkWell(
+            key: ValueKey('wardrobe_theme_${theme.id}'),
+            onTap: onTap,
+            child: Padding(
+              // Pen ERSyr literals: 6 around the picture, 10 below the text.
+              padding: const EdgeInsets.fromLTRB(6, 6, 6, 10),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(10),
+                    child: AspectRatio(
+                      aspectRatio: 1.2,
+                      child: Stack(
+                        fit: StackFit.expand,
+                        children: [
+                          _ThemeSurface(theme, keyPrefix: 'wardrobe_tile'),
+                          if (equipped)
+                            Positioned(
+                              left: 6,
+                              top: 6,
+                              child: Container(
+                                key: ValueKey(
+                                  'wardrobe_theme_equipped_${theme.id}',
+                                ),
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 7,
+                                  vertical: 2,
+                                ),
+                                decoration: const BoxDecoration(
+                                  color: ProductColors.record,
+                                  borderRadius: BorderRadius.all(
+                                    Radius.circular(999),
+                                  ),
+                                ),
+                                child: Text(
+                                  '착용 중',
+                                  style: meetingType(
+                                    10.5,
+                                    14,
+                                    FontWeight.w800,
+                                    ProductColors.raised,
+                                  ),
+                                ),
+                              ),
+                            ),
+                        ],
+                      ),
+                    ),
                   ),
-                ),
-                const SizedBox(height: Space.s2),
-                Text(
-                  theme.name,
-                  style: Theme.of(context).textTheme.titleMedium,
-                ),
-                const SizedBox(height: Space.s1),
-                Text(status, style: Theme.of(context).textTheme.bodySmall),
-              ],
+                  const SizedBox(height: Space.s2),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: Space.s1),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      spacing: 2,
+                      children: [
+                        Text(
+                          theme.name,
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          style: meetingType(13.5, 18, FontWeight.w700),
+                        ),
+                        status,
+                      ],
+                    ),
+                  ),
+                ],
+              ),
             ),
           ),
         ),
@@ -674,6 +799,160 @@ class _ThemeTile extends StatelessWidget {
   }
 }
 
+/// Pen 'V2 · WARD-02' (XmVOx) in the app's shared dialog theme (style 40).
+class _SpendDialog extends StatelessWidget {
+  const _SpendDialog({
+    required this.title,
+    required this.note,
+    required this.price,
+    required this.balance,
+    required this.thumbnail,
+  });
+  final String title;
+  final String note;
+  final int price;
+
+  /// Null when the server balance is unknown: no estimate is drawn and none
+  /// is made up from 0. The server's answer is the balance that counts.
+  final int? balance;
+  final Widget thumbnail;
+
+  static const _unknown = '보유 포인트를 아직 확인하지 못했어요. 부족하면 사지 않고 알려 드려요.';
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context).dialogTheme;
+    final points = balance;
+    final amount = meetingType(15, 20, FontWeight.w700, MeetingColors.muted);
+    Text centered(String text, Key key, TextStyle? style) => Text(
+      wrapByWords(text),
+      key: key,
+      semanticsLabel: text,
+      textAlign: TextAlign.center,
+      style: style,
+    );
+    return Dialog(
+      insetPadding: const EdgeInsets.symmetric(
+        horizontal: Space.s8,
+        vertical: Space.s6,
+      ),
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 360),
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.all(Space.s5),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            spacing: Space.s3,
+            children: [
+              Center(
+                // Pen 'Purchase Thumb': 132 x 96, the line drawn over the
+                // picture's edge.
+                child: Container(
+                  key: const ValueKey('wardrobe_purchase_thumb'),
+                  width: 132,
+                  height: 96,
+                  clipBehavior: Clip.antiAlias,
+                  decoration: const BoxDecoration(
+                    borderRadius: BorderRadius.all(Radius.circular(14)),
+                  ),
+                  foregroundDecoration: BoxDecoration(
+                    borderRadius: const BorderRadius.all(Radius.circular(14)),
+                    border: Border.all(color: MeetingColors.line),
+                  ),
+                  child: thumbnail,
+                ),
+              ),
+              centered(
+                title,
+                const ValueKey('wardrobe_purchase_title'),
+                theme.titleTextStyle,
+              ),
+              if (points == null)
+                centered(
+                  _unknown,
+                  const ValueKey('wardrobe_purchase_balance_unknown'),
+                  theme.contentTextStyle,
+                )
+              else
+                Center(
+                  child: Semantics(
+                    container: true,
+                    label:
+                        '구매 전 ${formatCount(points)}P, '
+                        '구매 후 예상 ${formatCount(points - price)}P',
+                    excludeSemantics: true,
+                    child: Container(
+                      key: const ValueKey('wardrobe_purchase_balance'),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: Space.s4,
+                        vertical: Space.s2,
+                      ),
+                      decoration: const BoxDecoration(
+                        color: MeetingColors.soft,
+                        borderRadius: BorderRadius.all(Radius.circular(999)),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        spacing: Space.s2,
+                        children: [
+                          const PixelIcon('points', size: 20),
+                          Text(
+                            '${formatCount(points)}P',
+                            key: const ValueKey('wardrobe_purchase_before'),
+                            style: amount,
+                          ),
+                          Text('→', style: amount),
+                          Text(
+                            '${formatCount(points - price)}P',
+                            key: const ValueKey('wardrobe_purchase_after'),
+                            style: meetingType(15, 20, FontWeight.w800),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              centered(
+                note,
+                const ValueKey('wardrobe_purchase_note'),
+                theme.contentTextStyle,
+              ),
+              Padding(
+                padding: const EdgeInsets.only(top: Space.s1),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  spacing: Space.s2,
+                  children: [
+                    FilledButton(
+                      key: const ValueKey('wardrobe_purchase_confirm'),
+                      style: FilledButton.styleFrom(
+                        minimumSize: const Size.fromHeight(52),
+                      ),
+                      onPressed: () => Navigator.pop(context, true),
+                      child: Text('${formatCount(price)}P로 사기'),
+                    ),
+                    OutlinedButton(
+                      key: const ValueKey('wardrobe_purchase_cancel'),
+                      onPressed: () => Navigator.pop(context, false),
+                      child: const Text('취소'),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// The bottom action (Pen 'V2 · WARD · 하단 버튼 상태', XEGNQ): one button in
+/// one place whose label and surface follow the selected theme, beside its
+/// name and a short price or ownership line. The states the board leaves out
+/// keep their guidance: no selection, an unconfirmed price and a request in
+/// flight.
 class _ActionBar extends StatelessWidget {
   const _ActionBar({
     required this.theme,
@@ -691,6 +970,8 @@ class _ActionBar extends StatelessWidget {
   final int? balance;
   final bool busy;
   final String? error;
+
+  /// The server refused the last purchase for lack of points.
   final bool insufficient;
   final ValueChanged<WardrobeTheme> onPurchase;
   final ValueChanged<WardrobeTheme> onEquip;
@@ -699,80 +980,104 @@ class _ActionBar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final t = theme;
-    final text = Theme.of(context).textTheme;
     if (t == null) {
-      return const ProductPanel(child: Text('배경을 골라 미리 볼 수 있어요.'));
+      return Text(
+        '배경을 골라 미리 볼 수 있어요.',
+        key: const ValueKey('wardrobe_action_state_unselected'),
+        style: Theme.of(context).textTheme.bodyMedium,
+      );
     }
-    final isEquipped = t.id == equippedId;
-    final short =
-        !t.owned && t.price != null && balance != null && t.price! > balance!;
-    final (String caption, String label, VoidCallback? onPressed) = isEquipped
-        ? ('적용 완료 · 홈에 반영돼요', '착용 중', null)
+    final price = t.price;
+    final points = balance;
+    final held = points == null ? '보유 확인 전' : '보유 ${formatCount(points)}P';
+    final (
+      String state,
+      String line,
+      String label,
+      VoidCallback? onPressed,
+    ) = t.id == equippedId
+        ? ('equipped', '지금 착용 중', '착용 중', null)
         : t.owned
-        ? ('구매 완료 · 아직 적용 전', '착용하기', () => onEquip(t))
-        : t.price == null
-        ? ('가격이 아직 확정되지 않았어요', '구매하기', null)
-        : short || insufficient
-        ? ('포인트가 부족해요', '구매하기', null)
-        : ('미리보기만 선택됨', '구매하기', () => onPurchase(t));
+        ? ('equip', '보유 중', '착용하기', () => onEquip(t))
+        : price == null
+        ? ('unpriced', '가격이 아직 확정되지 않았어요', '구매하기', null)
+        : insufficient || (points != null && price > points)
+        ? ('short', '${formatCount(price)}P 필요 · $held', '포인트 부족', null)
+        : (
+            'buy',
+            '${formatCount(price)}P · $held',
+            '${formatCount(price)}P로 사기',
+            () => onPurchase(t),
+          );
     final button = FilledButton(
       key: const ValueKey('wardrobe_action'),
       style: FilledButton.styleFrom(
-        minimumSize: const Size(132, 48),
-        backgroundColor: isEquipped ? ProductColors.record : null,
-        disabledBackgroundColor: isEquipped ? ProductColors.record : null,
-        disabledForegroundColor: isEquipped ? ProductColors.raised : null,
+        minimumSize: const Size(150, 48),
+        // V2: a state that cannot act is a light surface with brown text.
+        disabledBackgroundColor: MeetingColors.soft,
+        disabledForegroundColor: MeetingColors.primaryStrong,
       ),
+      // While a request runs, taps cannot start another.
       onPressed: busy ? null : onPressed,
       child: Text(busy ? '처리 중…' : label),
     );
     final info = Column(
+      // The state rides on the text, so a change keeps the button itself
+      // (and an assistive focus on it) in place.
+      key: ValueKey('wardrobe_action_state_${busy ? 'busy' : state}'),
       crossAxisAlignment: CrossAxisAlignment.start,
+      spacing: 2,
       children: [
-        Text(t.name, style: text.titleMedium),
-        Text(caption, key: const ValueKey('wardrobe_action_caption')),
+        Text(
+          '${t.name} 배경',
+          key: const ValueKey('wardrobe_action_title'),
+          style: meetingType(15, 20, FontWeight.w800),
+        ),
+        Text(
+          line,
+          key: const ValueKey('wardrobe_action_caption'),
+          style: meetingType(12.5, 16, FontWeight.w600, MeetingColors.muted),
+        ),
       ],
     );
-    return ProductPanel(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          LayoutBuilder(
-            builder: (context, bounds) =>
-                bounds.maxWidth >= 300 &&
-                    MediaQuery.textScalerOf(context).scale(1) < 1.5
-                ? Row(
-                    children: [
-                      Expanded(child: info),
-                      const SizedBox(width: Space.s3),
-                      button,
-                    ],
-                  )
-                : Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      info,
-                      const SizedBox(height: Space.s2),
-                      button,
-                    ],
-                  ),
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        LayoutBuilder(
+          builder: (context, bounds) =>
+              bounds.maxWidth >= 300 &&
+                  MediaQuery.textScalerOf(context).scale(1) < 1.5
+              ? Row(
+                  children: [
+                    Expanded(child: info),
+                    const SizedBox(width: Space.s3),
+                    button,
+                  ],
+                )
+              : Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    info,
+                    const SizedBox(height: Space.s2),
+                    button,
+                  ],
+                ),
+        ),
+        if (error != null) ...[
+          const SizedBox(height: Space.s2),
+          Text(
+            error!,
+            key: const ValueKey('wardrobe_error'),
+            style: const TextStyle(color: ProductColors.error),
           ),
-          if (error != null) ...[
-            const SizedBox(height: Space.s2),
-            Text(
-              error!,
-              key: const ValueKey('wardrobe_error'),
-              style: const TextStyle(color: ProductColors.error),
-            ),
-          ],
-          if ((short || insufficient) && !t.owned)
-            TextButton(
-              key: const ValueKey('wardrobe_earn_points'),
-              onPressed: onEarnPoints,
-              child: const Text('홈에서 걸음 포인트 받기'),
-            ),
         ],
-      ),
+        if (state == 'short')
+          TextButton(
+            key: const ValueKey('wardrobe_earn_points'),
+            onPressed: onEarnPoints,
+            child: const Text('홈에서 걸음 포인트 받기'),
+          ),
+      ],
     );
   }
 }

@@ -11,15 +11,19 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import '../billing/billing_fakes.dart';
+import '../billing/billing_http_harness.dart' show presentBilling;
 import 'reward_panel_test.dart';
 
 class PaidRewards extends RewardRepository {
+  PaidRewards({super.billing});
   bool active = true;
   Object? entitlementFailure;
   Completer<EntitlementView>? observation;
   final paidRequests = <(String, String, int)>[];
+  int observations = 0;
   @override
   Future<EntitlementView> entitlement() async {
+    observations++;
     if (entitlementFailure != null) throw entitlementFailure!;
     return observation == null ? view(active: active) : observation!.future;
   }
@@ -134,35 +138,104 @@ void main() {
     await check;
   });
 
-  testWidgets(
-    'expired reward uses ad total only after explicit premium selection',
-    (tester) async {
-      repo.current = repo.current.copyWith(
-        rewardStatus: 'adRequired',
-        claimablePoints: 0,
-      );
-      await tester.pumpWidget(
-        MaterialApp(
-          home: Scaffold(
-            body: SingleChildScrollView(
-              child: RewardPanel(controller: c, day: recordDay(repo.current)),
+  /// A product whose repository has a billing connection, as for a real
+  /// account (guide 3.1 observes only then).
+  (PaidRewards, ProductController) billed() {
+    final billing = presentBilling();
+    final paid = PaidRewards(billing: billing);
+    final product = ProductController(paid, steps, null, account: 'A');
+    addTearDown(() {
+      product.dispose();
+      paid.client.close();
+      billing.client.close();
+    });
+    return (paid, product);
+  }
+
+  Future<void> mountPanel(
+    WidgetTester tester,
+    ProductController product,
+    PaidRewards paid,
+  ) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: SingleChildScrollView(
+            child: RewardPanel(
+              controller: product,
+              day: recordDay(paid.current),
             ),
           ),
         ),
+      ),
+    );
+    await tester.pumpAndSettle();
+  }
+
+  testWidgets(
+    'expired reward observes the benefit on entry, the paid claim stays explicit',
+    (tester) async {
+      final (paid, product) = billed();
+      paid.current = paid.current.copyWith(
+        rewardStatus: 'adRequired',
+        claimablePoints: 0,
       );
-      expect(find.byKey(const ValueKey('reward_premium_claim')), findsNothing);
-      await tester.tap(find.byKey(const ValueKey('reward_check_premium')));
-      await tester.pumpAndSettle();
-      expect(repo.paidRequests, isEmpty);
-      expect(
-        find.byKey(const ValueKey('reward_premium_claim')),
-        findsOneWidget,
-      );
+      await mountPanel(tester, product, paid);
+      expect(paid.observations, 1);
+      expect(paid.paidRequests, isEmpty);
+      expect(find.byKey(const ValueKey('reward_check_premium')), findsNothing);
       await tester.tap(find.byKey(const ValueKey('reward_premium_claim')));
       await tester.pumpAndSettle();
-      expect(repo.paidRequests, hasLength(1));
-      expect(repo.current.grantedPoints, 180);
+      expect(paid.paidRequests, hasLength(1));
+      expect(paid.current.grantedPoints, 180);
       expect(find.byKey(const ValueKey('reward_premium_claim')), findsNothing);
+      // Nothing is left for the ad path, so nothing is observed again.
+      expect(paid.observations, 1);
     },
   );
+
+  testWidgets('only a failed observation offers its retry', (tester) async {
+    final (paid, product) = billed();
+    paid.entitlementFailure = BillingException(code: 'temporarilyUnavailable');
+    await mountPanel(tester, product, paid);
+    final retry = find.byKey(const ValueKey('reward_check_premium'));
+    expect(retry, findsOneWidget);
+    expect(find.byKey(const ValueKey('reward_premium_claim')), findsNothing);
+    paid.entitlementFailure = null;
+    await tester.ensureVisible(retry);
+    await tester.tap(retry);
+    await tester.pumpAndSettle();
+    expect(retry, findsNothing);
+    expect(find.byKey(const ValueKey('reward_premium_claim')), findsOneWidget);
+    expect(paid.paidRequests, isEmpty);
+  });
+
+  testWidgets('without a billing connection nothing is observed', (
+    tester,
+  ) async {
+    repo.current = repo.current.copyWith(
+      rewardStatus: 'adRequired',
+      claimablePoints: 0,
+    );
+    await mountPanel(tester, c, repo);
+    expect(repo.observations, 0);
+    expect(find.byKey(const ValueKey('reward_check_premium')), findsNothing);
+    expect(find.byKey(const ValueKey('reward_premium_claim')), findsNothing);
+  });
+
+  testWidgets('the free claim leads and the paid claim steps down', (
+    tester,
+  ) async {
+    final (paid, product) = billed();
+    await mountPanel(tester, product, paid);
+    expect(find.byType(FilledButton), findsOneWidget);
+    expect(
+      tester.widget(find.byKey(const ValueKey('reward_free_claim'))),
+      isA<FilledButton>(),
+    );
+    expect(
+      tester.widget(find.byKey(const ValueKey('reward_premium_claim'))),
+      isA<OutlinedButton>(),
+    );
+  });
 }

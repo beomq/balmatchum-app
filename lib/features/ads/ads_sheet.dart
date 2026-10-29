@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 
 import '../first_meeting/meeting_theme.dart';
+import '../records/product_page.dart' show PixelIcon;
 import 'ads_controller.dart';
 
 /// Caller owns the account-scoped controller and disposes it after this returns.
@@ -12,6 +13,7 @@ Future<void> showAdsSheet(
   required String purpose,
   required String targetDate,
   required int targetRevision,
+  bool autoContinue = false,
 }) => showModalBottomSheet<void>(
   context: context,
   isScrollControlled: true,
@@ -20,6 +22,7 @@ Future<void> showAdsSheet(
     purpose: purpose,
     targetDate: targetDate,
     targetRevision: targetRevision,
+    autoContinue: autoContinue,
   ),
 ).whenComplete(controller.cancel);
 
@@ -30,20 +33,48 @@ class AdsSheet extends StatefulWidget {
     required this.purpose,
     required this.targetDate,
     required this.targetRevision,
+    this.autoContinue = false,
   });
   final AdsController controller;
   final String purpose;
   final String targetDate;
   final int targetRevision;
+
+  /// The caller's own button already asked for the ad: start it on open and
+  /// close once the server verified the view. The caller decides what a
+  /// verified view grants; this sheet still grants nothing.
+  final bool autoContinue;
   @override
   State<AdsSheet> createState() => _AdsSheetState();
 }
 
 class _AdsSheetState extends State<AdsSheet> with WidgetsBindingObserver {
+  bool closing = false;
+
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    if (widget.autoContinue) {
+      widget.controller.addListener(closeWhenVerified);
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) unawaited(start());
+      });
+    }
+  }
+
+  Future<void> start() => widget.controller.start(
+    purpose: widget.purpose,
+    targetDate: widget.targetDate,
+    targetRevision: widget.targetRevision,
+  );
+
+  void closeWhenVerified() {
+    if (closing || !mounted || widget.controller.status != AdsStatus.verified) {
+      return;
+    }
+    closing = true;
+    Navigator.of(context).pop();
   }
 
   @override
@@ -56,6 +87,7 @@ class _AdsSheetState extends State<AdsSheet> with WidgetsBindingObserver {
 
   @override
   void dispose() {
+    widget.controller.removeListener(closeWhenVerified);
     WidgetsBinding.instance.removeObserver(this);
     super.dispose();
   }
@@ -93,7 +125,7 @@ class _AdsSheetState extends State<AdsSheet> with WidgetsBindingObserver {
                           borderRadius: BorderRadius.circular(12),
                         ),
                       ),
-                      icon: const Icon(Icons.close, color: MeetingColors.ink),
+                      icon: const PixelIcon('close-x', size: 20),
                     ),
                   ],
                 ),
@@ -106,19 +138,17 @@ class _AdsSheetState extends State<AdsSheet> with WidgetsBindingObserver {
                   ),
                 ),
                 const SizedBox(height: 12),
-                const Text(
-                  '시청 완료 신호만으로 보상이 지급되지 않습니다. 서버 확인 후 혜택 적용은 별도 처리됩니다.',
+                Text(
+                  widget.autoContinue
+                      ? '광고를 끝까지 보면 서버에서 확인한 뒤 바로 적용돼요.'
+                      : '시청 완료 신호만으로 보상이 지급되지 않습니다. 서버 확인 후 혜택 적용은 별도 처리됩니다.',
                 ),
                 const SizedBox(height: 20),
                 if (controller.busy) const LinearProgressIndicator(),
                 if (controller.status == AdsStatus.idle)
                   FilledButton(
                     key: const ValueKey('ads_start'),
-                    onPressed: () => controller.start(
-                      purpose: widget.purpose,
-                      targetDate: widget.targetDate,
-                      targetRevision: widget.targetRevision,
-                    ),
+                    onPressed: start,
                     child: const Text('광고 보기'),
                   ),
                 if (controller.canRefresh)

@@ -1,3 +1,4 @@
+import 'package:balmatchum_app/app/duo_rail.dart';
 import 'package:balmatchum_app/features/first_meeting/meeting_theme.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -36,3 +37,24 @@ void useDuoViewport(WidgetTester tester, String name) {
 
 Widget duoHost(Widget screen) =>
     MaterialApp(theme: meetingTheme(), home: screen);
+
+/// The outer-portrait side column is painted with no rail button in it.
+void expectEmptyDuoRail(WidgetTester tester) {
+  final rail = find.byType(DuoRail);
+  expect(rail, findsOneWidget);
+  expect(
+    find.descendant(
+      of: rail,
+      matching: find.byWidgetPredicate(
+        (widget) => widget is IconButton || widget is ButtonStyleButton,
+      ),
+    ),
+    findsNothing,
+  );
+  expect(
+    tester.getRect(
+      find.descendant(of: rail, matching: find.byType(DecoratedBox)).first,
+    ),
+    const Rect.fromLTRB(382, 0, 466, 678),
+  );
+}

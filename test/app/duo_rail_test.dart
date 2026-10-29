@@ -1,4 +1,6 @@
 import 'package:balmatchum_app/app/duo_rail.dart';
+import 'package:balmatchum_app/features/records/product_page.dart'
+    show PixelIcon;
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -27,6 +29,15 @@ void main() {
     size: Size(466, 678),
     padding: EdgeInsets.only(right: 84, bottom: 34),
   );
+
+  test('the sub screen rail draws the pixel back and home', () {
+    final [back, home] = duoBackHome(onBack: () {}, onHome: () {});
+    expect(
+      ((back.icon as Image).image as AssetImage).assetName,
+      endsWith('/back.png'),
+    );
+    expect((home.icon as PixelIcon).name, 'home');
+  });
 
   test('side detection needs one-sided inset', () {
     expect(duoRailSide(const EdgeInsets.only(right: 84)), DuoRailSide.right);

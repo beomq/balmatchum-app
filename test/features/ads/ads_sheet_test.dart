@@ -1,11 +1,45 @@
 import 'package:balmatchum_app/features/ads/ads_controller.dart';
 import 'package:balmatchum_app/features/ads/ads_sheet.dart';
+import 'package:balmatchum_app/features/records/product_page.dart'
+    show PixelIcon;
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'ads_fakes.dart';
 
 void main() {
+  testWidgets('the close button is the pixel X', (tester) async {
+    final controller = AdsController(
+      server: FakeAdsServer([]),
+      sdk: FakeAdsSdk([]),
+    );
+    addTearDown(controller.dispose);
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: AdsSheet(
+            controller: controller,
+            purpose: 'dailyReward',
+            targetDate: '2026-10-19',
+            targetRevision: 2,
+          ),
+        ),
+      ),
+    );
+    expect(
+      tester
+          .widget<PixelIcon>(
+            find.descendant(
+              of: find.byKey(const ValueKey('ads_close')),
+              matching: find.byType(PixelIcon),
+            ),
+          )
+          .name,
+      'close-x',
+    );
+    expect(find.byType(Icon), findsNothing);
+  });
+
   for (final width in [390.0, 1440.0]) {
     for (final brightness in Brightness.values) {
       testWidgets('sheet fits $width $brightness with large text', (

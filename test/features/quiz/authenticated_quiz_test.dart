@@ -4,9 +4,13 @@ import 'dart:ui' as ui;
 
 import 'package:balmatchum_app/features/quiz/quiz_controller.dart';
 import 'package:balmatchum_app/features/quiz/quiz_repository.dart';
+import 'package:balmatchum_app/features/quiz/quiz_review_sheet.dart';
+import 'package:balmatchum_app/features/quiz/quiz_widgets.dart';
 import 'package:balmatchum_app/features/quiz/authenticated_quiz_screen.dart';
 import 'package:balmatchum_app/features/ads/ads_controller.dart';
 import 'package:balmatchum_app/features/first_meeting/meeting_theme.dart';
+import 'package:balmatchum_app/features/records/product_page.dart';
+import 'package:balmatchum_app/features/wardrobe/dog_sprite.dart';
 import 'package:balmatchum_client/balmatchum_client.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
@@ -37,7 +41,7 @@ QuizQuestion question(int id, {bool answered = false}) => QuizQuestion(
 );
 
 class Quizzes extends QuizRepository {
-  Quizzes() : super(Client('http://localhost/'), 'A');
+  Quizzes({super.billing}) : super(Client('http://localhost/'), 'A');
   QuizToday current = QuizToday(
     premiumStatus: 'notChecked',
     date: '2026-10-19',
@@ -58,8 +62,15 @@ class Quizzes extends QuizRepository {
   Future<QuizQuestion> answer(QuizQuestion q, int index, String id) async {
     requests.add((id, index, null));
     if (failure != null) throw failure!;
-    if (pendingAnswerResult != null) return pendingAnswerResult!.future;
-    final result = question(q.assignmentId, answered: true);
+    // A held answer lands like any other once the test releases it.
+    final result =
+        await (pendingAnswerResult?.future ??
+            Future.value(
+              question(
+                q.assignmentId,
+                answered: true,
+              ).copyWith(answerIndex: index),
+            ));
     current = current.copyWith(
       free: result,
       extraStatus: 'adRequired',
@@ -89,9 +100,12 @@ class Quizzes extends QuizRepository {
   Future<List<QuizQuestion>> history(int? before) async {
     cursors.add(before);
     if (failure != null) throw failure!;
+    // Assignments 40..11, then 10, then nothing older.
     return before == null
         ? List.generate(30, (i) => question(40 - i, answered: true))
-        : [question(10, answered: true)];
+        : before == 11
+        ? [question(10, answered: true)]
+        : [];
   }
 
   @override
@@ -200,14 +214,18 @@ void main() {
     },
   );
 
-  Future<void> mount(WidgetTester tester, {AdsController? ads}) async {
+  Future<void> mount(
+    WidgetTester tester, {
+    AdsController? ads,
+    VoidCallback? onHome,
+  }) async {
     await tester.pumpWidget(
       MaterialApp(
         theme: meetingTheme(),
         home: AuthenticatedQuizScreen(
           controller: controller,
           onBack: () {},
-          onHome: () {},
+          onHome: onHome ?? () {},
           createAds: ads == null ? null : () async => ads,
         ),
       ),
@@ -215,34 +233,176 @@ void main() {
     await tester.pumpAndSettle();
   }
 
-  testWidgets(
-    'verified sheet close preserves explicit unlock, wrong answer earns historical two',
-    (tester) async {
-      final ads = AdsController(server: TestAdsServer(), sdk: ReadySdk());
-      await mount(tester, ads: ads);
-      await tester.tap(find.byKey(const ValueKey('quiz_1_choice_1')));
-      await tester.pump();
-      await tester.ensureVisible(find.byKey(const ValueKey('quiz_1_submit')));
-      await tester.tap(find.byKey(const ValueKey('quiz_1_submit')));
-      await tester.pumpAndSettle();
-      expect(find.byKey(const ValueKey('quiz_1_past_points')), findsOneWidget);
-      await tester.ensureVisible(find.byKey(const ValueKey('quiz_watch_ad')));
-      await tester.tap(find.byKey(const ValueKey('quiz_watch_ad')));
-      await tester.pumpAndSettle();
-      await tester.tap(find.byKey(const ValueKey('ads_start')));
-      await tester.pumpAndSettle();
-      expect(ads.status, AdsStatus.verified);
-      expect(repository.requests.length, 1);
-      await tester.tap(find.byKey(const ValueKey('ads_close')));
-      await tester.pumpAndSettle();
-      expect(repository.requests.length, 1);
-      await tester.ensureVisible(find.byKey(const ValueKey('quiz_unlock')));
-      await tester.tap(find.byKey(const ValueKey('quiz_unlock')));
-      await tester.pumpAndSettle();
-      expect(repository.requests.length, 2);
-      expect(controller.today!.extra!.assignmentId, 2);
-    },
-  );
+  QuizOption option(WidgetTester tester, int id, int index) => tester
+      .widget<QuizOption>(find.byKey(ValueKey('quiz_${id}_choice_$index')));
+
+  testWidgets('the question and its choices lead; no retry shows by default', (
+    tester,
+  ) async {
+    await mount(tester);
+    final card = tester.getRect(find.byKey(const ValueKey('quiz_1_card')));
+    final choice = tester.getRect(
+      find.byKey(const ValueKey('quiz_1_choice_1')),
+    );
+    final rules = tester.getRect(find.byKey(const ValueKey('quiz_rules')));
+    expect(
+      tester.getRect(find.byKey(const ValueKey('quiz_chip'))).bottom,
+      lessThanOrEqualTo(card.top),
+    );
+    expect(card.bottom, lessThanOrEqualTo(choice.top));
+    expect(choice.bottom, lessThanOrEqualTo(rules.top));
+    for (final key in [
+      'quiz_reload',
+      'quiz_retry_request',
+      'quiz_check_premium',
+      'quiz_premium_status',
+      'quiz_notice',
+    ]) {
+      expect(find.byKey(ValueKey(key)), findsNothing, reason: key);
+    }
+  });
+
+  testWidgets('one tap sends one answer and the result waits for the server', (
+    tester,
+  ) async {
+    final answer = repository.pendingAnswerResult = Completer<QuizQuestion>();
+    await mount(tester);
+    // A double tap in one frame, then taps while the request is in flight.
+    await tester.tap(find.byKey(const ValueKey('quiz_1_choice_1')));
+    await tester.tap(find.byKey(const ValueKey('quiz_1_choice_0')));
+    await tester.pump();
+    await tester.tap(find.byKey(const ValueKey('quiz_1_choice_1')));
+    await tester.tap(find.byKey(const ValueKey('quiz_1_choice_0')));
+    await tester.pump();
+    expect(repository.requests, hasLength(1));
+    expect(repository.requests.single.$2, 1);
+    expect(option(tester, 1, 1).state, QuizOptionState.sending);
+    expect(option(tester, 1, 0).state, QuizOptionState.idle);
+    expect(option(tester, 1, 0).onTap, isNull);
+    // Nothing is judged or granted before the server answers.
+    expect(find.byKey(const ValueKey('quiz_result_wrong')), findsNothing);
+    expect(find.byKey(const ValueKey('quiz_result_correct')), findsNothing);
+    expect(find.byKey(const ValueKey('quiz_1_award_new')), findsNothing);
+    answer.complete(question(1, answered: true));
+    await tester.pumpAndSettle();
+    expect(repository.requests, hasLength(1));
+    // Wrong: the real answer and the user's own each have a mark and word.
+    expect(find.byKey(const ValueKey('quiz_result_wrong')), findsOneWidget);
+    expect(option(tester, 1, 0).state, QuizOptionState.correct);
+    expect(option(tester, 1, 0).tag, isNotNull);
+    expect(option(tester, 1, 1).state, QuizOptionState.wrong);
+    expect(option(tester, 1, 1).tag, isNotNull);
+    expect(option(tester, 1, 1).selected, isTrue);
+    expect(option(tester, 1, 1).onTap, isNull);
+    // The first submission's grant, from the server's answer.
+    expect(find.byKey(const ValueKey('quiz_1_award_new')), findsOneWidget);
+  });
+
+  testWidgets('a right answer marks its choice and the rest stay readable', (
+    tester,
+  ) async {
+    var home = 0;
+    await mount(tester, onHome: () => home++);
+    await tester.tap(find.byKey(const ValueKey('quiz_1_choice_0')));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('quiz_result_correct')), findsOneWidget);
+    expect(option(tester, 1, 0).state, QuizOptionState.correct);
+    expect(option(tester, 1, 0).tag, isNull);
+    expect(option(tester, 1, 1).state, QuizOptionState.rest);
+    final rest = tester.widget<Text>(
+      find
+          .descendant(
+            of: find.byKey(const ValueKey('quiz_1_choice_1')),
+            matching: find.byType(Text),
+          )
+          .first,
+    );
+    expect(rest.style?.color, MeetingColors.muted);
+    await tester.ensureVisible(find.byKey(const ValueKey('quiz_home')));
+    await tester.tap(find.byKey(const ValueKey('quiz_home')));
+    expect(home, 1);
+  });
+
+  testWidgets('a lost answer keeps its choice and retries the same request', (
+    tester,
+  ) async {
+    await mount(tester);
+    repository.failure = const SocketException('lost');
+    await tester.tap(find.byKey(const ValueKey('quiz_1_choice_1')));
+    await tester.pumpAndSettle();
+    // No result or grant is made up after the loss.
+    expect(find.byKey(const ValueKey('quiz_result_wrong')), findsNothing);
+    expect(find.byKey(const ValueKey('quiz_1_award_new')), findsNothing);
+    expect(option(tester, 1, 1).state, QuizOptionState.chosen);
+    expect(option(tester, 1, 0).onTap, isNull);
+    final retry = find.byKey(const ValueKey('quiz_retry_request'));
+    expect(retry, findsOneWidget);
+    expect(find.byKey(const ValueKey('quiz_reload')), findsNothing);
+    await tester.tap(find.byKey(const ValueKey('quiz_1_choice_0')));
+    await tester.pump();
+    expect(repository.requests, hasLength(1));
+    repository.failure = null;
+    await tester.ensureVisible(retry);
+    await tester.tap(retry);
+    await tester.pumpAndSettle();
+    expect(repository.requests, hasLength(2));
+    expect(repository.requests[1], repository.requests[0]);
+    expect(find.byKey(const ValueKey('quiz_result_wrong')), findsOneWidget);
+    expect(find.byKey(const ValueKey('quiz_1_award_new')), findsOneWidget);
+    expect(retry, findsNothing);
+  });
+
+  testWidgets('reopening an answered question shows its record, not a grant', (
+    tester,
+  ) async {
+    repository.current = repository.current.copyWith(
+      free: question(1, answered: true),
+      extraStatus: 'adRequired',
+      extraRevision: 1,
+    );
+    await mount(tester);
+    expect(find.byKey(const ValueKey('quiz_1_past_points')), findsOneWidget);
+    expect(find.byKey(const ValueKey('quiz_1_award_new')), findsNothing);
+    expect(find.byKey(const ValueKey('quiz_hint')), findsNothing);
+    // Conditions stay on the card; source and review open from the result.
+    expect(find.byKey(const ValueKey('quiz_conditions_1')), findsOneWidget);
+    expect(find.byKey(const ValueKey('quiz_1_details')), findsNothing);
+    await tester.tap(find.byKey(const ValueKey('quiz_1_info')));
+    await tester.pumpAndSettle();
+    expect(
+      find.descendant(
+        of: find.byKey(const ValueKey('quiz_1_details')),
+        matching: find.byType(SelectableText),
+      ),
+      findsOneWidget,
+    );
+    expect(repository.requests, isEmpty);
+  });
+
+  testWidgets('the quiz and its review use pixel icons only', (tester) async {
+    repository.current = repository.current.copyWith(
+      free: question(1, answered: true),
+      extraStatus: 'adRequired',
+      extraRevision: 1,
+    );
+    await mount(tester);
+    String pixel(String key) => tester
+        .widget<PixelIcon>(
+          find.descendant(
+            of: find.byKey(ValueKey(key)),
+            matching: find.byType(PixelIcon),
+          ),
+        )
+        .name;
+    expect(pixel('product_home'), 'home');
+    expect(pixel('quiz_history'), 'caret-right');
+    expect(pixel('quiz_1_info'), 'info');
+    expect(find.byType(Icon), findsNothing);
+    await tester.tap(find.byKey(const ValueKey('quiz_history')));
+    await tester.pumpAndSettle();
+    expect(pixel('quiz_review_close'), 'close-x');
+    expect(find.byType(Icon), findsNothing);
+  });
 
   testWidgets('cancelled sheet cannot unlock', (tester) async {
     repository.current = repository.current.copyWith(
@@ -250,9 +410,13 @@ void main() {
       extraStatus: 'adRequired',
       extraRevision: 1,
     );
+    // The view is not verified when the sheet opens; the stub ad then fails.
     await mount(
       tester,
-      ads: AdsController(server: TestAdsServer(), sdk: ReadySdk()),
+      ads: AdsController(
+        server: TestAdsServer()..status = 'pending',
+        sdk: ReadySdk(),
+      ),
     );
     await tester.ensureVisible(find.byKey(const ValueKey('quiz_watch_ad')));
     await tester.tap(find.byKey(const ValueKey('quiz_watch_ad')));
@@ -281,6 +445,111 @@ void main() {
     expect(repository.requests, isEmpty);
   });
 
+  testWidgets('the reload retry shows only once a load needs repeating', (
+    tester,
+  ) async {
+    await mount(tester);
+    final reload = find.byKey(const ValueKey('quiz_reload'));
+    expect(reload, findsNothing);
+    // A definitive rejection leaves the latest state to be read again.
+    repository.failure = ProductException(code: 'quizClosed');
+    await tester.tap(find.byKey(const ValueKey('quiz_1_choice_1')));
+    await tester.pumpAndSettle();
+    expect(controller.needsRefresh, isTrue);
+    expect(reload, findsOneWidget);
+    repository.failure = null;
+    await tester.ensureVisible(reload);
+    await tester.tap(reload);
+    await tester.pumpAndSettle();
+    expect(controller.needsRefresh, isFalse);
+    expect(reload, findsNothing);
+  });
+
+  testWidgets('a failed first load offers the retry', (tester) async {
+    repository.pendingToday = Completer<QuizToday>();
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: meetingTheme(),
+        home: AuthenticatedQuizScreen(
+          controller: controller,
+          onBack: () {},
+          onHome: () {},
+        ),
+      ),
+    );
+    final reload = find.byKey(const ValueKey('quiz_reload'));
+    expect(reload, findsNothing, reason: 'still loading');
+    repository.pendingToday!.completeError(const SocketException('offline'));
+    await tester.pumpAndSettle();
+    expect(reload, findsOneWidget);
+    repository.pendingToday = null;
+    await tester.tap(reload);
+    await tester.pumpAndSettle();
+    expect(controller.today, isNotNull);
+    expect(reload, findsNothing);
+  });
+
+  testWidgets('production hides test markers and the unobserved benefit', (
+    tester,
+  ) async {
+    await mount(tester);
+    expect(find.byKey(const ValueKey('product_fixture_badge')), findsNothing);
+    expect(find.byKey(const ValueKey('quiz_premium_status')), findsNothing);
+    expect(find.byKey(const ValueKey('quiz_check_premium')), findsNothing);
+    debugFixtureLabelsVisible = true;
+    addTearDown(() => debugFixtureLabelsVisible = null);
+    await mount(tester);
+    expect(find.byKey(const ValueKey('product_fixture_badge')), findsOneWidget);
+  });
+
+  testWidgets('the own companion joins a result and the empty state', (
+    tester,
+  ) async {
+    const dog = 'assets/first_meeting/dogs/pug.png';
+    Future<void> show(String key) async {
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: meetingTheme(),
+          home: AuthenticatedQuizScreen(
+            key: ValueKey(key),
+            controller: controller,
+            onBack: () {},
+            onHome: () {},
+            dogAsset: dog,
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+    }
+
+    String shown(String key) => tester
+        .widget<DogSprite>(
+          find.descendant(
+            of: find.byKey(ValueKey(key)),
+            matching: find.byType(DogSprite),
+          ),
+        )
+        .asset;
+
+    await show('open');
+    expect(find.byKey(const ValueKey('quiz_1_dog')), findsNothing);
+    repository.current = repository.current.copyWith(
+      free: question(1, answered: true),
+      extraStatus: 'adRequired',
+      extraRevision: 1,
+    );
+    await show('answered');
+    expect(shown('quiz_1_dog'), dog);
+    repository.current = QuizToday(
+      premiumStatus: 'notChecked',
+      date: '2026-10-19',
+      status: 'contentUnavailable',
+      extraStatus: 'contentUnavailable',
+    );
+    await show('empty');
+    expect(shown('quiz_empty_dog'), dog);
+  });
+
   for (final status in ['contentUnavailable', 'exhausted']) {
     testWidgets('$status has no answer or ad mutation', (tester) async {
       repository.current = QuizToday(
@@ -295,6 +564,87 @@ void main() {
       expect(find.byKey(const ValueKey('quiz_1_submit')), findsNothing);
     });
   }
+
+  testWidgets('loading, a failed load, no content and all used differ', (
+    tester,
+  ) async {
+    const states = [
+      'product_loading',
+      'quiz_reload',
+      'quiz_status_contentUnavailable',
+      'quiz_status_exhausted',
+    ];
+    void only(String shown) {
+      for (final key in states) {
+        expect(
+          find.byKey(ValueKey(key)),
+          key == shown ? findsOneWidget : findsNothing,
+          reason: key,
+        );
+      }
+    }
+
+    repository.pendingToday = Completer<QuizToday>();
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: meetingTheme(),
+        home: AuthenticatedQuizScreen(
+          controller: controller,
+          onBack: () {},
+          onHome: () {},
+        ),
+      ),
+    );
+    only('product_loading');
+    expect(find.byKey(const ValueKey('quiz_chip')), findsNothing);
+    repository.pendingToday!.completeError(const SocketException('offline'));
+    await tester.pumpAndSettle();
+    // A failure is not "preparing": no chip, only its retry.
+    only('quiz_reload');
+    expect(find.byKey(const ValueKey('quiz_chip')), findsNothing);
+    repository.pendingToday = null;
+    for (final status in ['contentUnavailable', 'exhausted']) {
+      repository.current = QuizToday(
+        premiumStatus: 'notChecked',
+        date: '2026-10-19',
+        status: status,
+        // The server answers freeRequired while no free question exists.
+        extraStatus: 'freeRequired',
+      );
+      await controller.load();
+      await tester.pumpAndSettle();
+      only('quiz_status_$status');
+      expect(find.byKey(const ValueKey('quiz_chip')), findsOneWidget);
+      expect(find.byKey(const ValueKey('quiz_watch_ad')), findsNothing);
+      expect(find.byType(QuizOption), findsNothing);
+    }
+    expect(repository.requests, isEmpty);
+  });
+
+  testWidgets('the empty state and the link open the same review sheet', (
+    tester,
+  ) async {
+    repository.current = QuizToday(
+      premiumStatus: 'notChecked',
+      date: '2026-10-19',
+      status: 'contentUnavailable',
+      extraStatus: 'freeRequired',
+    );
+    var home = 0;
+    await mount(tester, onHome: () => home++);
+    for (final entry in ['quiz_empty_review', 'quiz_history']) {
+      await tester.tap(find.byKey(ValueKey(entry)));
+      await tester.pumpAndSettle();
+      expect(find.byType(QuizReviewSheet), findsOneWidget, reason: entry);
+      await tester.tap(find.byKey(const ValueKey('quiz_review_close')));
+      await tester.pumpAndSettle();
+      expect(find.byType(QuizReviewSheet), findsNothing);
+    }
+    expect(repository.cursors, [null, null]);
+    await tester.tap(find.byKey(const ValueKey('product_home')));
+    expect(home, 1);
+    expect(repository.requests, isEmpty);
+  });
 
   for (final width in [390.0, 1440.0]) {
     for (final dark in [false, true]) {

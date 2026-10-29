@@ -7,15 +7,19 @@ import 'package:balmatchum_client/balmatchum_client.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+import '../billing/billing_http_harness.dart' show presentBilling;
 import 'authenticated_quiz_test.dart';
 
 class PaidQuizzes extends Quizzes {
+  PaidQuizzes({super.billing});
   Object? observationFailure;
   Completer<QuizToday>? observation;
   bool active = true;
   final paidRequests = <(String, int, String)>[];
+  int observations = 0;
   @override
   Future<QuizToday> getTodayWithPremium() async {
+    observations++;
     if (observationFailure != null) throw observationFailure!;
     if (observation != null) return observation!.future;
     return current.copyWith(
@@ -123,33 +127,95 @@ void main() {
     expect(c.today!.premiumStatus, 'notChecked');
   });
 
+  /// A controller whose repository has a billing connection, as for a real
+  /// account (guide 3.1 observes only then).
+  (PaidQuizzes, QuizController) billed() {
+    final billing = presentBilling();
+    final paid = PaidQuizzes(billing: billing);
+    final quiz = QuizController(paid, isCurrentAccount: () => true);
+    addTearDown(() {
+      quiz.dispose();
+      paid.client.close();
+      billing.client.close();
+    });
+    return (paid, quiz);
+  }
+
+  test('a billing connection observes once the extra asks for an ad', () async {
+    final (paid, quiz) = billed();
+    await quiz.load();
+    expect(paid.observations, 0, reason: 'free question still open');
+    await quiz.answer(question(1), 1);
+    expect(paid.observations, 1);
+    expect(quiz.today!.extraStatus, 'premiumAvailable');
+    expect(paid.paidRequests, isEmpty);
+  });
+
+  test('without a billing connection nothing is observed', () async {
+    repo.current = repo.current.copyWith(
+      free: question(1, answered: true),
+      extraStatus: 'adRequired',
+      extraRevision: 1,
+    );
+    await c.load();
+    expect(repo.observations, 0);
+    expect(c.today!.premiumStatus, 'notChecked');
+  });
+
+  Future<void> mountQuiz(WidgetTester tester, QuizController quiz) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: AuthenticatedQuizScreen(
+          controller: quiz,
+          onBack: () {},
+          onHome: () {},
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+  }
+
   testWidgets(
-    'UI explicitly observes then unlocks and submits without another entitlement',
+    'entry observes the benefit; the paid unlock stays an explicit tap',
     (tester) async {
-      repo.current = repo.current.copyWith(
+      final (paid, quiz) = billed();
+      paid.current = paid.current.copyWith(
         free: question(1, answered: true),
         extraStatus: 'adRequired',
         extraRevision: 1,
       );
-      await tester.pumpWidget(
-        MaterialApp(
-          home: AuthenticatedQuizScreen(
-            controller: c,
-            onBack: () {},
-            onHome: () {},
-          ),
-        ),
-      );
-      await tester.pumpAndSettle();
-      await tester.tap(find.byKey(const ValueKey('quiz_check_premium')));
-      await tester.pumpAndSettle();
-      expect(repo.paidRequests, isEmpty);
+      await mountQuiz(tester, quiz);
+      expect(paid.observations, 1);
+      expect(paid.paidRequests, isEmpty);
+      expect(find.byKey(const ValueKey('quiz_check_premium')), findsNothing);
       final unlock = find.byKey(const ValueKey('quiz_premium_unlock'));
       await tester.ensureVisible(unlock);
       await tester.tap(unlock);
       await tester.pumpAndSettle();
-      expect(repo.paidRequests, hasLength(1));
-      expect(c.today!.extra!.assignmentId, 2);
+      expect(paid.paidRequests, hasLength(1));
+      expect(quiz.today!.extra!.assignmentId, 2);
+      expect(paid.observations, 1);
     },
   );
+
+  testWidgets('only a failed observation offers its retry', (tester) async {
+    final (paid, quiz) = billed();
+    paid.current = paid.current.copyWith(
+      free: question(1, answered: true),
+      extraStatus: 'adRequired',
+      extraRevision: 1,
+    );
+    paid.observationFailure = BillingException(code: 'temporarilyUnavailable');
+    await mountQuiz(tester, quiz);
+    final retry = find.byKey(const ValueKey('quiz_check_premium'));
+    expect(retry, findsOneWidget);
+    expect(find.byKey(const ValueKey('quiz_premium_status')), findsOneWidget);
+    paid.observationFailure = null;
+    await tester.ensureVisible(retry);
+    await tester.tap(retry);
+    await tester.pumpAndSettle();
+    expect(retry, findsNothing);
+    expect(find.byKey(const ValueKey('quiz_premium_unlock')), findsOneWidget);
+    expect(paid.paidRequests, isEmpty);
+  });
 }

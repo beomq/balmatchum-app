@@ -73,7 +73,7 @@ void main() {
       MaterialApp.router(theme: meetingTheme(), routerConfig: router),
     );
     await tester.pumpAndSettle();
-    final entry = find.widgetWithText(OutlinedButton, '꾸미기');
+    final entry = find.byKey(const ValueKey('home_tile_wardrobe'));
     await tester.ensureVisible(entry);
     await tester.tap(entry);
     await tester.pumpAndSettle();
@@ -85,7 +85,7 @@ void main() {
     expect(find.byKey(const ValueKey('product_fixture_badge')), findsNothing);
     expect(
       tester.widget<Text>(find.byKey(const ValueKey('wardrobe_balance'))).data,
-      '보유 42포인트',
+      '42P',
     );
     expect(repository.calls, isNot(contains('dev')));
     await tester.pumpWidget(const SizedBox.shrink());

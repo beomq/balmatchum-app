@@ -11,9 +11,14 @@ import '../features/daily_activity/daily_activity_providers.dart';
 import '../features/photo/photo_screen.dart';
 import '../features/photo/platform_photo_adapter.dart';
 import '../features/records/records_screen.dart';
+import '../features/settings/account_deletion_screen.dart';
+import '../features/settings/settings_pages.dart';
+import '../features/settings/settings_screen.dart';
 import '../features/quiz/quiz_screen.dart';
 import '../features/quiz/authenticated_quiz_screen.dart';
+import '../features/quiz/quiz_controller.dart';
 import '../features/quiz/quiz_providers.dart';
+import '../features/records/records_models.dart';
 import '../features/wardrobe/wardrobe_screen.dart';
 import '../features/daily_activity/product_repository.dart';
 import '../features/first_meeting/first_meeting_screen.dart';
@@ -50,7 +55,11 @@ final routerProvider = Provider<GoRouter>((ref) {
               path: 'records',
               builder: (context, state) => RecordsCalendarScreen(
                 initialMonth: ProductRepository.today,
+                todayGoal: controller.state.goal,
                 loadMonth: ref.read(productControllerProvider).loadMonth,
+                loadSummary: ref
+                    .read(productControllerProvider)
+                    .loadRecordsSummary,
                 onOpenDay: (date) =>
                     context.push('/records/${ProductRepository.dateKey(date)}'),
                 onBack: () => context.pop(),
@@ -67,18 +76,24 @@ final routerProvider = Provider<GoRouter>((ref) {
                         ? '/records'
                         : null;
                   },
-                  builder: (context, state) => RecordDayScreen(
-                    date: DateTime.parse(state.pathParameters['date']!),
-                    isToday:
+                  builder: (context, state) {
+                    final isToday =
                         state.pathParameters['date'] ==
-                        ProductRepository.dateKey(ProductRepository.today),
-                    loadDay: ref.read(productControllerProvider).loadDay,
-                    deleteDay: ref.read(productControllerProvider).deleteDay,
-                    claimDay: ref.read(productControllerProvider).claim,
-                    rewardController: ref.read(productControllerProvider),
-                    onBack: () => context.pop(),
-                    onHome: () => context.go('/'),
-                  ),
+                        ProductRepository.dateKey(ProductRepository.today);
+                    return RecordDayScreen(
+                      date: DateTime.parse(state.pathParameters['date']!),
+                      isToday: isToday,
+                      // Only today's goal is known (guide 7.1-5).
+                      goal: isToday ? controller.state.goal : null,
+                      loadDay: ref.read(productControllerProvider).loadDay,
+                      deleteDay: ref.read(productControllerProvider).deleteDay,
+                      claimDay: ref.read(productControllerProvider).claim,
+                      rewardController: ref.read(productControllerProvider),
+                      dogAsset: controller.state.candidate!.spritePath,
+                      onBack: () => context.pop(),
+                      onHome: () => context.go('/'),
+                    );
+                  },
                 ),
               ],
             ),
@@ -156,7 +171,9 @@ final routerProvider = Provider<GoRouter>((ref) {
               path == '/quiz' ||
               path == '/wardrobe' ||
               path == '/records' ||
-              path.startsWith('/records/')) &&
+              path.startsWith('/records/') ||
+              path == '/settings' ||
+              path.startsWith('/settings/')) &&
           (authenticated == null || !authenticated.state.isComplete)) {
         return '/';
       }
@@ -183,25 +200,105 @@ final routerProvider = Provider<GoRouter>((ref) {
                 product: authenticated.state.isComplete
                     ? ref.read(authenticatedProductControllerProvider)
                     : null,
-                onLogout: ref.read(logoutProvider),
-                onDeleteAccount: ref.read(accountDeletionProvider)?.delete,
+                quiz: authenticated.state.isComplete
+                    ? ref.read(authenticatedQuizControllerProvider)
+                    : null,
                 onOpenPhoto: () => context.push('/photo'),
                 onOpenRecords: () => context.push('/records'),
                 onOpenQuiz: () => context.push('/quiz'),
                 onOpenWardrobe: () => context.push('/wardrobe'),
-                onOpenBilling: () => context.push('/billing'),
+                onOpenSettings: () => context.push('/settings'),
               ),
         routes: [
           GoRoute(
             path: 'billing',
-            builder: (context, state) =>
-                BillingScreen(key: ObjectKey(billing), controller: billing),
+            builder: (context, state) => BillingScreen(
+              key: ObjectKey(billing),
+              controller: billing,
+              onBack: () => context.pop(),
+              onHome: () => context.go('/'),
+            ),
+          ),
+          // Guide 6.4: the home button and the Duo rail open the same page;
+          // billing pushed from here returns here.
+          GoRoute(
+            path: 'settings',
+            builder: (context, state) {
+              final dog = authenticated!.state.candidate!;
+              return SettingsScreen(
+                key: ObjectKey(authenticated),
+                controller: authenticated,
+                dailySteps: ref.read(dailyStepsControllerProvider),
+                dogLayer: ref
+                    .read(authenticatedProductControllerProvider)
+                    ?.wornLayer(dog.id),
+                onBack: () => context.pop(),
+                onHome: () => context.go('/'),
+                onOpenSteps: () => context.push('/settings/steps'),
+                onOpenPhoto: () => context.push('/settings/photo'),
+                onOpenLogout: ref.read(logoutProvider) == null
+                    ? null
+                    : () => context.push('/settings/logout'),
+                onOpenBilling: () => context.push('/billing'),
+                onOpenServiceInfo: () => context.push('/settings/info'),
+                onOpenDeletion: ref.read(accountDeletionProvider) == null
+                    ? null
+                    : () => context.push('/settings/delete'),
+              );
+            },
+            routes: [
+              for (final (path, permission) in [
+                ('steps', SettingsPermission.steps),
+                ('photo', SettingsPermission.photo),
+              ])
+                GoRoute(
+                  path: path,
+                  builder: (context, state) => PermissionScreen(
+                    permission: permission,
+                    dailySteps: ref.read(dailyStepsControllerProvider),
+                    onBack: () => context.pop(),
+                    onHome: () => context.go('/'),
+                  ),
+                ),
+              GoRoute(
+                path: 'info',
+                builder: (context, state) => ServiceInfoScreen(
+                  onBack: () => context.pop(),
+                  onHome: () => context.go('/'),
+                ),
+              ),
+              GoRoute(
+                path: 'logout',
+                redirect: (context, state) =>
+                    ref.read(logoutProvider) == null ? '/settings' : null,
+                builder: (context, state) => LogoutScreen(
+                  key: ObjectKey(authenticated),
+                  onLogout: ref.read(logoutProvider)!,
+                  onBack: () => context.pop(),
+                  onHome: () => context.go('/'),
+                ),
+              ),
+              GoRoute(
+                path: 'delete',
+                redirect: (context, state) =>
+                    ref.read(accountDeletionProvider) == null
+                    ? '/settings'
+                    : null,
+                builder: (context, state) => AccountDeletionScreen(
+                  key: ObjectKey(authenticated),
+                  onDelete: ref.read(accountDeletionProvider)!.delete,
+                  onBack: () => context.pop(),
+                  onHome: () => context.go('/'),
+                ),
+              ),
+            ],
           ),
           GoRoute(
             path: 'quiz',
             builder: (context, state) => AuthenticatedQuizScreen(
               key: ObjectKey(authenticated),
               controller: ref.read(authenticatedQuizControllerProvider)!,
+              dogAsset: authenticated!.state.candidate!.spritePath,
               onBack: () => context.pop(),
               onHome: () => context.go('/'),
             ),
@@ -239,9 +336,14 @@ final routerProvider = Provider<GoRouter>((ref) {
             builder: (context, state) => RecordsCalendarScreen(
               key: ObjectKey(authenticated),
               initialMonth: ProductRepository.today,
+              todayGoal: authenticated!.state.goal,
               loadMonth: ref
                   .read(authenticatedProductControllerProvider)!
                   .loadMonth,
+              loadSummary: ref
+                  .read(authenticatedProductControllerProvider)!
+                  .loadRecordsSummary,
+              loadQuiz: _dayQuiz(ref.read(authenticatedQuizControllerProvider)),
               onOpenDay: (date) =>
                   context.push('/records/${ProductRepository.dateKey(date)}'),
               onBack: () => context.pop(),
@@ -258,27 +360,39 @@ final routerProvider = Provider<GoRouter>((ref) {
                       ? '/records'
                       : null;
                 },
-                builder: (context, state) => RecordDayScreen(
-                  key: ValueKey((authenticated, state.pathParameters['date'])),
-                  date: DateTime.parse(state.pathParameters['date']!),
-                  isToday:
+                builder: (context, state) {
+                  final isToday =
                       state.pathParameters['date'] ==
-                      ProductRepository.dateKey(ProductRepository.today),
-                  loadDay: ref
-                      .read(authenticatedProductControllerProvider)!
-                      .loadDay,
-                  deleteDay: ref
-                      .read(authenticatedProductControllerProvider)!
-                      .deleteDay,
-                  claimDay: ref
-                      .read(authenticatedProductControllerProvider)!
-                      .claim,
-                  rewardController: ref.read(
-                    authenticatedProductControllerProvider,
-                  ),
-                  onBack: () => context.pop(),
-                  onHome: () => context.go('/'),
-                ),
+                      ProductRepository.dateKey(ProductRepository.today);
+                  return RecordDayScreen(
+                    key: ValueKey((
+                      authenticated,
+                      state.pathParameters['date'],
+                    )),
+                    date: DateTime.parse(state.pathParameters['date']!),
+                    isToday: isToday,
+                    // Only today's goal is known (guide 7.1-5).
+                    goal: isToday ? authenticated!.state.goal : null,
+                    loadQuiz: _dayQuiz(
+                      ref.read(authenticatedQuizControllerProvider),
+                    ),
+                    loadDay: ref
+                        .read(authenticatedProductControllerProvider)!
+                        .loadDay,
+                    deleteDay: ref
+                        .read(authenticatedProductControllerProvider)!
+                        .deleteDay,
+                    claimDay: ref
+                        .read(authenticatedProductControllerProvider)!
+                        .claim,
+                    rewardController: ref.read(
+                      authenticatedProductControllerProvider,
+                    ),
+                    dogAsset: authenticated!.state.candidate!.spritePath,
+                    onBack: () => context.pop(),
+                    onHome: () => context.go('/'),
+                  );
+                },
               ),
             ],
           ),
@@ -294,3 +408,8 @@ final routerProvider = Provider<GoRouter>((ref) {
   ref.onDispose(router.dispose);
   return router;
 });
+
+/// The records screens' per-date quiz read from the account's history.
+LoadDayQuiz? _dayQuiz(QuizController? quiz) => quiz == null
+    ? null
+    : (date) => quiz.dayQuiz(ProductRepository.dateKey(date));

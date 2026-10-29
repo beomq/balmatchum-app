@@ -71,6 +71,11 @@ void main() {
           '/quiz',
           '/billing',
           '/wardrobe',
+          '/settings',
+          '/settings/steps',
+          '/settings/info',
+          '/settings/logout',
+          '/settings/delete',
         ]) {
           router.go(route);
           await tester.pumpAndSettle();
@@ -141,6 +146,10 @@ void main() {
       await capture(tester, boundary, 'records-home');
       await tester.tap(find.byTooltip('설정'));
       await tester.pumpAndSettle();
+      expect(
+        router.routerDelegate.currentConfiguration.last.matchedLocation,
+        '/settings',
+      );
       await tester.ensureVisible(
         find.byKey(const ValueKey('settings_billing')),
       );
@@ -164,6 +173,13 @@ void main() {
       router.go('/records');
       await tester.pumpAndSettle();
       expect(find.byType(RecordsCalendarScreen), findsOneWidget);
+      final calendar = tester.widget<RecordsCalendarScreen>(
+        find.byType(RecordsCalendarScreen),
+      );
+      // Today's goal and the account's reads feed the tiles and the card.
+      expect(calendar.todayGoal, meeting.state.goal);
+      expect(calendar.loadSummary, isNotNull);
+      expect(calendar.loadQuiz, isNotNull);
       await capture(tester, boundary, 'records-calendar');
       router.go('/records/invalid');
       await tester.pumpAndSettle();
@@ -171,6 +187,14 @@ void main() {
       router.go('/records/2026-10-15');
       await tester.pumpAndSettle();
       expect(find.byType(RecordDayScreen), findsOneWidget);
+      // Sub screens take the user's own sprite from the router (guide 3.6).
+      final record = tester.widget<RecordDayScreen>(
+        find.byType(RecordDayScreen),
+      );
+      expect(record.dogAsset, meeting.state.candidate!.spritePath);
+      // A past date gets no goal; only today's is known (guide 7.1-5).
+      expect(record.goal, isNull);
+      expect(record.loadQuiz, isNotNull);
       expect(find.byKey(const ValueKey('reward_free_claim')), findsOneWidget);
       await capture(tester, boundary, 'records-day');
       await tester.ensureVisible(
@@ -188,7 +212,15 @@ void main() {
       router.go('/quiz');
       await tester.pumpAndSettle();
       expect(find.byType(AuthenticatedQuizScreen), findsOneWidget);
-      expect(find.byKey(const ValueKey('quiz_1_submit')), findsOneWidget);
+      expect(
+        tester
+            .widget<AuthenticatedQuizScreen>(
+              find.byType(AuthenticatedQuizScreen),
+            )
+            .dogAsset,
+        meeting.state.candidate!.spritePath,
+      );
+      expect(find.byKey(const ValueKey('quiz_1_choice_0')), findsOneWidget);
       container.updateOverrides([
         authenticatedMeetingControllerProvider.overrideWithValue(null),
         authenticatedProductControllerProvider.overrideWithValue(null),

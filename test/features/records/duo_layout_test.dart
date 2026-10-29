@@ -85,11 +85,7 @@ void main() {
       await tester.pumpWidget(duoHost(screen(load: () async => snap())));
       await tester.pumpAndSettle();
       expect(tester.takeException(), isNull);
-      // When the store's theme purchase dialog opens.
-      final store = find.byKey(const ValueKey('wardrobe_scope_store'));
-      await tester.ensureVisible(store);
-      await tester.tap(store);
-      await tester.pumpAndSettle();
+      // When an offered theme's purchase dialog opens.
       final theme = find.byKey(const ValueKey('wardrobe_theme_night'));
       await tester.ensureVisible(theme);
       await tester.tap(theme);

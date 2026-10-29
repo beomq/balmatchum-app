@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:balmatchum_app/features/billing/billing_repository.dart';
 import 'package:balmatchum_client/balmatchum_client.dart';
 import 'package:serverpod_auth_core_flutter/serverpod_auth_core_flutter.dart'
     hide Protocol;
@@ -15,6 +16,18 @@ class BillingMemoryAuth implements ClientAuthSuccessStorage {
   @override
   Future<void> set(AuthSuccess? data) async => value = data;
 }
+
+/// A billing connection that only has to exist: the paid fakes answer every
+/// observation themselves, so this client never sends a request. Close its
+/// client after the test.
+ServerpodBillingRepository presentBilling() => ServerpodBillingRepository(
+  Client('http://localhost/')
+    ..authSessionManager = FlutterAuthSessionManager(
+      storage: BillingMemoryAuth(),
+    ),
+  'A',
+  BillingRequestQueue(),
+);
 
 AuthSuccess billingTestAuth(String suffix) => AuthSuccess(
   authStrategy: 'session',

@@ -42,7 +42,7 @@ Future<BillingController> _pump(
   WidgetTester tester,
   Future<bool> Function(Uri) openUrl,
 ) async {
-  // Tall enough that the lazily built ListView includes every disclosure.
+  // Tall enough that every disclosure and link is on screen.
   tester.view.physicalSize = const Size(800, 3000);
   tester.view.devicePixelRatio = 1;
   addTearDown(tester.view.resetPhysicalSize);
@@ -56,11 +56,30 @@ Future<BillingController> _pump(
   await c.ready;
   await tester.pumpWidget(
     MaterialApp(
-      home: BillingScreen(controller: c, openUrl: openUrl),
+      home: BillingScreen(
+        controller: c,
+        openUrl: openUrl,
+        onBack: () {},
+        onHome: () {},
+      ),
     ),
   );
   return c;
 }
+
+/// Terms show for the picked product only; nothing is picked among several.
+Future<void> _pick(WidgetTester tester, String id) async {
+  await tester.tap(find.byKey(ValueKey('billing_plan_$id')));
+  await tester.pump();
+}
+
+/// The benefit lines as read aloud, in order, as one paragraph.
+String _benefits(WidgetTester tester) => [
+  for (var i = 0; i < 3; i++)
+    tester
+        .widget<Text>(find.byKey(ValueKey('billing_benefit_$i')))
+        .semanticsLabel,
+].join(' ');
 
 Future<void> _done(WidgetTester tester, BillingController c) async {
   await tester.pumpWidget(const SizedBox.shrink());
@@ -91,6 +110,7 @@ void main() {
     tester,
   ) async {
     final c = await _pump(tester, (_) async => true);
+    await _pick(tester, 'test.monthly');
     expect(
       find.text('1개월 자동 갱신 구독 · 매월 ₩1,100\n$_appleRenewal'),
       findsOneWidget,
@@ -103,6 +123,7 @@ void main() {
     tester,
   ) async {
     final c = await _pump(tester, (_) async => true);
+    await _pick(tester, 'test.monthly');
     expect(
       find.text('1개월 자동 갱신 구독 · 매월 ₩1,100\n$_googleRenewal'),
       findsOneWidget,
@@ -115,6 +136,7 @@ void main() {
     'lifetime is a one-time purchase without renewal wording',
     (tester) async {
       final c = await _pump(tester, (_) async => true);
+      await _pick(tester, 'test.lifetime');
       final terms = tester.widget<Text>(
         find.byKey(const ValueKey('billing_terms_test.lifetime')),
       );
@@ -132,7 +154,7 @@ void main() {
     tester,
   ) async {
     final c = await _pump(tester, (_) async => true);
-    expect(find.text(_benefit), findsOneWidget);
+    expect(_benefits(tester), _benefit);
     expect(find.text('결제 취소와 환불은 App Store 환불 정책을 따라요.'), findsOneWidget);
     expect(find.textContaining('광고 제거'), findsNothing);
     await _done(tester, c);
@@ -142,7 +164,7 @@ void main() {
     tester,
   ) async {
     final c = await _pump(tester, (_) async => true);
-    expect(find.text(_benefit), findsOneWidget);
+    expect(_benefits(tester), _benefit);
     expect(find.text('결제 취소와 환불은 Google Play 환불 정책을 따라요.'), findsOneWidget);
     await _done(tester, c);
   }, variant: _android);

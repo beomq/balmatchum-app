@@ -162,11 +162,61 @@ void main() {
     final changed = await editor.capturePng();
     expect(changed, isNot(orderedEquals(png)));
     final edit = editor.sticker;
+    // Sharing comes after a save and sends the saved PNG (guide 7.5-4).
+    await editor.save();
+    expect(adapter.saved, orderedEquals(changed));
     await editor.share(const ui.Rect.fromLTWH(0, 0, 44, 44));
     expect(editor.sticker, same(edit));
     expect(editor.isError, isFalse);
     expect(adapter.shared, orderedEquals(changed));
+    expect(editor.phase, PhotoPhase.saved);
+  });
+
+  test('only a save the gallery took makes the edit saved', () async {
+    final adapter = FakePhotoAdapter()..next = await photoFixture();
+    final editor = PhotoEditor(
+      adapter: adapter,
+      dogAssetPath: 'assets/first_meeting/dogs/pug.png',
+    );
+    addTearDown(editor.dispose);
+    await editor.initialize();
+    await editor.pick(PhotoSource.gallery);
+    expect(editor.phase, PhotoPhase.edit);
+    // Nothing saved yet: no share either.
+    await editor.share(const ui.Rect.fromLTWH(0, 0, 44, 44));
+    expect(adapter.shared, isNull);
+    expect(editor.isError, isTrue);
+    for (final failure in [const PhotoFailure('denied'), StateError('lost')]) {
+      adapter.failure = failure;
+      await editor.save();
+      expect(editor.saved, isFalse, reason: '$failure');
+      expect(editor.phase, PhotoPhase.edit);
+    }
+    adapter.failure = null;
     await editor.save();
-    expect(adapter.saved, orderedEquals(changed));
+    expect(editor.savedPng, orderedEquals(adapter.saved!));
+    expect(editor.phase, PhotoPhase.saved);
+    // The saved view holds still and is not saved twice.
+    final saved = editor.sticker;
+    editor.edit(saved.copyWith(x: .1));
+    expect(editor.sticker, same(saved));
+    adapter.saved = null;
+    await editor.save();
+    expect(adapter.saved, isNull);
+    // Back to editing keeps it saved until something changes.
+    editor.reedit();
+    expect(editor.phase, PhotoPhase.edit);
+    expect(editor.saved, isTrue);
+    editor.edit(saved);
+    expect(editor.saved, isTrue);
+    editor.edit(saved.copyWith(flipped: true));
+    expect(editor.saved, isFalse);
+    await editor.save();
+    expect(editor.phase, PhotoPhase.saved);
+    // A new photo starts over unsaved.
+    adapter.next = await photoFixture();
+    await editor.pick(PhotoSource.gallery);
+    expect(editor.saved, isFalse);
+    expect(editor.phase, PhotoPhase.edit);
   });
 }

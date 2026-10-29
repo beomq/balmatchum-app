@@ -163,6 +163,7 @@ void main() {
       expect(back, 1);
       expect(home, 1);
       adapter.next = await tester.runAsync(photoFixture);
+      await tester.ensureVisible(find.byKey(const ValueKey('photo_gallery')));
       await tester.runAsync(
         () => tester.tap(find.byKey(const ValueKey('photo_gallery'))),
       );
@@ -216,14 +217,7 @@ void main() {
           image.dispose();
         });
       }
-      await tester.ensureVisible(find.byKey(const ValueKey('photo_share')));
-      await tester.runAsync(
-        () => tester.tap(find.byKey(const ValueKey('photo_share'))),
-      );
-      await tester.runAsync(() => idle(state));
-      await tester.pumpAndSettle();
-      expect(adapter.shared, isNotNull);
-      expect(find.byKey(const ValueKey('photo_canvas')), findsOneWidget);
+      // A failed save keeps the edit and offers no share.
       adapter.failure = const PhotoFailure('denied');
       final edit = state.editor.sticker;
       await tester.ensureVisible(find.byKey(const ValueKey('photo_save')));
@@ -235,6 +229,23 @@ void main() {
       expect(state.editor.isError, isTrue);
       expect(state.editor.sticker, same(edit));
       expect(adapter.saved, isNull);
+      expect(find.byKey(const ValueKey('photo_share')), findsNothing);
+      // A good save opens the saved view, whose share sends that PNG.
+      adapter.failure = null;
+      await tester.runAsync(
+        () => tester.tap(find.byKey(const ValueKey('photo_save'))),
+      );
+      await tester.runAsync(() => idle(state));
+      await tester.pumpAndSettle();
+      expect(adapter.saved, isNotNull);
+      await tester.ensureVisible(find.byKey(const ValueKey('photo_share')));
+      await tester.runAsync(
+        () => tester.tap(find.byKey(const ValueKey('photo_share'))),
+      );
+      await tester.runAsync(() => idle(state));
+      await tester.pumpAndSettle();
+      expect(adapter.shared, orderedEquals(adapter.saved!));
+      expect(find.byKey(const ValueKey('photo_canvas')), findsOneWidget);
       await tester.runAsync(
         () => tester.pumpWidget(
           MaterialApp(
@@ -259,7 +270,8 @@ void main() {
       );
       await tester.runAsync(() => idle(largeState));
       await tester.pumpAndSettle();
-      await tester.ensureVisible(find.byKey(const ValueKey('photo_save')));
+      // Before a photo the pick is the one action (guide 7.3-3).
+      await tester.ensureVisible(find.byKey(const ValueKey('photo_gallery')));
       expect(tester.takeException(), isNull);
       await tester.pumpWidget(const SizedBox.shrink());
     });

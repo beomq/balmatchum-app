@@ -76,8 +76,13 @@ void main() {
     await tester.tap(find.text('자기 페이스로 나란히 걷는 친구'));
     await tester.pumpAndSettle();
     await binding.takeScreenshot('meeting-native-recommendation');
-    await tester.ensureVisible(find.byKey(const ValueKey('meeting_back')));
-    await tester.tap(find.byKey(const ValueKey('meeting_back')));
+    // The iPhone Duo side rail carries back instead of the top bar.
+    final railBack = find.byKey(const ValueKey('duo_rail_back'));
+    final back = railBack.evaluate().isEmpty
+        ? find.byKey(const ValueKey('meeting_back'))
+        : railBack;
+    await tester.ensureVisible(back);
+    await tester.tap(back);
     await tester.pumpAndSettle();
     await tester.tap(find.text('30종에서 직접 고르기'));
     await tester.pumpAndSettle();
@@ -129,11 +134,14 @@ void main() {
     await tester.tap(find.text('암컷'));
     await tester.pumpAndSettle();
     await binding.takeScreenshot('meeting-native-name');
-    await tester.ensureVisible(find.text('이름과 성별 저장'));
-    await tester.tap(find.text('이름과 성별 저장'));
+    final save = find.byKey(const ValueKey('meeting_name_submit'));
+    await tester.ensureVisible(save);
+    await tester.tap(save);
     await tester.pumpAndSettle();
     await binding.takeScreenshot('meeting-native-goal');
-    await tester.tap(find.text('목표 저장하고 홈 보기'));
+    final start = find.byKey(const ValueKey('meeting_goal_start'));
+    await tester.ensureVisible(start);
+    await tester.tap(start);
     await tester.pumpAndSettle();
     expect(c.state.isComplete, isTrue);
     await binding.takeScreenshot('meeting-native-home');

@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../features/first_meeting/meeting_theme.dart';
-import '../features/records/product_page.dart' show ProductColors;
+import '../features/records/product_page.dart' show PixelIcon, ProductColors;
 
 enum DuoRailSide { left, right }
 
@@ -86,24 +86,27 @@ DuoRailMode? duoRailMode(MediaQueryData media, DuoRailSpec spec) {
   return null;
 }
 
+/// Back button shared by the onboarding steps and the sub screens.
+DuoRailItem duoBack(VoidCallback? onBack) => DuoRailItem(
+  key: const ValueKey('duo_rail_back'),
+  label: '뒤로',
+  icon: Image.asset(
+    'assets/first_meeting/icons/back.png',
+    filterQuality: FilterQuality.none,
+  ),
+  onPressed: onBack,
+);
+
 /// Back and home group shared by the sub screens.
 List<DuoRailItem> duoBackHome({
   required VoidCallback? onBack,
   required VoidCallback? onHome,
 }) => [
-  DuoRailItem(
-    key: const ValueKey('duo_rail_back'),
-    label: '뒤로',
-    icon: Image.asset(
-      'assets/first_meeting/icons/back.png',
-      filterQuality: FilterQuality.none,
-    ),
-    onPressed: onBack,
-  ),
+  duoBack(onBack),
   DuoRailItem(
     key: const ValueKey('duo_rail_home'),
     label: '홈',
-    icon: const Icon(Icons.home_outlined, color: MeetingColors.ink),
+    icon: const PixelIcon('home'),
     onPressed: onHome,
   ),
 ];

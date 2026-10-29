@@ -1,8 +1,10 @@
 import 'dart:async';
 
 import 'package:balmatchum_app/features/first_meeting/meeting_theme.dart';
+import 'package:balmatchum_app/features/records/product_page.dart';
 import 'package:balmatchum_app/features/records/records_models.dart';
 import 'package:balmatchum_app/features/records/records_screen.dart';
+import 'package:balmatchum_app/features/wardrobe/dog_sprite.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -59,6 +61,7 @@ RecordDayScreen dayScreen({
   DeleteRecordDay? delete,
   ClaimRecordDay? claim,
   ValueChanged<RecordDay>? changed,
+  String? dog,
 }) => RecordDayScreen(
   date: date,
   loadDay: load,
@@ -67,6 +70,7 @@ RecordDayScreen dayScreen({
   onDayChanged: changed,
   onBack: () {},
   onHome: () {},
+  dogAsset: dog,
 );
 
 void main() {
@@ -75,6 +79,34 @@ void main() {
     // 2027 bundled name is English; the Korean description is shown.
     expect(koreanHolidayName(DateTime(2027, 1, 1)), '신정연휴');
     expect(koreanHolidayName(DateTime(2027, 1, 2)), isNull);
+  });
+
+  testWidgets('the month arrows and home are pixel icons', (tester) async {
+    await tester.pumpWidget(
+      host(
+        RecordsCalendarScreen(
+          initialMonth: DateTime(2027, 1, 15),
+          loadMonth: (month) async => RecordMonth(month: month, days: [day()]),
+          onOpenDay: (_) {},
+          onBack: () {},
+          onHome: () {},
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    String pixel(String key) => tester
+        .widget<PixelIcon>(
+          find.descendant(
+            of: find.byKey(ValueKey(key)),
+            matching: find.byType(PixelIcon),
+          ),
+        )
+        .name;
+    // Pen K6Z5x: back for the previous month, the caret for the next.
+    expect(pixel('records_prev_month'), 'back');
+    expect(pixel('records_next_month'), 'caret-right');
+    expect(pixel('product_home'), 'home');
+    expect(find.byType(Icon), findsNothing);
   });
 
   testWidgets('calendar loads, fails, retries and opens a day once', (
@@ -122,7 +154,14 @@ void main() {
     expect(find.bySemanticsLabel(RegExp('^1월 1일, 신정')), findsOneWidget);
     await tester.tap(find.byKey(const ValueKey('records_day_4')));
     await tester.pump();
+    // A date tap only selects it; the card's link opens it, once.
+    expect(opened, isEmpty);
+    final open = find.byKey(const ValueKey('records_open_day'));
+    await tester.ensureVisible(open);
+    await tester.tap(open);
+    await tester.pump();
     expect(opened, [DateTime(2027, 1, 4)]);
+    await tester.pumpAndSettle();
     await tester.tap(find.byKey(const ValueKey('records_next_month')));
     await tester.pumpAndSettle();
     expect(requests.last, DateTime(2027, 2));
@@ -138,17 +177,55 @@ void main() {
       await tester.pumpAndSettle();
       // Then steps and rewards remain usable without any route surface.
       expect(find.text('4,200걸음'), findsOneWidget);
-      expect(find.text('4포인트를 받을 수 있어요.'), findsOneWidget);
       expect(
-        find.byKey(const ValueKey('product_fixture_badge')),
-        findsOneWidget,
+        tester
+            .widget<Text>(find.byKey(const ValueKey('records_reward_status')))
+            .data,
+        contains('4P'),
       );
+      // A production build never shows the development fixture marker.
+      expect(find.byKey(const ValueKey('product_fixture_badge')), findsNothing);
       expect(find.byKey(const ValueKey('records_route_map')), findsNothing);
       expect(find.byKey(const ValueKey('records_naver_map')), findsNothing);
       expect(find.textContaining('GPS'), findsNothing);
       expect(find.byKey(const ValueKey('records_claim')), findsOneWidget);
     },
   );
+
+  testWidgets('only the dev build marks a fixture day', (tester) async {
+    debugFixtureLabelsVisible = true;
+    addTearDown(() => debugFixtureLabelsVisible = null);
+    await tester.pumpWidget(
+      host(dayScreen(load: (_) async => day(fixture: 'dev-fixture-v1'))),
+    );
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('product_fixture_badge')), findsOneWidget);
+  });
+
+  testWidgets('the own companion sits with a recorded day only', (
+    tester,
+  ) async {
+    const dog = 'assets/first_meeting/dogs/pug.png';
+    await tester.pumpWidget(
+      host(dayScreen(load: (_) async => day(), dog: dog)),
+    );
+    await tester.pumpAndSettle();
+    final sprite = find.descendant(
+      of: find.byKey(const ValueKey('records_day_dog')),
+      matching: find.byType(DogSprite),
+    );
+    expect(tester.widget<DogSprite>(sprite).asset, dog);
+    await tester.pumpWidget(
+      host(
+        KeyedSubtree(
+          key: const ValueKey('deleted'),
+          child: dayScreen(load: (_) async => deleted(), dog: dog),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('records_day_dog')), findsNothing);
+  });
 
   testWidgets('calendar hides routes when a stored day contains coordinates', (
     tester,
@@ -170,7 +247,8 @@ void main() {
     await tester.pumpAndSettle();
     // Then only steps and rewards are advertised, including accessibility.
     expect(
-      find.bySemanticsLabel(RegExp('^1월 4일, 4,200걸음, 받을 포인트 있음')),
+      // The stored day is also today here.
+      find.bySemanticsLabel(RegExp('^1월 4일, 오늘, 4,200걸음, 받을 포인트 있음')),
       findsOneWidget,
     );
     expect(find.bySemanticsLabel(RegExp('GPS')), findsNothing);
@@ -192,7 +270,8 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
-    expect(find.textContaining('0걸음과는 달라요'), findsOneWidget);
+    // Read in full; the drawn line only keeps words whole.
+    expect(find.bySemanticsLabel(RegExp('0걸음과는 달라요')), findsOneWidget);
     expect(find.textContaining('GPS'), findsNothing);
     expect(find.byKey(const ValueKey('records_claim')), findsNothing);
   });
@@ -248,7 +327,7 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.byKey(const ValueKey('records_delete_confirm')));
     await tester.pump();
-    expect(tester.widget<OutlinedButton>(button).onPressed, isNull);
+    expect(tester.widget<TextButton>(button).onPressed, isNull);
     expect(
       tester
           .widget<FilledButton>(find.byKey(const ValueKey('records_claim')))
@@ -323,9 +402,26 @@ void main() {
     await tester.pumpAndSettle();
     expect(claims, [3, 3]);
     expect(loads, 2);
-    expect(find.text('4포인트를 받았어요.'), findsOneWidget);
-    expect(find.text('이 날짜의 포인트를 모두 받았어요.'), findsOneWidget);
+    expect(
+      tester
+          .widget<Text>(find.byKey(const ValueKey('records_tile_points')))
+          .data,
+      '4P',
+    );
+    // Nothing is left to receive, so the tiles say it all (guide 7.2-5).
+    expect(find.byKey(const ValueKey('records_reward_status')), findsNothing);
     expect(find.byKey(const ValueKey('records_claim')), findsNothing);
+    expect(
+      tester
+          .widget<Text>(
+            find.descendant(
+              of: find.byKey(const ValueKey('records_notice')),
+              matching: find.byType(Text),
+            ),
+          )
+          .data,
+      contains('4P'),
+    );
     expect(changed.single.rewardStatus, DayRewardStatus.paid);
   });
 
