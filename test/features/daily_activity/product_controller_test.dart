@@ -355,6 +355,7 @@ void main() {
     final cloudy = (await controller.loadWardrobe()).themes.singleWhere(
       (theme) => theme.id == 'cloudy',
     );
+    expect(cloudy.backgroundAsset, 'assets/first_meeting/cloudy.png');
     final bought = await controller.themeAction(cloudy, equip: false);
     expect(
       bought.themes.singleWhere((theme) => theme.id == 'cloudy').owned,
@@ -602,7 +603,9 @@ void main() {
     final controller = ProductController(repository, steps, null, account: 'A');
     final result = await controller.deleteDay(DateTime(2026, 10, 15));
     expect(result.isDeleted, isTrue);
-    expect(repository.calls, ['delete', 'day']);
+    // The refresh starts its four reads together; the failed day read still
+    // fails it.
+    expect(repository.calls, ['delete', 'day', 'wallet', 'themes', 'outfits']);
     expect(controller.error, isNotNull);
     controller.dispose();
     steps.dispose();
@@ -650,7 +653,8 @@ void main() {
         a.deleteDay(DateTime(2026, 10, 15)),
         throwsFormatException,
       );
-      expect(repository.calls, ['day', 'day']);
+      // Only reads started while A was current; nothing after the switch.
+      expect(repository.calls, ['day', 'wallet', 'themes', 'outfits', 'day']);
       if (!dispose) a.dispose();
       b.dispose();
       steps.dispose();

@@ -295,13 +295,50 @@ class _FirstMeetingScreenState extends State<FirstMeetingScreen> {
     if (c == null) {
       const empty = DuoRailSpec();
       final mode = duoRailMode(MediaQuery.of(context), empty);
+      final rail = mode == null ? null : DuoRail(spec: empty, mode: mode);
+      if (loadError == null) {
+        // The local read is short; a logo and a spinner say "wait" without
+        // explaining storage to the user.
+        return Scaffold(
+          body: Stack(
+            fit: StackFit.expand,
+            children: [
+              SafeArea(
+                child: Center(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Image.asset(
+                        'assets/brand/balmatchum_splash.png',
+                        key: const ValueKey('first_meeting_loading'),
+                        width: 160,
+                        filterQuality: FilterQuality.medium,
+                        semanticLabel: '발맞춤',
+                      ),
+                      const SizedBox(height: 24),
+                      const SizedBox.square(
+                        dimension: 28,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 3,
+                          color: MeetingColors.primary,
+                          semanticsLabel: '불러오는 중',
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              ?rail,
+            ],
+          ),
+        );
+      }
       return MeetingPage(
         // Nothing to go back to yet; the Duo column is painted empty.
-        rail: mode == null ? null : DuoRail(spec: empty, mode: mode),
+        rail: rail,
         children: [
-          Text(loadError ?? '이 기기의 체험 기록을 읽고 있어요.'),
-          if (loadError != null)
-            FilledButton(onPressed: load, child: const Text('다시 시도')),
+          Text(loadError!),
+          FilledButton(onPressed: load, child: const Text('다시 시도')),
         ],
       );
     }
