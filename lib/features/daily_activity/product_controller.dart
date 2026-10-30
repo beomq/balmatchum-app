@@ -13,6 +13,10 @@ import 'record_mapping.dart';
 import 'step_streak.dart';
 import 'step_upload.dart';
 
+/// Server theme ids with a bundled scene at `assets/first_meeting/<id>.png`
+/// (design home-v1 backgrounds).
+const _weatherBackgrounds = {'sunny', 'cloudy', 'rainy', 'snowy'};
+
 class ProductController extends ChangeNotifier {
   ProductController(
     this.repository,
@@ -125,26 +129,23 @@ class ProductController extends ChangeNotifier {
 
   Future<void> refresh() async {
     _checkAccount();
-    final day = await repository.day(ProductRepository.today);
-    _checkAccount();
-    final balance = await repository.wallet();
-    _checkAccount();
-    var themes = store;
-    try {
-      themes = await repository.themes();
-    } catch (_) {
-      // A real account's theme is decoration; keep the last known store
-      // so steps, points and records still refresh.
-      if (account == null) rethrow;
+    // Each read is a round trip to a distant server, so all four start at
+    // once instead of one after another.
+    final dayRead = repository.day(ProductRepository.today);
+    final walletRead = repository.wallet();
+    // A real account's theme and outfits are decoration; keep the last known
+    // state so steps, points and records still refresh.
+    final themesRead = _orLast(repository.themes(), store);
+    final wornRead = _orLast(repository.outfits(), outfits);
+    // Every failure is still seen by the awaits below; this only stops a
+    // later one from being reported as unhandled after an earlier throw.
+    for (final read in [dayRead, walletRead, themesRead, wornRead]) {
+      read.ignore();
     }
-    _checkAccount();
-    var worn = outfits;
-    try {
-      worn = await repository.outfits();
-    } catch (_) {
-      // Outfits are decoration too: keep the last known state.
-      if (account == null) rethrow;
-    }
+    final day = await dayRead;
+    final balance = await walletRead;
+    final themes = await themesRead;
+    final worn = await wornRead;
     _checkAccount();
     if (account == null) {
       final question = await repository.quiz(ProductRepository.today);
@@ -157,6 +158,10 @@ class ProductController extends ChangeNotifier {
     wallet = balance;
     notifyListeners();
   }
+
+  Future<T?> _orLast<T>(Future<T> read, T? last) => account == null
+      ? read
+      : read.then<T?>((value) => value, onError: (Object _) => last);
 
   Future<void> refreshAfterSuccess() async {
     try {
@@ -404,8 +409,8 @@ class ProductController extends ChangeNotifier {
           owned: item.owned,
           colorValue: item.colorValue,
           price: item.price,
-          backgroundAsset: item.themeId == 'sunny'
-              ? 'assets/first_meeting/sunny.png'
+          backgroundAsset: _weatherBackgrounds.contains(item.themeId)
+              ? 'assets/first_meeting/${item.themeId}.png'
               : null,
         ),
     ],
@@ -433,16 +438,26 @@ class ProductController extends ChangeNotifier {
     return value == null ? null : outfitView(value).wornLayer(breedId);
   }
 
+  /// The wardrobe as the last refresh saw it, shown at once while
+  /// [loadWardrobe] confirms it with the server.
+  WardrobeSnapshot? get cachedWardrobe {
+    final value = store;
+    final worn = outfits;
+    return value == null
+        ? null
+        : wardrobe(value, outfitStore: worn, balance: worn?.balance);
+  }
+
   Future<WardrobeSnapshot> loadWardrobe() async {
     _checkAccount();
-    final value = await repository.themes();
-    _checkAccount();
-    api.OutfitStore? worn;
-    try {
-      worn = await repository.outfits();
-    } catch (_) {
-      // The outfit shelf shows its own reload; themes stay usable.
-    }
+    final themesRead = repository.themes();
+    // The outfit shelf shows its own reload; themes stay usable.
+    final wornRead = repository.outfits().then<api.OutfitStore?>(
+      (value) => value,
+      onError: (Object _) => null,
+    );
+    final value = await themesRead;
+    final worn = await wornRead;
     _checkAccount();
     store = value;
     if (worn != null) outfits = worn;

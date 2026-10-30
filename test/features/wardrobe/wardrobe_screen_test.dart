@@ -97,8 +97,10 @@ WardrobeScreen screen({
   WardrobeOutfitAction? change,
   String dog = 'shih-tzu',
   VoidCallback? onHome,
+  WardrobeSnapshot? cached,
 }) => WardrobeScreen(
   dog: FirstMeetingCatalog.byId(dog),
+  cachedSnapshot: cached,
   loadWardrobe: load,
   purchaseTheme: purchase ?? (_) async => throw StateError('no purchase'),
   equipTheme: equip ?? (_) async => throw StateError('no equip'),
@@ -219,6 +221,34 @@ void main() {
       findsOneWidget,
     );
     expect(find.byKey(const ValueKey('wardrobe_preview_dog')), findsOneWidget);
+  });
+
+  testWidgets('a cached wardrobe shows at once and acts after the reload', (
+    tester,
+  ) async {
+    // Given a last known wardrobe and a server read still in flight.
+    final read = Completer<WardrobeSnapshot>();
+    await tester.pumpWidget(
+      host(screen(load: () => read.future, cached: snap())),
+    );
+    await tester.pump();
+    // Then the preview is painted without waiting, and the action waits.
+    expect(
+      find.byKey(const ValueKey('wardrobe_preview_bg_sunny')),
+      findsOneWidget,
+    );
+    expect(find.byType(CircularProgressIndicator), findsNothing);
+    final waiting = find.byKey(const ValueKey('wardrobe_action_state_busy'));
+    expect(waiting, findsOneWidget);
+    // When the server confirms the wardrobe.
+    read.complete(snap());
+    await tester.pumpAndSettle();
+    // Then the same preview stays and the action is enabled.
+    expect(
+      find.byKey(const ValueKey('wardrobe_preview_bg_sunny')),
+      findsOneWidget,
+    );
+    expect(waiting, findsNothing);
   });
 
   testWidgets('selecting previews only; equip is a separate single call', (
