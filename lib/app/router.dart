@@ -310,6 +310,7 @@ final routerProvider = Provider<GoRouter>((ref) {
               return WardrobeScreen(
                 key: ObjectKey(authenticated),
                 dog: authenticated!.state.candidate!,
+                cachedSnapshot: product.cachedWardrobe,
                 loadWardrobe: product.loadWardrobe,
                 purchaseTheme: (theme) =>
                     product.themeAction(theme, equip: false),

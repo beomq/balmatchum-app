@@ -28,8 +28,12 @@ class WardrobeScreen extends StatefulWidget {
     required this.changeOutfit,
     required this.onBack,
     required this.onHome,
+    this.cachedSnapshot,
     super.key,
   });
+
+  /// The last known wardrobe, shown while [loadWardrobe] runs.
+  final WardrobeSnapshot? cachedSnapshot;
 
   /// The selected companion; its approved sprite is never altered.
   final DogBreed dog;
@@ -58,12 +62,16 @@ class _WardrobeScreenState extends State<WardrobeScreen> {
   @override
   void initState() {
     super.initState();
-    unawaited(load());
+    unawaited(load(cached: widget.cachedSnapshot));
   }
 
-  Future<void> load() async {
+  /// [cached] is painted at once; actions wait until the server confirms it
+  /// so a purchase is never decided on a stale balance.
+  Future<void> load({WardrobeSnapshot? cached}) async {
     setState(() {
-      snapshot = null;
+      snapshot = cached;
+      selectedId ??= cached?.equippedThemeId;
+      busy = cached != null;
       loadError = null;
     });
     try {
@@ -71,10 +79,14 @@ class _WardrobeScreenState extends State<WardrobeScreen> {
       if (!mounted) return;
       setState(() {
         snapshot = value;
+        busy = false;
         selectedId ??= value.equippedThemeId;
       });
     } on Exception {
-      if (mounted) setState(() => loadError = '꾸미기 정보를 불러오지 못했어요.');
+      if (!mounted) return;
+      snapshot = null;
+      busy = false;
+      setState(() => loadError = '꾸미기 정보를 불러오지 못했어요.');
     }
   }
 

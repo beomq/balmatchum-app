@@ -564,7 +564,11 @@ void main() {
       await tester.pumpWidget(duoHost(FirstMeetingScreen(controller: c)));
       await tester.pump();
       // Then the loading page already paints the empty side column.
-      expect(find.text('이 기기의 체험 기록을 읽고 있어요.'), findsOneWidget);
+      expect(
+        find.byKey(const ValueKey('first_meeting_loading')),
+        findsOneWidget,
+      );
+      expect(find.byType(CircularProgressIndicator), findsOneWidget);
       expectEmptyDuoRail(tester);
       // When the read completes on the login step.
       storage.release.complete();
