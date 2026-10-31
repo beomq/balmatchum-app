@@ -52,6 +52,7 @@ Future<GoRouter> pumpApp(
       logoutProvider.overrideWithValue(logout ?? () async => _cleared),
       accountDeletionProvider.overrideWithValue(
         AccountDeletion(
+          forgetAccount: () {},
           deleteRemote: deleteRemote ?? () async {},
           clearLocal: () async {},
           signOut: () async {},

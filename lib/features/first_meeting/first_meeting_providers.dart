@@ -12,6 +12,7 @@ final authenticatedMeetingControllerProvider =
       final account = ref.watch(authenticatedAccountProvider);
       if (account == null) return null;
       final client = ref.watch(clientProvider);
+      final deleted = ref.watch(deletedAccountsProvider);
       final controller = FirstMeetingController(
         storage: FirstMeetingFileStorage.forAccount(account),
         // The restore reads the profile out of the home snapshot that the
@@ -22,7 +23,8 @@ final authenticatedMeetingControllerProvider =
           account,
         ),
         isCurrentAccount: () =>
-            client.auth.authInfo?.authUserId.toString() == account,
+            client.auth.authInfo?.authUserId.toString() == account &&
+            !deleted.contains(account),
       );
       final stopObserving = ref
           .watch(watchSyncServiceProvider)

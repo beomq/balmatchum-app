@@ -32,6 +32,7 @@ final authenticatedProductControllerProvider = Provider<ProductController?>((
   if (account == null) return null;
   final client = ref.watch(clientProvider);
   final billing = ref.watch(billingRepositoryProvider);
+  final deleted = ref.watch(deletedAccountsProvider);
   final controller = ProductController(
     ProductRepository(
       client,
@@ -42,7 +43,8 @@ final authenticatedProductControllerProvider = Provider<ProductController?>((
     ref.watch(dailyStepsControllerProvider),
     ref.watch(watchSyncServiceProvider),
     account: account,
-    isCurrentAccount: () => billing?.isCurrent ?? false,
+    isCurrentAccount: () =>
+        (billing?.isCurrent ?? false) && !deleted.contains(account),
     bootstrap: ref.watch(homeBootstrapProvider),
   );
   ref.onDispose(controller.dispose);

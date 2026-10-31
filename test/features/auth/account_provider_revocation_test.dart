@@ -25,6 +25,7 @@ void main() {
           },
         );
         final deletion = AccountDeletion(
+          forgetAccount: () {},
           markPending: () async {},
           clearPending: () async => events.add('done'),
           wasRemoteDeleted: () async => false,
@@ -71,6 +72,7 @@ void main() {
         },
       );
       final deletion = AccountDeletion(
+        forgetAccount: () {},
         markPending: () async {},
         clearPending: () async => events.add('done'),
         wasRemoteDeleted: () async => false,

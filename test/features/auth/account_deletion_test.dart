@@ -7,6 +7,7 @@ void main() {
     // Given
     final events = <String>[];
     final deletion = AccountDeletion(
+      forgetAccount: () {},
       markPending: () async {},
       clearPending: () async {},
       wasRemoteDeleted: () async => false,
@@ -28,6 +29,7 @@ void main() {
     // Given
     final events = <String>[];
     final deletion = AccountDeletion(
+      forgetAccount: () {},
       markPending: () async {},
       clearPending: () async => events.add('done'),
       wasRemoteDeleted: () async => false,
@@ -52,6 +54,7 @@ void main() {
       // Given
       final events = <String>[];
       final deletion = AccountDeletion(
+        forgetAccount: () {},
         markPending: () async {},
         clearPending: () async {},
         wasRemoteDeleted: () async => true,
@@ -79,6 +82,7 @@ void main() {
       var remoteCalls = 0;
       var signOutCalls = 0;
       AccountDeletion create() => AccountDeletion(
+        forgetAccount: () {},
         markPending: () async => pending = true,
         clearPending: () async => pending = false,
         wasRemoteDeleted: () async => deleted,
@@ -106,6 +110,7 @@ void main() {
     () async {
       final events = <String>[];
       final deletion = AccountDeletion(
+        forgetAccount: () {},
         markPending: () async {},
         clearPending: () async {},
         wasRemoteDeleted: () async => false,
@@ -128,6 +133,7 @@ void main() {
     () async {
       final events = <String>[];
       final deletion = AccountDeletion(
+        forgetAccount: () {},
         markPending: () async {},
         clearPending: () async {},
         wasRemoteDeleted: () async => false,
@@ -148,6 +154,7 @@ void main() {
       final events = <String>[];
       var fail = true;
       final deletion = AccountDeletion(
+        forgetAccount: () {},
         markPending: () async {},
         clearPending: () async {},
         wasRemoteDeleted: () async => false,

@@ -12,6 +12,7 @@ class AccountDeletion {
     required this.wasRemoteDeleted,
     required this.markRemoteDeleted,
     required this.revokeProviders,
+    required this.forgetAccount,
   });
 
   final Future<void> Function() deleteRemote;
@@ -22,6 +23,10 @@ class AccountDeletion {
   final Future<bool> Function() wasRemoteDeleted;
   final Future<void> Function() markRemoteDeleted;
   final Future<void> Function() revokeProviders;
+
+  /// Drops the deleted account's pooled client and home snapshot and stops
+  /// its late responses; runs before any step that can fail afterwards.
+  final void Function() forgetAccount;
   bool _remoteDeleted = false;
   bool _busy = false;
 
@@ -43,7 +48,10 @@ class AccountDeletion {
           rethrow;
         }
         _remoteDeleted = true;
+        forgetAccount();
         await markRemoteDeleted();
+      } else {
+        forgetAccount();
       }
       try {
         await revokeProviders();
