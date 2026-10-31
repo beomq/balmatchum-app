@@ -95,6 +95,10 @@ final homeBootstrapProvider = Provider<HomeBootstrap?>((ref) {
   return bootstrap;
 });
 
+/// Accounts whose server deletion succeeded in this process. Their
+/// controllers apply no further response while local cleanup is retried.
+final deletedAccountsProvider = Provider<Set<String>>((ref) => <String>{});
+
 final watchSyncServiceProvider = Provider<WatchSyncService?>((ref) {
   if (serverUrl.isEmpty ||
       kIsWeb ||
@@ -231,6 +235,9 @@ final accountDeletionProvider = Provider<AccountDeletion?>((ref) {
   final client = ref.watch(clientProvider);
   final logout = ref.watch(logoutProvider)!;
   final notice = ref.watch(accountNoticeProvider);
+  final pool = ref.watch(accountClientPoolProvider);
+  final bootstrap = ref.watch(homeBootstrapProvider);
+  final deleted = ref.watch(deletedAccountsProvider);
   // Same instance as login: Android can revoke only its in-process account.
   final google = ref.watch(nativeSocialLoginSdkProvider);
   final providers = AccountProviderRevocation(
@@ -271,6 +278,12 @@ final accountDeletionProvider = Provider<AccountDeletion?>((ref) {
         notice.value = '인증이 만료되어 기기 정보를 정리했어요. 계정 삭제 여부는 다시 로그인해 확인해 주세요.';
         rethrow;
       }
+    },
+    forgetAccount: () {
+      deleted.add(account);
+      bootstrap?.discard();
+      // In-flight requests finish first; the next one gets a new client.
+      pool?.close();
     },
     revokeProviders: () async {
       if (!await providers.revoke()) {
