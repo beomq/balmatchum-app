@@ -362,12 +362,8 @@ void main() {
       isTrue,
     );
     expect(bought.balance, 39);
-    expect(repository.calls, [
-      'themes',
-      'outfits',
-      'purchase:cloudy',
-      'themes',
-    ]);
+    // The first attempt applies the server's answer without a re-read.
+    expect(repository.calls, ['themes', 'outfits', 'purchase:cloudy']);
   });
 
   test('real account buys, wears and removes the vest on the server', () async {
@@ -394,11 +390,8 @@ void main() {
       'themes',
       'outfits',
       'purchaseOutfit:vest-low-v',
-      'outfits',
       'equipOutfit:vest-low-v',
-      'outfits',
       'unequipOutfit',
-      'outfits',
     ]);
     // Each confirmed change is a new intent with its own idempotency key.
     expect(repository.outfitRequests.toSet(), hasLength(3));
@@ -489,9 +482,16 @@ void main() {
     // When: the user retries the ambiguous purchase.
     await controller.themeAction(cloudy, equip: false);
 
-    // Then: the retry retains the original idempotency key.
+    // Then: the retry retains the original idempotency key and re-reads.
     expect(repository.themeRequests, hasLength(2));
     expect(repository.themeRequests.toSet(), hasLength(1));
+    expect(repository.calls, [
+      'themes',
+      'outfits',
+      'purchase:cloudy',
+      'purchase:cloudy',
+      'themes',
+    ]);
   });
 
   test('lost vest response retries with the same request id', () async {
@@ -507,6 +507,13 @@ void main() {
     expect(bought.outfits!.items.single.owned, isTrue);
     expect(repository.outfitRequests, hasLength(2));
     expect(repository.outfitRequests.toSet(), hasLength(1));
+    expect(repository.calls, [
+      'themes',
+      'outfits',
+      'purchaseOutfit:vest-low-v',
+      'purchaseOutfit:vest-low-v',
+      'outfits',
+    ]);
   });
 
   test('wardrobe still opens with themes when outfits fail', () async {
