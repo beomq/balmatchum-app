@@ -1,6 +1,7 @@
 # Android Dev 빌드와 서명 AAB
 
 Android만 `dev` / `prod` flavor를 사용합니다. iOS와 Dart 제품 동작은 변경하지 않습니다.
+Android 앱 로컬 파일과 shared preferences는 백업 및 기기 이전에서 제외됩니다.
 
 | flavor | applicationId | 표시 이름 | release |
 | --- | --- | --- | --- |
