@@ -87,6 +87,7 @@ class ProductController extends ChangeNotifier {
   void dispose() {
     _disposed = true;
     disconnect();
+    repository.close();
     _requests.clear();
     super.dispose();
   }

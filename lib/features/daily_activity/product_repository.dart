@@ -21,6 +21,8 @@ class ProductRepository {
     (c) => c.product.claimDayWithPremium(date, requestId, revision),
   );
 
+  _ScopedClient? _scoped;
+
   Future<T> _records<T>(Future<T> Function(Client) request) async {
     if (accountId == null) return request(client);
     final authentication = client.auth.authInfo;
@@ -31,19 +33,33 @@ class ProductRepository {
     if (!identical(authentication, client.auth.authInfo) || header == null) {
       throw StateError('Record authentication changed');
     }
-    final scoped = Client(
-      client.host,
-      connectionTimeout: client.connectionTimeout,
-    )..authKeyProvider = _RecordAuthHeader(header);
+    // One client per auth header keeps its HTTP connection open across
+    // reads; a new header retires the old client once its requests finish.
+    var scoped = _scoped;
+    if (scoped == null || scoped.header != header) {
+      scoped?.retire();
+      scoped = _scoped = _ScopedClient(
+        Client(client.host, connectionTimeout: client.connectionTimeout)
+          ..authKeyProvider = _RecordAuthHeader(header),
+        header,
+      );
+    }
+    scoped.active++;
     try {
-      final result = await request(scoped);
+      final result = await request(scoped.client);
       if (!identical(authentication, client.auth.authInfo)) {
         throw StateError('Record authentication changed');
       }
       return result;
     } finally {
-      scoped.close();
+      scoped.active--;
+      if (scoped.retired) scoped.retire();
     }
+  }
+
+  void close() {
+    _scoped?.retire();
+    _scoped = null;
   }
 
   Future<void> connectDevelopmentUser() async {
@@ -122,6 +138,22 @@ class ProductRepository {
 
   Future<OutfitStore> unequipOutfit(String requestId) =>
       _records((client) => client.product.unequipOutfit(requestId));
+}
+
+class _ScopedClient {
+  _ScopedClient(this.client, this.header);
+  final Client client;
+  final String header;
+  int active = 0;
+  bool retired = false;
+  bool _closed = false;
+
+  void retire() {
+    retired = true;
+    if (active > 0 || _closed) return;
+    _closed = true;
+    client.close();
+  }
 }
 
 class _RecordAuthHeader implements ClientAuthKeyProvider {
