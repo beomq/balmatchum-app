@@ -450,10 +450,20 @@ void main() {
   ) async {
     final server = HomeServer()
       ..store = themeStore(cloudyOwned: true).copyWith(equippedTheme: 'cloudy');
+    tester.view.devicePixelRatio = 3;
+    addTearDown(tester.view.resetDevicePixelRatio);
     await pumpHome(tester, product: productFor(server));
+    final stage = find.byWidgetPredicate(
+      (widget) =>
+          widget is Image &&
+          widget.image is ResizeImage &&
+          (widget.image as ResizeImage).imageProvider ==
+              const AssetImage('assets/first_meeting/cloudy.png'),
+    );
+    expect(stage, findsOneWidget);
     expect(
-      find.image(const AssetImage('assets/first_meeting/cloudy.png')),
-      findsOneWidget,
+      (tester.widget<Image>(stage).image as ResizeImage).width,
+      (tester.getSize(stage).width * 3).round(),
     );
   });
 
