@@ -122,22 +122,50 @@ class PremiumQuizzes extends Quizzes {
 }
 
 /// Generated-client calls answered from memory and logged by their endpoint
-/// method in start order. Calls depend on the earlier calls of their own
-/// endpoint and on the home snapshot the whole entry waits for: a call's
-/// round trip is one more than the deepest of those finished when it starts,
-/// so the quiz read beside the upload shares the upload's round trip.
+/// method in start order, with every start and finish in [events]. A call's
+/// round trip is one more than the deepest call of any endpoint that had
+/// already finished when it started: a call that starts only after another
+/// finished is another trip, two calls out at once share one.
 class EndpointLog {
   EndpointLog(this.answer);
   final Object? Function(String method) answer;
   final calls = <String>[];
   final finished = <String>[];
+  final events = <String>[];
   final _held = <String, Completer<void>>{};
+  final _gates = <String, Future<void> Function()>{};
   final _started = <String, Completer<void>>{};
-  final _settled = <String, int>{};
+  final _onStart = <void Function()>[];
+  int _settled = 0;
   int roundTrips = 0;
 
-  static String _endpoint(String method) =>
-      _productCalls.contains(method) ? 'product' : method;
+  /// [method] answers only after [gate] completes.
+  void answerWhen(String method, Future<void> Function() gate) =>
+      _gates[method] = gate;
+
+  /// Completes once [method] has been called or [idle] holds after one of
+  /// [listenable]'s notifications: the other call is out, or can no longer
+  /// come.
+  Future<void> startedOr(
+    String method,
+    Listenable listenable,
+    bool Function() idle,
+  ) {
+    final done = Completer<void>();
+    void check() {
+      if (!done.isCompleted && (calls.contains(method) || idle())) {
+        done.complete();
+      }
+    }
+
+    _onStart.add(check);
+    listenable.addListener(check);
+    check();
+    return done.future.whenComplete(() {
+      _onStart.remove(check);
+      listenable.removeListener(check);
+    });
+  }
 
   /// Keeps [method]'s next answer until [release].
   void hold(String method) => _held[method] = Completer<void>();
@@ -151,17 +179,20 @@ class EndpointLog {
 
   Future<T> call<T>(String method) async {
     calls.add(method);
-    final endpoint = _endpoint(method);
-    final depth =
-        max(_settled[endpoint] ?? 0, _settled['getHomeSnapshot'] ?? 0) + 1;
+    events.add('start $method');
+    final depth = _settled + 1;
     roundTrips = max(roundTrips, depth);
     final started = _started.putIfAbsent(method, Completer<void>.new);
     if (!started.isCompleted) started.complete();
+    for (final check in [..._onStart]) {
+      check();
+    }
+    await _gates[method]?.call();
     final held = _held[method];
     if (held != null) await held.future;
     finished.add(method);
-    _settled[endpoint] = max(_settled[endpoint] ?? 0, depth);
-    if (method == 'getHomeSnapshot') _settled[method] = depth;
+    events.add('end $method');
+    _settled = max(_settled, depth);
     return answer(method) as T;
   }
 }
@@ -220,6 +251,10 @@ class EntryRig {
 
   FirstMeetingController get meeting =>
       container.read(authenticatedMeetingControllerProvider)!;
+  ProductController get product =>
+      container.read(authenticatedProductControllerProvider)!;
+  QuizController get quiz =>
+      container.read(authenticatedQuizControllerProvider)!;
 
   /// Product endpoint calls in start order.
   List<String> get productCalls =>
@@ -319,6 +354,20 @@ class EntryRig {
       ],
     );
     rig = EntryRig._(log, container, steps, directory)..profile = profile;
+    // A reply crosses the network (0.5-1.2 s to the EU region) while the
+    // device's own work before a request takes milliseconds. So the quiz
+    // read and the step upload each answer once the other is out, or once
+    // the other's controller is idle and it can no longer come.
+    log
+      ..answerWhen(
+        'getToday',
+        () =>
+            log.startedOr('submitSteps', rig.product, () => !rig.product.busy),
+      )
+      ..answerWhen(
+        'submitSteps',
+        () => log.startedOr('getToday', rig.quiz, () => !rig.quiz.busy),
+      );
     addTearDown(() {
       container.dispose();
       steps.dispose();
@@ -630,18 +679,20 @@ void main() {
     expect(retry, findsOneWidget);
   });
 
-  testWidgets('the streak counts recorded days; an unknown one shows none', (
+  testWidgets('the streak counts recorded days and outlives a failed refresh', (
     tester,
   ) async {
     final server = HomeServer()
       ..recentDays = [
         for (var i = 0; i < 6; i++) record().copyWith(date: dayKey(i)),
       ];
-    await pumpHome(tester, product: productFor(server));
+    final product = productFor(server);
+    await pumpHome(tester, product: product);
     // The home snapshot carries the days; no separate read.
     expect(server.calls.where((c) => c == 'days'), isEmpty);
     expect(text(tester, 'home_streak'), startsWith('6일'));
     expect(key('home_tile_records_status'), findsOneWidget);
+    // A failed snapshot keeps the last home, streak included, and reports it.
     server.failThemes = true;
     await tester.fling(
       find.byType(RefreshIndicator),
@@ -649,9 +700,24 @@ void main() {
       1000,
     );
     await tester.pumpAndSettle();
+    expect(server.calls.where((c) => c == 'home'), hasLength(2));
     expect(server.calls.where((c) => c == 'days'), isEmpty);
+    expect(product.error, isNotNull);
+    expect(text(tester, 'home_streak'), startsWith('6일'));
+    expect(key('home_tile_records_status'), findsOneWidget);
+    // No recorded day in the window shows no streak, only the week's zero.
+    server
+      ..failThemes = false
+      ..recentDays = const [];
+    await tester.fling(
+      find.byType(RefreshIndicator),
+      const Offset(0, 400),
+      1000,
+    );
+    await tester.pumpAndSettle();
+    expect(product.error, isNull);
     expect(key('home_streak'), findsNothing);
-    expect(key('home_tile_records_status'), findsNothing);
+    expect(text(tester, 'home_tile_records_status'), '이번 주 기록 0일');
   });
 
   for (final (name, days, expected) in [
@@ -728,18 +794,15 @@ void main() {
             ..release('getHomeSnapshot');
           await until(rig.meeting, () => rig.meeting.state.isComplete);
           await tester.pump();
+          final product = rig.product;
+          final quiz = rig.quiz;
           await log.started('submitSteps');
-          await log.started('getToday');
+          await log.startedOr('getToday', quiz, () => !quiz.busy);
           await tester.pump();
           // Drawn from the first round trip while the upload is still out.
           expect(log.finished, contains('getHomeSnapshot'));
           expect(log.finished, isNot(contains('submitSteps')));
           expect(tester.widget<Text>(wallet()).data, '359P');
-          expect(log.calls, contains('getToday'));
-          final product = rig.container.read(
-            authenticatedProductControllerProvider,
-          )!;
-          final quiz = rig.container.read(authenticatedQuizControllerProvider)!;
           log.release('submitSteps');
           await until(
             Listenable.merge([product, quiz]),
@@ -751,8 +814,18 @@ void main() {
           );
           await tester.pump();
           debugPrint(
-            'first entry calls=${log.calls} product=${rig.productCalls} '
-            'roundTrips=${log.roundTrips} pooledClients=${rig.pooledClients}',
+            'first entry calls=${log.calls} events=${log.events} '
+            'product=${rig.productCalls} roundTrips=${log.roundTrips} '
+            'pooledClients=${rig.pooledClients}',
+          );
+          expect(log.roundTrips, 2);
+          // Both were out before either answered.
+          final firstEnd = log.events.indexWhere(
+            (e) => e == 'end getToday' || e == 'end submitSteps',
+          );
+          expect(
+            log.events.take(firstEnd),
+            containsAll(['start getToday', 'start submitSteps']),
           );
           expect(rig.productCalls, ['getHomeSnapshot', 'submitSteps']);
           expect(log.calls, isNot(contains('getProfile')));
@@ -785,18 +858,11 @@ void main() {
           profile: view(goal: 8000),
           registered: false,
         );
-        // The upload waits until the quiz read is out, as it is in the app.
-        rig.log.hold('submitSteps');
         await tester.pumpWidget(rig.app());
         await until(rig.meeting, () => rig.meeting.state.isComplete);
         await tester.pump();
-        await rig.log.started('submitSteps');
-        await rig.log.started('getToday');
-        rig.log.release('submitSteps');
-        final product = rig.container.read(
-          authenticatedProductControllerProvider,
-        )!;
-        final quiz = rig.container.read(authenticatedQuizControllerProvider)!;
+        final product = rig.product;
+        final quiz = rig.quiz;
         await until(
           Listenable.merge([product, quiz]),
           () =>
@@ -806,7 +872,8 @@ void main() {
               rig.log.finished.contains('submitSteps'),
         );
         debugPrint(
-          'first registration product=${rig.productCalls} '
+          'first registration calls=${rig.log.calls} '
+          'events=${rig.log.events} product=${rig.productCalls} '
           'roundTrips=${rig.log.roundTrips} '
           'pooledClients=${rig.pooledClients}',
         );

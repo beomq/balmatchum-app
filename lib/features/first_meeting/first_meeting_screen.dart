@@ -146,8 +146,11 @@ class _FirstMeetingScreenState extends State<FirstMeetingScreen> {
       return;
     }
     homeRefreshed = true;
+    // A product handed over in the same frame schedules its own refresh;
+    // this one then stays out so the entry runs one refresh, not two.
+    final product = widget.product;
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) unawaited(refreshHome());
+      if (mounted && widget.product == product) unawaited(refreshHome());
     });
   }
 
