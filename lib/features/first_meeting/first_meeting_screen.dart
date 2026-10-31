@@ -812,16 +812,15 @@ class _FirstMeetingScreenState extends State<FirstMeetingScreen> {
                   child: Stack(
                     fit: StackFit.expand,
                     children: [
-                      if (product?.store == null ||
-                          product!.store!.equippedTheme == 'sunny')
-                        Image.asset(
-                          'assets/first_meeting/sunny.png',
-                          fit: BoxFit.cover,
-                        )
+                      if (themeBackgroundAsset(
+                            product?.store?.equippedTheme ?? 'sunny',
+                          )
+                          case final asset?)
+                        Image.asset(asset, fit: BoxFit.cover)
                       else
                         ColoredBox(
                           color: Color(
-                            product.store!.items
+                            product!.store!.items
                                 .firstWhere(
                                   (item) =>
                                       item.themeId ==
