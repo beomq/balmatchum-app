@@ -475,11 +475,18 @@ class ProductController extends ChangeNotifier {
     required bool equip,
   }) => _mutate(() async {
     final key = '${equip ? 'equip' : 'buy'}:${theme.id}';
+    // A replayed answer can be stale; only a retry re-reads the server.
+    final retry = _requests.containsKey(key);
     try {
       final confirmed = equip
           ? await repository.equip(theme.id, request(key))
           : await repository.purchase(theme.id, request(key));
       _requests.remove(key);
+      if (!retry) {
+        store = confirmed;
+        notifyListeners();
+        return wardrobe(confirmed, outfitStore: outfits);
+      }
       try {
         store = await repository.themes();
       } on Exception {
@@ -509,9 +516,11 @@ class ProductController extends ChangeNotifier {
     OutfitChange change,
   ) => _mutate(() async {
     final key = 'outfit:${change.name}:${outfit.id}';
+    final retry = _requests.containsKey(key);
+    api.OutfitStore? answer;
     try {
       final requestId = request(key);
-      await switch (change) {
+      answer = await switch (change) {
         OutfitChange.purchase => repository.purchaseOutfit(
           outfit.id,
           requestId,
@@ -530,11 +539,15 @@ class ProductController extends ChangeNotifier {
     _requests.remove(key);
     _checkAccount();
     api.OutfitStore? worn;
-    try {
-      // A replayed answer can be stale; show what the server holds now.
-      worn = await repository.outfits();
-    } catch (_) {
-      error = '작업은 완료됐지만 현재 적용 상태를 확인하지 못했어요. 다시 조회해 주세요.';
+    if (retry) {
+      try {
+        // A replayed answer can be stale; show what the server holds now.
+        worn = await repository.outfits();
+      } catch (_) {
+        error = '작업은 완료됐지만 현재 적용 상태를 확인하지 못했어요. 다시 조회해 주세요.';
+      }
+    } else {
+      worn = answer;
     }
     _checkAccount();
     outfits = worn;
