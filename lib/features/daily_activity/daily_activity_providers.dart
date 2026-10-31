@@ -33,11 +33,17 @@ final authenticatedProductControllerProvider = Provider<ProductController?>((
   final client = ref.watch(clientProvider);
   final billing = ref.watch(billingRepositoryProvider);
   final controller = ProductController(
-    ProductRepository(client, accountId: account, billing: billing),
+    ProductRepository(
+      client,
+      accountId: account,
+      billing: billing,
+      pool: ref.watch(accountClientPoolProvider),
+    ),
     ref.watch(dailyStepsControllerProvider),
     ref.watch(watchSyncServiceProvider),
     account: account,
     isCurrentAccount: () => billing?.isCurrent ?? false,
+    bootstrap: ref.watch(homeBootstrapProvider),
   );
   ref.onDispose(controller.dispose);
   return controller;

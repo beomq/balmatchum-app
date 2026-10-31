@@ -146,27 +146,33 @@ class _FirstMeetingScreenState extends State<FirstMeetingScreen> {
       return;
     }
     homeRefreshed = true;
+    // A product handed over in the same frame schedules its own refresh;
+    // this one then stays out so the entry runs one refresh, not two.
+    final product = widget.product;
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) unawaited(refreshHome());
+      if (mounted && widget.product == product) unawaited(refreshHome());
     });
   }
 
   /// Entry, app return, pull and retry share one refresh (guide 3.1). A real
-  /// account reconnects first; the dev test user connects only by its button.
+  /// account reconnects only after a failure; the dev test user connects only
+  /// by its button. The snapshot carries the streak, and the quiz tile reads
+  /// alongside the step upload instead of after it.
   Future<void> refreshHome() async {
     final product = widget.product;
     if (product != null && !product.connected && product.account != null) {
       await product.connect();
     }
-    if (product != null && product.connected) {
-      await product.sync();
-      // A sync still running for another trigger reads these itself.
-      if (!product.busy) await product.loadStreak();
-    } else {
-      await widget.dailySteps?.refresh();
-    }
-    // The tile shows today's quiz state; the quiz screen observes benefits.
-    await widget.quiz?.load(observePremium: false);
+    final dailySteps = widget.dailySteps;
+    final quiz = widget.quiz;
+    await Future.wait([
+      if (product != null && product.connected)
+        product.sync()
+      else if (dailySteps != null)
+        dailySteps.refresh(),
+      // The tile shows today's quiz state; the quiz screen observes benefits.
+      if (quiz != null) quiz.load(observePremium: false),
+    ]);
   }
 
   @override
