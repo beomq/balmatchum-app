@@ -30,11 +30,13 @@ final billingStoreProvider = Provider<BillingStore?>((ref) {
 final billingRepositoryProvider = Provider<ServerpodBillingRepository?>((ref) {
   final authentication = ref.watch(billingAuthenticationProvider);
   if (authentication == null) return null;
-  return ServerpodBillingRepository(
+  final repository = ServerpodBillingRepository(
     ref.watch(clientProvider),
     authentication.authUserId.toString(),
     ref.watch(billingQueueProvider),
   );
+  ref.onDispose(repository.close);
+  return repository;
 });
 
 final billingControllerProvider = Provider<BillingController?>((ref) {
