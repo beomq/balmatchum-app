@@ -225,7 +225,16 @@ class ProductController extends ChangeNotifier {
       _checkAccount();
       // The first refresh takes the bootstrap snapshot, so the home shows
       // without a round trip of its own; later ones read one snapshot.
-      await refresh();
+      try {
+        await refresh();
+      } catch (_) {
+        // A failed read keeps the last home on screen and skips the upload,
+        // which needs today's record. An account change, or no home shown
+        // yet, still clears everything below.
+        if (!_active || _snapshotDate == null) rethrow;
+        error = '동기화를 완료하지 못했어요. 기기의 기록은 유지돼요.';
+        return;
+      }
       _checkAccount();
       final observation = steps.result;
       if (observation != null &&

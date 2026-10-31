@@ -715,6 +715,50 @@ void main() {
     },
   );
 
+  test(
+    'a failed snapshot during sync keeps the last home and sets an error',
+    () async {
+      final repository = AccountRepository()
+        ..wardrobeOutfits = outfitStore(owned: true, equipped: 'vest-low-v');
+      final controller = accountController(repository);
+      await controller.sync();
+      final store = controller.store;
+      final outfits = controller.outfits;
+      final today = controller.today;
+      final wallet = controller.wallet;
+      final streak = controller.streak;
+      expect(store, isNotNull);
+      expect(controller.error, isNull);
+      repository.failThemes = true;
+      await controller.sync();
+      debugPrint('failed sync calls: ${repository.calls}');
+      expect(repository.calls, ['home', 'home']);
+      expect(controller.error, isNotNull);
+      expect(controller.connected, isTrue);
+      expect(controller.busy, isFalse);
+      expect(controller.store, same(store));
+      expect(controller.outfits, same(outfits));
+      expect(controller.today, same(today));
+      expect(controller.wallet, same(wallet));
+      expect(controller.streak, same(streak));
+      expect(
+        controller.wornLayer('shih-tzu'),
+        'assets/wardrobe/vest/shih-tzu.png',
+      );
+    },
+  );
+
+  test('a failed first snapshot during sync has nothing to keep', () async {
+    final repository = AccountRepository()..failRead = true;
+    final controller = accountController(repository);
+    await controller.sync();
+    expect(repository.calls, ['home']);
+    expect(controller.error, isNotNull);
+    expect(controller.connected, isFalse);
+    expect(controller.store, isNull);
+    expect(controller.today, isNull);
+  });
+
   test('a snapshot of another day is read once more, then accepted', () async {
     final repository = AccountRepository()..snapshotDates.add('2000-01-01');
     final controller = accountController(repository);
