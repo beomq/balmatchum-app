@@ -163,9 +163,12 @@ void main() {
     final repository = AccountRepository()..recentDays = [day(today, 0)];
     final product = accountController(repository);
     await product.loadStreak();
-    expect(product.streak, isNotNull);
+    expect(product.streak!.days, 1);
+    // The refresh after the delete reads the streak again from the server.
+    repository.recentDays = const [];
     await product.deleteDay(today);
-    expect(product.streak, isNull);
+    expect(product.streak!.days, 0);
+    repository.recentDays = [day(today, 0)];
     await product.loadStreak();
     expect(product.streak, isNotNull);
     product.disconnect();

@@ -372,15 +372,15 @@ void main() {
     expect(text(tester, 'daily_steps_count'), '–');
     expect(ring(tester).progress, isNull);
     expect(retry, findsOneWidget);
-    // The retry runs the home refresh: one device read, one server read.
-    final dayReads = server.calls.where((c) => c == 'day').length;
+    // The retry runs the home refresh: one device read, one server snapshot.
+    final homeReads = server.calls.where((c) => c == 'home').length;
     final deviceReads = reads;
     next = const DailyStepsResult(DailyStepsStatus.empty, null);
     await tester.ensureVisible(retry);
     await tester.tap(retry);
     await tester.pumpAndSettle();
     expect(reads, deviceReads + 1);
-    expect(server.calls.where((c) => c == 'day'), hasLength(dayReads + 1));
+    expect(server.calls.where((c) => c == 'home'), hasLength(homeReads + 1));
     expect(retry, findsNothing);
     next = available(6840, dayKey(1));
     await steps.refresh();

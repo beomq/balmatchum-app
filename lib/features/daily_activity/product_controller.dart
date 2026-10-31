@@ -1,5 +1,8 @@
+import 'dart:io';
+
 import 'package:balmatchum_client/balmatchum_client.dart' as api;
 import 'package:flutter/foundation.dart';
+import 'package:path_provider/path_provider.dart';
 import 'package:serverpod_auth_core_flutter/serverpod_auth_core_flutter.dart';
 
 import '../quiz/quiz_screen.dart';
@@ -8,6 +11,7 @@ import '../wardrobe/wardrobe_models.dart';
 import '../watch_sync/watch_sync_service.dart';
 import '../watch_sync/watch_bridge.dart';
 import 'daily_steps_controller.dart';
+import 'home_bootstrap.dart';
 import 'product_repository.dart';
 import 'record_mapping.dart';
 import 'step_streak.dart';
@@ -30,8 +34,17 @@ class ProductController extends ChangeNotifier {
     this.watch, {
     this.account,
     this.isCurrentAccount,
+    this.bootstrap,
+    this.stepDirectory = getApplicationSupportDirectory,
   }) : connected = account != null;
   final ProductRepository repository;
+
+  /// The snapshot started when the account was known; the first refresh
+  /// takes it instead of reading the server again.
+  final HomeBootstrap? bootstrap;
+
+  /// Where the step upload keeps its pending payload.
+  final Future<Directory> Function() stepDirectory;
   final DailyStepsController steps;
   final WatchSyncService? watch;
   final String? account;
@@ -78,6 +91,11 @@ class ProductController extends ChangeNotifier {
   /// Null until read, after a failed read and after a change that can break
   /// it, so the home never shows an old number.
   StepStreak? streak;
+
+  /// The last [StepStreak.window] KST days of the last snapshot, kept so an
+  /// upload answer can patch today without another read.
+  List<api.DailyRecord> _recentDays = const [];
+  DateTime? _snapshotDate;
   final _requests = <String, String>{};
 
   void _checkAccount() {
@@ -106,6 +124,8 @@ class ProductController extends ChangeNotifier {
     outfits = null;
     quiz = null;
     streak = null;
+    _recentDays = const [];
+    _snapshotDate = null;
   }
 
   String request(String key) =>
@@ -134,41 +154,54 @@ class ProductController extends ChangeNotifier {
     }
   }
 
+  /// One home snapshot replaces today, the wallet, themes, outfits and the
+  /// streak together. A failed read throws and leaves the last state shown.
   Future<void> refresh() async {
     _checkAccount();
-    // Each read is a round trip to a distant server, so all four start at
-    // once instead of one after another.
-    final dayRead = repository.day(ProductRepository.today);
-    final walletRead = repository.wallet();
-    // A real account's theme and outfits are decoration; keep the last known
-    // state so steps, points and records still refresh.
-    final themesRead = _orLast(repository.themes(), store);
-    final wornRead = _orLast(repository.outfits(), outfits);
-    // Every failure is still seen by the awaits below; this only stops a
-    // later one from being reported as unhandled after an earlier throw.
-    for (final read in [dayRead, walletRead, themesRead, wornRead]) {
-      read.ignore();
-    }
-    final day = await dayRead;
-    final balance = await walletRead;
-    final themes = await themesRead;
-    final worn = await wornRead;
+    final snapshot = await _readSnapshot();
     _checkAccount();
     if (account == null) {
       final question = await repository.quiz(ProductRepository.today);
       _checkAccount();
       quiz = question;
     }
-    store = themes;
-    outfits = worn;
-    today = day;
-    wallet = balance;
+    store = snapshot.themes;
+    outfits = snapshot.outfits;
+    today = snapshot.day;
+    wallet = snapshot.wallet;
+    _recentDays = snapshot.recentDays;
+    _snapshotDate = DateTime.parse(snapshot.date);
+    // The same [StepStreak.window] days the records page reads.
+    streak = StepStreak.of(_recentDays, _snapshotDate!);
     notifyListeners();
   }
 
-  Future<T?> _orLast<T>(Future<T> read, T? last) => account == null
-      ? read
-      : read.then<T?>((value) => value, onError: (Object _) => last);
+  /// The bootstrap's snapshot the first time, a fresh read after that. A
+  /// snapshot of another KST day than the device's is read once more; if the
+  /// server still disagrees, its date is today (the device clock can be off).
+  Future<api.HomeSnapshot> _readSnapshot() async {
+    final started = account == null ? null : bootstrap?.take(account!);
+    final snapshot = await (started ?? repository.home());
+    if (snapshot.date == ProductRepository.dateKey(ProductRepository.today)) {
+      return snapshot;
+    }
+    _checkAccount();
+    return repository.home();
+  }
+
+  /// Puts an upload's answer in place of the same day without another read;
+  /// the wallet, themes and outfits do not change with steps.
+  void _patchDay(api.DailyRecord record) {
+    if (today?.date == record.date) today = record;
+    _recentDays = [
+      for (final day in _recentDays)
+        if (day.date != record.date) day,
+      record,
+    ];
+    final date = _snapshotDate;
+    if (date != null) streak = StepStreak.of(_recentDays, date);
+    notifyListeners();
+  }
 
   Future<void> refreshAfterSuccess() async {
     try {
@@ -190,24 +223,40 @@ class ProductController extends ChangeNotifier {
       _checkAccount();
       await steps.refresh();
       _checkAccount();
+      // The first refresh takes the bootstrap snapshot, so the home shows
+      // without a round trip of its own; later ones read one snapshot.
+      try {
+        await refresh();
+      } catch (_) {
+        // A failed read keeps the last home on screen and skips the upload,
+        // which needs today's record. An account change, or no home shown
+        // yet, still clears everything below.
+        if (!_active || _snapshotDate == null) rethrow;
+        error = '동기화를 완료하지 못했어요. 기기의 기록은 유지돼요.';
+        return;
+      }
+      _checkAccount();
       final observation = steps.result;
       if (observation != null &&
           (account == null ||
               observation.status == DailyStepsStatus.available)) {
-        await StepUpload(
-          repository.client,
-          repository.client.auth.authInfo!.authUserId.toString(),
-          pool: repository.pool,
-        ).submit(
-          observation,
-          knownDay: today,
-          knownStreamGeneration: wallet?.streamGeneration,
-        );
+        final uploaded =
+            await StepUpload(
+              repository.client,
+              repository.client.auth.authInfo!.authUserId.toString(),
+              pool: repository.pool,
+              directory: stepDirectory,
+            ).submit(
+              observation,
+              knownDay: today,
+              knownStreamGeneration: wallet?.streamGeneration,
+            );
+        _checkAccount();
+        if (uploaded != null) _patchDay(uploaded);
       }
       _checkAccount();
+      // Only a connected watch adds round trips of its own here.
       await watch?.resumeAndSync();
-      _checkAccount();
-      await refresh();
     } catch (_) {
       disconnect();
       if (_active) error = '동기화를 완료하지 못했어요. 기기의 기록은 유지돼요.';
