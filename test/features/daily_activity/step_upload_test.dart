@@ -402,6 +402,50 @@ void main() {
       });
     });
 
+    test('an account switch while a pending upload is paused rejects it even '
+        'on a pool another caller created', () async {
+      await _rig((rig) async {
+        final pending = DailyStepInput(
+          date: '2026-10-19',
+          streamGeneration: 1,
+          revision: 1,
+          windowStart: DateTime.utc(2026, 10, 18, 15),
+          windowEnd: DateTime.utc(2026, 10, 19, 15),
+          observedAt: DateTime.utc(2026, 10, 19, 1),
+          total: 4000,
+          availability: 'confirmed',
+        );
+        await rig.writeState({
+          'generation': 1,
+          'revision': 1,
+          'pending': pending.toJson(),
+        });
+        // Another caller (like the repository's reads) creates the pooled
+        // client first, with a provider that never checks the account.
+        final header = (await rig.client.auth.authHeaderValue)!;
+        await rig.pool.run(header, _Unchecked.new, (_) async {});
+        final entered = Completer<void>();
+        final release = Completer<Directory>();
+        rig.directoryHook = () {
+          entered.complete();
+          return release.future;
+        };
+        final upload = rig.upload.submit(
+          _observation(),
+          knownDay: _day(),
+          knownStreamGeneration: 1,
+        );
+        final rejected = expectLater(upload, throwsStateError);
+        await entered.future;
+        await rig.client.auth.updateSignedInUser(_auth('2'));
+        release.complete(rig.dir);
+        await rejected;
+        debugPrint('stale account: ${rig.calls} clients=${rig.created}');
+        expect(rig.calls, isEmpty);
+        expect(rig.created, 1);
+      });
+    });
+
     test('two uploads share one client', () async {
       await _rig((rig) async {
         await rig.writeState({'generation': 1, 'revision': 0});
@@ -421,6 +465,13 @@ void main() {
       });
     });
   });
+}
+
+class _Unchecked implements ClientAuthKeyProvider {
+  _Unchecked(this.header);
+  final String header;
+  @override
+  Future<String?> get authHeaderValue async => header;
 }
 
 DailyRecord _day({String date = '2026-10-19', bool deleted = false}) =>
@@ -447,8 +498,11 @@ DailyStepsResult _observation() => DailyStepsResult(
 );
 
 class _Rig {
-  _Rig(this.dir, this.upload);
+  _Rig(this.dir, this.client, this.pool, this.upload);
   final Directory dir;
+  final Client client;
+  final ScopedClientPool pool;
+  Future<Directory> Function()? directoryHook;
   final StepUpload upload;
   final calls = <String>[];
   int created = 0;
@@ -506,11 +560,13 @@ Future<void> _rig(Future<void> Function(_Rig rig) body) =>
       addTearDown(pool.close);
       rig = _Rig(
         dir,
+        client,
+        pool,
         StepUpload(
           client,
           _auth('1').authUserId.toString(),
           pool: pool,
-          directory: () async => dir,
+          directory: () => rig.directoryHook?.call() ?? Future.value(dir),
         ),
       );
       await body(rig);
