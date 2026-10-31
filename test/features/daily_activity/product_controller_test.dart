@@ -1,11 +1,18 @@
 import 'dart:async';
+import 'dart:collection';
+import 'dart:convert';
+import 'dart:io';
 
 import 'package:balmatchum_app/features/daily_activity/product_controller.dart';
 import 'package:balmatchum_app/features/daily_activity/product_repository.dart';
+import 'package:balmatchum_app/features/daily_activity/home_bootstrap.dart';
+import 'package:balmatchum_app/features/daily_activity/step_streak.dart';
 import 'package:balmatchum_app/features/daily_activity/daily_steps_controller.dart';
 import 'package:balmatchum_app/features/watch_sync/watch_bridge.dart';
 import 'package:balmatchum_client/balmatchum_client.dart';
+import 'package:flutter/foundation.dart' show debugPrint;
 import 'package:flutter_test/flutter_test.dart';
+import 'package:serverpod_auth_core_flutter/serverpod_auth_core_flutter.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:balmatchum_app/app/dependencies.dart';
 import 'package:balmatchum_app/features/daily_activity/daily_activity_providers.dart';
@@ -77,9 +84,33 @@ OutfitStore outfitStore({
   balance: balance,
 );
 
+/// Marks the reads a fake home snapshot is made of; they are one `home` call.
+const _homeParts = #homeSnapshotParts;
+
+/// The server calls in order, without the reads inside a fake snapshot.
+class ServerCalls extends ListBase<String> {
+  final _calls = <String>[];
+  @override
+  int get length => _calls.length;
+  @override
+  set length(int value) => _calls.length = value;
+  @override
+  String operator [](int index) => _calls[index];
+  @override
+  void operator []=(int index, String value) => _calls[index] = value;
+  @override
+  void add(String element) {
+    if (Zone.current[_homeParts] != true) _calls.add(element);
+  }
+}
+
 class AccountRepository extends ProductRepository {
-  AccountRepository({super.billing}) : super(Client('http://localhost/'));
+  AccountRepository({super.billing, Client? client})
+    : super(client ?? Client('http://localhost/'));
   Completer<DailyRecord>? pending;
+
+  /// Snapshot dates answered before the device's KST date, in order.
+  final snapshotDates = <String>[];
   bool failRead = false;
   bool failThemes = false;
   ThemeStore store = themeStore();
@@ -91,7 +122,28 @@ class AccountRepository extends ProductRepository {
   final outfitRequests = <String>[];
   Exception? themeFailure;
   final themeRequests = <String>[];
-  final calls = <String>[];
+  final calls = ServerCalls();
+
+  /// One snapshot of what this server's reads answer; any failing part fails
+  /// it, as the server answers all or nothing.
+  @override
+  Future<HomeSnapshot> home() async {
+    calls.add('home');
+    return runZoned(zoneValues: {_homeParts: true}, () async {
+      final today = ProductRepository.today;
+      return HomeSnapshot(
+        date: snapshotDates.isEmpty
+            ? ProductRepository.dateKey(today)
+            : snapshotDates.removeAt(0),
+        day: await day(today),
+        wallet: await wallet(),
+        themes: await themes(),
+        outfits: await outfits(),
+        recentDays: recentDays ?? const [],
+      );
+    });
+  }
+
   @override
   Future<WalletView> wallet() async {
     calls.add('wallet');
@@ -245,6 +297,107 @@ ProductController accountController(AccountRepository repository) {
   return controller;
 }
 
+String _todayKey() => ProductRepository.dateKey(ProductRepository.today);
+
+class _Storage implements ClientAuthSuccessStorage {
+  AuthSuccess? value;
+  @override
+  Future<AuthSuccess?> get() async => value;
+  @override
+  Future<void> set(AuthSuccess? data) async => value = data;
+}
+
+class _RealHttp extends HttpOverrides {}
+
+/// Today's record as the snapshot holds it, before the upload.
+class _TodayRepository extends AccountRepository {
+  _TodayRepository(Client client) : super(client: client);
+  @override
+  Future<DailyRecord> day(DateTime date) async {
+    calls.add('day');
+    return record().copyWith(date: _todayKey(), steps: 4000);
+  }
+}
+
+class _UploadRig {
+  _UploadRig(this.repository, this.controller, this.bootstrap);
+  final AccountRepository repository;
+  final ProductController controller;
+  final HomeBootstrap bootstrap;
+}
+
+/// An account 'A' whose step uploads reach a local server that records each
+/// endpoint into the repository's calls and confirms 9000 steps for today.
+/// The snapshot holds the three days before today, so the run ends yesterday.
+Future<void> _uploadRig(
+  Future<void> Function(_UploadRig rig) body, {
+  bool registered = true,
+}) => HttpOverrides.runWithHttpOverrides(() async {
+  final dir = await Directory.systemTemp.createTemp('home-sync-');
+  addTearDown(() => dir.delete(recursive: true));
+  final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+  addTearDown(() => server.close(force: true));
+  late final AccountRepository repository;
+  final subscription = server.listen((request) async {
+    final name = request.uri.pathSegments.last;
+    await request.drain<void>();
+    repository.calls.add(name);
+    request.response.headers.contentType = ContentType.json;
+    request.response.write(
+      name == 'registerStepStream'
+          ? '1'
+          : jsonEncode(
+              record().copyWith(date: _todayKey(), steps: 9000).toJson(),
+            ),
+    );
+    await request.response.close();
+  });
+  addTearDown(subscription.cancel);
+  final auth = AuthSuccess(
+    authStrategy: 'session',
+    token: 'token-a',
+    authUserId: UuidValue.fromString('00000000-0000-4000-8000-00000000000a'),
+    scopeNames: {},
+  );
+  final client = Client('http://127.0.0.1:${server.port}/')
+    ..authSessionManager = FlutterAuthSessionManager(storage: _Storage());
+  await client.auth.updateSignedInUser(auth);
+  if (registered) {
+    await File('${dir.path}/steps-${auth.authUserId}.json')
+        .writeAsString(jsonEncode({'generation': 1, 'revision': 0}));
+  }
+  final today = ProductRepository.today;
+  repository = _TodayRepository(client)
+    ..recentDays = [
+      for (var i = 1; i <= 3; i++)
+        record().copyWith(
+          date: ProductRepository.dateKey(today.subtract(Duration(days: i))),
+        ),
+    ];
+  final steps = DailyStepsController(
+    readSteps: () async => DailyStepsResult(DailyStepsStatus.available, {
+      'count': 9000,
+      'date': _todayKey(),
+      'observedAt': DateTime.now().toUtc().toIso8601String(),
+    }),
+  );
+  final bootstrap = HomeBootstrap();
+  final controller = ProductController(
+    repository,
+    steps,
+    null,
+    account: 'A',
+    bootstrap: bootstrap,
+    stepDirectory: () async => dir,
+  );
+  addTearDown(() {
+    controller.dispose();
+    steps.dispose();
+    client.close();
+  });
+  await body(_UploadRig(repository, controller, bootstrap));
+}, _RealHttp());
+
 void main() {
   test(
     'authenticated provider replaces controller for account changes and logout',
@@ -311,29 +464,19 @@ void main() {
       await expectLater(controller.loadQuiz(), throwsFormatException);
       expect((await controller.loadWardrobe()).fixtureLabel, isNull);
       expect((await controller.deleteDay(day.date)).isDeleted, isTrue);
+      // Each refresh (connect, sync, after the claim and the delete) is one
+      // home snapshot.
       expect(repository.calls, [
-        'day',
-        'wallet',
-        'themes',
-        'outfits',
-        'day',
-        'wallet',
-        'themes',
-        'outfits',
+        'home',
+        'home',
         'month',
         'day',
         'claim',
-        'day',
-        'wallet',
-        'themes',
-        'outfits',
+        'home',
         'themes',
         'outfits',
         'delete',
-        'day',
-        'wallet',
-        'themes',
-        'outfits',
+        'home',
       ]);
       expect(controller.store?.equippedTheme, 'sunny');
       expect(controller.quiz, isNull);
@@ -362,12 +505,8 @@ void main() {
       isTrue,
     );
     expect(bought.balance, 39);
-    expect(repository.calls, [
-      'themes',
-      'outfits',
-      'purchase:cloudy',
-      'themes',
-    ]);
+    // The first attempt applies the server's answer without a re-read.
+    expect(repository.calls, ['themes', 'outfits', 'purchase:cloudy']);
   });
 
   test('real account buys, wears and removes the vest on the server', () async {
@@ -394,11 +533,8 @@ void main() {
       'themes',
       'outfits',
       'purchaseOutfit:vest-low-v',
-      'outfits',
       'equipOutfit:vest-low-v',
-      'outfits',
       'unequipOutfit',
-      'outfits',
     ]);
     // Each confirmed change is a new intent with its own idempotency key.
     expect(repository.outfitRequests.toSet(), hasLength(3));
@@ -489,9 +625,16 @@ void main() {
     // When: the user retries the ambiguous purchase.
     await controller.themeAction(cloudy, equip: false);
 
-    // Then: the retry retains the original idempotency key.
+    // Then: the retry retains the original idempotency key and re-reads.
     expect(repository.themeRequests, hasLength(2));
     expect(repository.themeRequests.toSet(), hasLength(1));
+    expect(repository.calls, [
+      'themes',
+      'outfits',
+      'purchase:cloudy',
+      'purchase:cloudy',
+      'themes',
+    ]);
   });
 
   test('lost vest response retries with the same request id', () async {
@@ -507,6 +650,13 @@ void main() {
     expect(bought.outfits!.items.single.owned, isTrue);
     expect(repository.outfitRequests, hasLength(2));
     expect(repository.outfitRequests.toSet(), hasLength(1));
+    expect(repository.calls, [
+      'themes',
+      'outfits',
+      'purchaseOutfit:vest-low-v',
+      'purchaseOutfit:vest-low-v',
+      'outfits',
+    ]);
   });
 
   test('wardrobe still opens with themes when outfits fail', () async {
@@ -531,67 +681,240 @@ void main() {
     expect(controller.wornLayer('shih-tzu'), isNull);
   });
 
+  test('refresh reads one home snapshot', () async {
+    final repository = AccountRepository()
+      ..wardrobeOutfits = outfitStore(owned: true, equipped: 'vest-low-v');
+    final controller = accountController(repository);
+    await controller.refresh();
+    debugPrint('refresh calls: ${repository.calls}');
+    expect(repository.calls, ['home']);
+    expect(controller.today, isNotNull);
+    expect(controller.wallet!.balance, 42);
+    expect(controller.store!.equippedTheme, 'sunny');
+    expect(
+      controller.wornLayer('shih-tzu'),
+      'assets/wardrobe/vest/shih-tzu.png',
+    );
+    expect(controller.streak, isNotNull);
+  });
+
   test(
-    'outfit failure keeps the worn vest and still refreshes records',
+    'a failed snapshot keeps the last themes and outfits and sets an error',
     () async {
-      final repository = AccountRepository()
-        ..wardrobeOutfits = outfitStore(owned: true, equipped: 'vest-low-v');
+      final repository = AccountRepository();
       final controller = accountController(repository);
       await controller.connect();
-      repository.failOutfits = true;
-      await controller.sync();
-      expect(controller.error, isNull);
-      expect(controller.connected, isTrue);
-      expect(controller.today, isNotNull);
-      expect(controller.wallet!.balance, 42);
-      expect(
-        controller.wornLayer('shih-tzu'),
-        'assets/wardrobe/vest/shih-tzu.png',
-      );
-      expect(repository.calls, [
-        'day',
-        'wallet',
-        'themes',
-        'outfits',
-        'day',
-        'wallet',
-        'themes',
-        'outfits',
-      ]);
+      final store = controller.store;
+      final outfits = controller.outfits;
+      repository.failThemes = true;
+      await controller.deleteDay(DateTime(2026, 10, 15));
+      expect(controller.error, isNotNull);
+      expect(controller.store, same(store));
+      expect(controller.outfits, same(outfits));
+      expect(repository.calls, ['home', 'delete', 'home']);
     },
   );
 
-  test('theme failure keeps last theme and still refreshes records', () async {
-    final repository = AccountRepository();
-    final steps = DailyStepsController(
-      readSteps: () async =>
-          const DailyStepsResult(DailyStepsStatus.empty, null),
-    );
-    final controller = ProductController(repository, steps, null, account: 'A');
-    addTearDown(() {
-      controller.dispose();
-      steps.dispose();
-      repository.client.close();
+  for (final failing in ['theme', 'outfit']) {
+    test('a failed $failing read during sync keeps the last home, sets an '
+        'error and uploads no steps', () async {
+      await _uploadRig((rig) async {
+        final repository = rig.repository
+          ..wardrobeOutfits = outfitStore(owned: true, equipped: 'vest-low-v');
+        final controller = rig.controller;
+        await controller.sync();
+        final store = controller.store;
+        final outfits = controller.outfits;
+        final today = controller.today;
+        final wallet = controller.wallet;
+        final streak = controller.streak;
+        expect(store, isNotNull);
+        expect(controller.error, isNull);
+        expect(repository.calls, ['home', 'submitSteps']);
+        if (failing == 'theme') {
+          repository.failThemes = true;
+        } else {
+          repository.failOutfits = true;
+        }
+        await controller.sync();
+        debugPrint('failed $failing sync calls: ${repository.calls}');
+        debugPrint(
+          'survived: theme=${controller.store?.equippedTheme} '
+          'outfit=${controller.outfits?.equippedOutfit} '
+          'steps=${controller.today?.steps} '
+          'balance=${controller.wallet?.balance} '
+          'streak=${controller.streak?.days}',
+        );
+        // The failed snapshot is the only call: no step upload follows.
+        expect(repository.calls, ['home', 'submitSteps', 'home']);
+        expect(controller.error, isNotNull);
+        expect(controller.connected, isTrue);
+        expect(controller.busy, isFalse);
+        expect(controller.store, same(store));
+        expect(controller.outfits, same(outfits));
+        expect(controller.today, same(today));
+        expect(controller.wallet, same(wallet));
+        expect(controller.streak, same(streak));
+        expect(
+          controller.wornLayer('shih-tzu'),
+          'assets/wardrobe/vest/shih-tzu.png',
+        );
+        repository
+          ..failThemes = false
+          ..failOutfits = false;
+        await controller.sync();
+        debugPrint('recovered $failing sync calls: ${repository.calls}');
+        expect(repository.calls, [
+          'home',
+          'submitSteps',
+          'home',
+          'home',
+          'submitSteps',
+        ]);
+        expect(controller.error, isNull);
+        expect(controller.busy, isFalse);
+        expect(controller.connected, isTrue);
+        expect(controller.store, isNotNull);
+        expect(controller.today!.steps, 9000);
+      });
     });
-    await controller.connect();
-    final previous = controller.store;
-    repository.failThemes = true;
+  }
+
+  test('a failed first snapshot during sync has nothing to keep', () async {
+    final repository = AccountRepository()..failRead = true;
+    final controller = accountController(repository);
     await controller.sync();
+    expect(repository.calls, ['home']);
+    expect(controller.error, isNotNull);
+    expect(controller.connected, isFalse);
+    expect(controller.store, isNull);
+    expect(controller.today, isNull);
+  });
+
+  test('a snapshot of another day is read once more, then accepted', () async {
+    final repository = AccountRepository()..snapshotDates.add('2000-01-01');
+    final controller = accountController(repository);
+    await controller.refresh();
+    expect(repository.calls, ['home', 'home']);
     expect(controller.error, isNull);
-    expect(controller.connected, isTrue);
+    // The server still disagrees: its date is today, not an error.
+    repository.snapshotDates.addAll(['2000-01-01', '2000-01-02']);
+    await controller.refresh();
+    debugPrint('date mismatch calls: ${repository.calls}');
+    expect(repository.calls, ['home', 'home', 'home', 'home']);
+    expect(controller.error, isNull);
     expect(controller.today, isNotNull);
-    expect(controller.wallet!.balance, 42);
-    expect(controller.store, same(previous));
-    expect(repository.calls, [
-      'day',
-      'wallet',
-      'themes',
-      'outfits',
-      'day',
-      'wallet',
-      'themes',
-      'outfits',
-    ]);
+    expect(controller.streak, isNotNull);
+  });
+
+  group('streak from the snapshot equals the 31-day read', () {
+    DailyRecord recorded(int ago) => record().copyWith(
+      date: ProductRepository.dateKey(
+        ProductRepository.today.subtract(Duration(days: ago)),
+      ),
+      steps: 5000,
+    );
+    final fixtures = <String, List<int>>{
+      'a run of ten days': [for (var i = 0; i < 10; i++) i],
+      'all 31 days': [for (var i = 0; i < StepStreak.window; i++) i],
+      'no record today, a run to yesterday': [for (var i = 1; i < 10; i++) i],
+      'a week with gaps': [0, 2, 3, 5, 6, 9],
+    };
+    for (final MapEntry(key: name, value: ago) in fixtures.entries) {
+      test(name, () async {
+        final repository = AccountRepository()
+          ..recentDays = [for (final i in ago) recorded(i)];
+        final controller = accountController(repository);
+        await controller.refresh();
+        final snapshot = controller.streak!;
+        await controller.loadStreak();
+        final read = controller.streak!;
+        debugPrint(
+          '$name: snapshot ${snapshot.days}/${snapshot.atLeast}/'
+          '${snapshot.thisWeek} read ${read.days}/${read.atLeast}/'
+          '${read.thisWeek}',
+        );
+        expect(snapshot.days, read.days);
+        expect(snapshot.atLeast, read.atLeast);
+        expect(snapshot.thisWeek, read.thisWeek);
+        if (name == 'all 31 days') expect(snapshot.atLeast, isTrue);
+        if (name == 'a run of ten days') expect(snapshot.days, 10);
+        if (name.startsWith('no record today')) expect(snapshot.days, 9);
+      });
+    }
+  });
+
+  group('sync', () {
+    test('takes the started bootstrap, then uploads once', () async {
+      await _uploadRig((rig) async {
+        rig.bootstrap.start('A', rig.repository.home);
+        await rig.controller.sync();
+        debugPrint('bootstrap sync calls: ${rig.repository.calls}');
+        expect(rig.repository.calls, ['home', 'submitSteps']);
+        expect(rig.bootstrap.take('A'), isNull);
+        // A taken snapshot is never used again.
+        await rig.controller.sync();
+        debugPrint('second sync calls: ${rig.repository.calls}');
+        expect(rig.repository.calls, [
+          'home',
+          'submitSteps',
+          'home',
+          'submitSteps',
+        ]);
+      });
+    });
+
+    test('without a bootstrap reads one snapshot and patches today from the '
+        'upload', () async {
+      await _uploadRig((rig) async {
+        final before = StepStreak.of(
+          rig.repository.recentDays!,
+          ProductRepository.today,
+        );
+        await rig.controller.sync();
+        debugPrint('sync calls: ${rig.repository.calls}');
+        expect(rig.repository.calls, ['home', 'submitSteps']);
+        expect(rig.controller.error, isNull);
+        expect(rig.controller.today!.date, _todayKey());
+        expect(rig.controller.today!.steps, 9000);
+        // Today's upload joins the run that ended yesterday.
+        expect(before.days, 3);
+        expect(rig.controller.streak!.days, 4);
+        expect(rig.controller.streak!.thisWeek, before.thisWeek + 1);
+      });
+    });
+
+    test('a first registration adds only the stream registration', () async {
+      await _uploadRig(registered: false, (rig) async {
+        await rig.controller.sync();
+        debugPrint('first registration calls: ${rig.repository.calls}');
+        expect(rig.repository.calls, [
+          'home',
+          'registerStepStream',
+          'submitSteps',
+        ]);
+      });
+    });
+
+    test('another account\'s bootstrap is never taken', () async {
+      await _uploadRig((rig) async {
+        rig.bootstrap.start('B', () async => throw StateError('B only'));
+        await rig.controller.sync();
+        expect(rig.repository.calls, ['home', 'submitSteps']);
+        expect(rig.controller.error, isNull);
+      });
+    });
+
+    test('a discarded bootstrap leaves the refresh to the server', () async {
+      await _uploadRig((rig) async {
+        rig.bootstrap
+          ..start('A', () async => throw StateError('discarded'))
+          ..discard();
+        await rig.controller.sync();
+        expect(rig.repository.calls, ['home', 'submitSteps']);
+        expect(rig.controller.error, isNull);
+      });
+    });
   });
 
   test('confirmed delete succeeds even when refresh fails', () async {
@@ -603,9 +926,7 @@ void main() {
     final controller = ProductController(repository, steps, null, account: 'A');
     final result = await controller.deleteDay(DateTime(2026, 10, 15));
     expect(result.isDeleted, isTrue);
-    // The refresh starts its four reads together; the failed day read still
-    // fails it.
-    expect(repository.calls, ['delete', 'day', 'wallet', 'themes', 'outfits']);
+    expect(repository.calls, ['delete', 'home']);
     expect(controller.error, isNotNull);
     controller.dispose();
     steps.dispose();
@@ -654,7 +975,7 @@ void main() {
         throwsFormatException,
       );
       // Only reads started while A was current; nothing after the switch.
-      expect(repository.calls, ['day', 'wallet', 'themes', 'outfits', 'day']);
+      expect(repository.calls, ['home', 'day']);
       if (!dispose) a.dispose();
       b.dispose();
       steps.dispose();

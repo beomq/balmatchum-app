@@ -6,6 +6,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:serverpod_auth_core_flutter/serverpod_auth_core_flutter.dart';
 
 import '../watch_sync/watch_bridge.dart';
+import 'scoped_client.dart';
 
 /// Serialized by the owning product controller. The pending payload is durable
 /// before upload, so a lost reply replays the same generation and revision.
@@ -13,13 +14,23 @@ class StepUpload {
   StepUpload(
     this.client,
     this.accountId, {
+    required this.pool,
     this.directory = getApplicationSupportDirectory,
   });
   final Client client;
   final String accountId;
+  final ScopedClientPool pool;
   final Future<Directory> Function() directory;
+  void Function() _checkAccount = () {};
 
-  Future<DailyRecord?> submit(DailyStepsResult observation) async {
+  /// [knownDay] and [knownStreamGeneration] come from a snapshot the caller
+  /// just read; they replace the `getDay` and first-registration `getWallet`
+  /// round trips. Without them both are fetched as before.
+  Future<DailyRecord?> submit(
+    DailyStepsResult observation, {
+    DailyRecord? knownDay,
+    int? knownStreamGeneration,
+  }) async {
     final authentication = client.auth.authInfo;
     void checkAccount() {
       if (!identical(authentication, client.auth.authInfo) ||
@@ -34,21 +45,29 @@ class StepUpload {
     if (header == null || header.isEmpty) {
       throw StateError('Step upload authentication missing');
     }
-    final upload = Client(
-      client.host,
-      connectionTimeout: client.connectionTimeout,
-    )..authKeyProvider = _StepAuthHeader(header, checkAccount);
-    try {
-      return await _submit(observation, upload, checkAccount);
-    } finally {
-      upload.close();
-    }
+    // The pool may hand back a client another caller created, whose provider
+    // never checks this account. Every request below therefore checks it first;
+    // this provider only matters when this call creates the client.
+    _checkAccount = checkAccount;
+    return pool.run(
+      header,
+      (value) => _StepAuthHeader(value, () => _checkAccount()),
+      (upload) => _submit(
+        observation,
+        upload,
+        checkAccount,
+        knownDay,
+        knownStreamGeneration,
+      ),
+    );
   }
 
   Future<DailyRecord?> _submit(
     DailyStepsResult observation,
     Client upload,
     void Function() checkAccount,
+    DailyRecord? knownDay,
+    int? knownStreamGeneration,
   ) async {
     final resolvedDirectory = await directory();
     final file = File('${resolvedDirectory.path}/steps-$accountId.json');
@@ -56,6 +75,11 @@ class StepUpload {
     if (await file.exists()) {
       state = jsonDecode(await file.readAsString()) as Map<String, dynamic>;
     }
+    Future<T> send<T>(Future<T> Function() call) {
+      checkAccount();
+      return call();
+    }
+
     Future<void> persist() async {
       checkAccount();
       await file.parent.create(recursive: true);
@@ -68,20 +92,25 @@ class StepUpload {
       if (state['registration'] == null) {
         state['registration'] = Uuid().v4();
         state['expectedGeneration'] =
-            (await upload.product.getWallet()).streamGeneration;
+            knownStreamGeneration ??
+            (await send(() => upload.product.getWallet())).streamGeneration;
         await persist();
       }
-      state['generation'] = await upload.product.registerStepStream(
-        state['registration'] as String,
-        state['expectedGeneration'] as int,
+      state['generation'] = await send(
+        () => upload.product.registerStepStream(
+          state['registration'] as String,
+          state['expectedGeneration'] as int,
+        ),
       );
       state['revision'] = 0;
       await persist();
     }
     if (state['pending'] != null) {
       try {
-        await upload.product.submitSteps(
-          DailyStepInput.fromJson(state['pending'] as Map<String, dynamic>),
+        await send(
+          () => upload.product.submitSteps(
+            DailyStepInput.fromJson(state['pending'] as Map<String, dynamic>),
+          ),
         );
       } on ProductException catch (error) {
         if (error.code != 'dayDeleted') rethrow;
@@ -95,7 +124,9 @@ class StepUpload {
       return null;
     }
     final date = steps['date']! as String;
-    final currentDay = await upload.product.getDay(date);
+    final currentDay = knownDay != null && knownDay.date == date
+        ? knownDay
+        : await send(() => upload.product.getDay(date));
     if (currentDay.deleted) return currentDay;
     final start = DateTime.parse('${date}T00:00:00Z')
         .subtract(const Duration(hours: 9));
@@ -114,12 +145,12 @@ class StepUpload {
     await persist();
     DailyRecord result;
     try {
-      result = await upload.product.submitSteps(input);
+      result = await send(() => upload.product.submitSteps(input));
     } on ProductException catch (error) {
       if (error.code != 'dayDeleted') rethrow;
       state.remove('pending');
       await persist();
-      return upload.product.getDay(date);
+      return send(() => upload.product.getDay(date));
     }
     state.remove('pending');
     await persist();

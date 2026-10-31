@@ -20,6 +20,9 @@ import '../features/auth/sign_in_starter.dart';
 import '../features/auth/social_auth_adapters.dart';
 import '../features/auth/social_auth_service.dart';
 import '../features/bootstrap/greeting_check.dart';
+import '../features/daily_activity/home_bootstrap.dart';
+import '../features/daily_activity/product_repository.dart';
+import '../features/daily_activity/scoped_client.dart';
 import '../features/watch_sync/watch_bridge.dart';
 import '../features/watch_sync/watch_sync_server.dart';
 import '../features/watch_sync/watch_sync_service.dart';
@@ -60,6 +63,41 @@ final clientProvider = Provider<Client>((ref) {
   ref.onDispose(client.close);
   return client;
 });
+
+/// One pooled client per signed-in account, shared by the home snapshot, the
+/// step upload and the quiz so the home entry opens a single connection.
+final accountClientPoolProvider = Provider<ScopedClientPool?>((ref) {
+  final account = ref.watch(authenticatedAccountProvider);
+  if (account == null) return null;
+  final client = ref.watch(clientProvider);
+  final pool = ScopedClientPool(
+    host: client.host,
+    connectionTimeout: client.connectionTimeout,
+  );
+  ref.onDispose(pool.close);
+  return pool;
+});
+
+/// Starts the account's home snapshot the moment the account is known; the
+/// profile restore and the first home refresh both use it. Another account,
+/// sign-out and deletion rebuild this and drop the old snapshot.
+final homeBootstrapProvider = Provider<HomeBootstrap?>((ref) {
+  final account = ref.watch(authenticatedAccountProvider);
+  final pool = ref.watch(accountClientPoolProvider);
+  if (account == null || pool == null) return null;
+  final repository = ProductRepository(
+    ref.watch(clientProvider),
+    accountId: account,
+    pool: pool,
+  );
+  final bootstrap = HomeBootstrap()..start(account, repository.home);
+  ref.onDispose(bootstrap.discard);
+  return bootstrap;
+});
+
+/// Accounts whose server deletion succeeded in this process. Their
+/// controllers apply no further response while local cleanup is retried.
+final deletedAccountsProvider = Provider<Set<String>>((ref) => <String>{});
 
 final watchSyncServiceProvider = Provider<WatchSyncService?>((ref) {
   if (serverUrl.isEmpty ||
@@ -197,6 +235,9 @@ final accountDeletionProvider = Provider<AccountDeletion?>((ref) {
   final client = ref.watch(clientProvider);
   final logout = ref.watch(logoutProvider)!;
   final notice = ref.watch(accountNoticeProvider);
+  final pool = ref.watch(accountClientPoolProvider);
+  final bootstrap = ref.watch(homeBootstrapProvider);
+  final deleted = ref.watch(deletedAccountsProvider);
   // Same instance as login: Android can revoke only its in-process account.
   final google = ref.watch(nativeSocialLoginSdkProvider);
   final providers = AccountProviderRevocation(
@@ -237,6 +278,12 @@ final accountDeletionProvider = Provider<AccountDeletion?>((ref) {
         notice.value = '인증이 만료되어 기기 정보를 정리했어요. 계정 삭제 여부는 다시 로그인해 확인해 주세요.';
         rethrow;
       }
+    },
+    forgetAccount: () {
+      deleted.add(account);
+      bootstrap?.discard();
+      // In-flight requests finish first; the next one gets a new client.
+      pool?.close();
     },
     revokeProviders: () async {
       if (!await providers.revoke()) {

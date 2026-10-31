@@ -191,3 +191,11 @@ ThemeData meetingTheme() => ThemeData(
     ),
   ),
 );
+
+/// Pixel width to decode a picture shown [layoutWidth] wide, or null when
+/// the layout gives no usable width (unbounded or empty).
+int? decodeWidth(double layoutWidth, double devicePixelRatio) {
+  if (!layoutWidth.isFinite || layoutWidth <= 0) return null;
+  final pixels = (layoutWidth * devicePixelRatio).round();
+  return pixels > 0 ? pixels : null;
+}
