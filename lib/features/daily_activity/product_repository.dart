@@ -7,7 +7,17 @@ import 'scoped_client.dart';
 
 /// The generated client is the only transport contract.
 class ProductRepository {
-  ProductRepository(this.client, {this.accountId, this.billing});
+  ProductRepository(
+    this.client, {
+    this.accountId,
+    this.billing,
+    ScopedClientPool? pool,
+  }) : pool =
+           pool ??
+           ScopedClientPool(
+             host: client.host,
+             connectionTimeout: client.connectionTimeout,
+           );
   final Client client;
   final String? accountId;
   final ServerpodBillingRepository? billing;
@@ -22,10 +32,9 @@ class ProductRepository {
     (c) => c.product.claimDayWithPremium(date, requestId, revision),
   );
 
-  late final ScopedClientPool pool = ScopedClientPool(
-    host: client.host,
-    connectionTimeout: client.connectionTimeout,
-  );
+  /// Shared with the home bootstrap and the quiz when the account's providers
+  /// hand one in, so the home entry opens a single client.
+  final ScopedClientPool pool;
 
   Future<T> _records<T>(Future<T> Function(Client) request) async {
     if (accountId == null) return request(client);

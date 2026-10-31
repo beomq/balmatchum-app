@@ -1,6 +1,16 @@
 import 'dart:async';
+import 'dart:convert';
+import 'dart:io';
+import 'dart:math' show max;
 
+import 'package:balmatchum_app/app/dependencies.dart';
 import 'package:balmatchum_app/app/duo_rail.dart';
+import 'package:balmatchum_app/features/billing/billing_providers.dart';
+import 'package:balmatchum_app/features/billing/billing_repository.dart';
+import 'package:balmatchum_app/features/daily_activity/daily_activity_providers.dart';
+import 'package:balmatchum_app/features/daily_activity/scoped_client.dart';
+import 'package:balmatchum_app/features/first_meeting/first_meeting_providers.dart';
+import 'package:balmatchum_app/features/quiz/quiz_providers.dart';
 import 'package:balmatchum_app/features/daily_activity/daily_steps_controller.dart';
 import 'package:balmatchum_app/features/daily_activity/product_controller.dart';
 import 'package:balmatchum_app/features/daily_activity/product_repository.dart';
@@ -17,10 +27,14 @@ import 'package:balmatchum_app/features/records/status_widgets.dart';
 import 'package:balmatchum_app/features/watch_sync/watch_bridge.dart';
 import 'package:balmatchum_client/balmatchum_client.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:serverpod_auth_core_flutter/serverpod_auth_core_flutter.dart';
 
 import '../../support/duo_viewports.dart';
-import '../billing/billing_http_harness.dart' show presentBilling;
+import '../billing/billing_http_harness.dart'
+    show BillingMemoryAuth, presentBilling;
 import '../daily_activity/product_controller_test.dart'
     show AccountRepository, outfitStore, record, themeStore;
 import '../quiz/authenticated_quiz_test.dart' show Quizzes, question;
@@ -105,6 +119,233 @@ class PremiumQuizzes extends Quizzes {
     premiumReads++;
     return current.copyWith(premiumStatus: 'inactive');
   }
+}
+
+/// Generated-client calls answered from memory and logged by their endpoint
+/// method in start order. Calls depend on the earlier calls of their own
+/// endpoint and on the home snapshot the whole entry waits for: a call's
+/// round trip is one more than the deepest of those finished when it starts,
+/// so the quiz read beside the upload shares the upload's round trip.
+class EndpointLog {
+  EndpointLog(this.answer);
+  final Object? Function(String method) answer;
+  final calls = <String>[];
+  final finished = <String>[];
+  final _held = <String, Completer<void>>{};
+  final _started = <String, Completer<void>>{};
+  final _settled = <String, int>{};
+  int roundTrips = 0;
+
+  static String _endpoint(String method) =>
+      _productCalls.contains(method) ? 'product' : method;
+
+  /// Keeps [method]'s next answer until [release].
+  void hold(String method) => _held[method] = Completer<void>();
+  void release(String method) => _held.remove(method)!.complete();
+
+  /// Completes once [method] has been called.
+  Future<void> started(String method) => _started
+      .putIfAbsent(method, Completer<void>.new)
+      .future
+      .timeout(const Duration(seconds: 10));
+
+  Future<T> call<T>(String method) async {
+    calls.add(method);
+    final endpoint = _endpoint(method);
+    final depth =
+        max(_settled[endpoint] ?? 0, _settled['getHomeSnapshot'] ?? 0) + 1;
+    roundTrips = max(roundTrips, depth);
+    final started = _started.putIfAbsent(method, Completer<void>.new);
+    if (!started.isCompleted) started.complete();
+    final held = _held[method];
+    if (held != null) await held.future;
+    finished.add(method);
+    _settled[endpoint] = max(_settled[endpoint] ?? 0, depth);
+    if (method == 'getHomeSnapshot') _settled[method] = depth;
+    return answer(method) as T;
+  }
+}
+
+/// The generated client with its transport replaced by [log].
+class RecordingClient extends Client {
+  RecordingClient(this.log, String host) : super(host);
+  final EndpointLog log;
+  @override
+  Future<T> callServerEndpoint<T>(
+    String endpoint,
+    String method,
+    Map<String, dynamic> args, {
+    bool authenticated = true,
+  }) => log.call<T>(method);
+}
+
+/// Completes when [done] holds after one of [listenable]'s notifications.
+Future<void> until(Listenable listenable, bool Function() done) {
+  if (done()) return Future.value();
+  final reached = Completer<void>();
+  void check() {
+    if (done() && !reached.isCompleted) reached.complete();
+  }
+
+  listenable.addListener(check);
+  return reached.future
+      .timeout(const Duration(seconds: 10))
+      .whenComplete(() => listenable.removeListener(check));
+}
+
+const _productCalls = {
+  'getHomeSnapshot',
+  'getDay',
+  'getWallet',
+  'listDays',
+  'registerStepStream',
+  'submitSteps',
+};
+
+/// A signed-in account assembled by the app's own providers from the moment
+/// the account is known, over one [EndpointLog]: the auth client and every
+/// pooled client answer from it.
+class EntryRig {
+  EntryRig._(this.log, this.container, this.steps, this.directory);
+  final EndpointLog log;
+  final ProviderContainer container;
+  final DailyStepsController steps;
+  final Directory directory;
+
+  /// Serverpod clients the account's pool created.
+  int pooledClients = 0;
+  ProfileView? profile;
+
+  static const account = '00000000-0000-4000-8000-00000000000a';
+
+  FirstMeetingController get meeting =>
+      container.read(authenticatedMeetingControllerProvider)!;
+
+  /// Product endpoint calls in start order.
+  List<String> get productCalls =>
+      log.calls.where(_productCalls.contains).toList();
+
+  static Future<EntryRig> start(
+    WidgetTester tester, {
+    required ProfileView? profile,
+    bool registered = true,
+  }) async {
+    final directory = await Directory.systemTemp.createTemp('first-entry-');
+    addTearDown(() => directory.delete(recursive: true));
+    const paths = MethodChannel('plugins.flutter.io/path_provider');
+    final messenger = tester.binding.defaultBinaryMessenger;
+    messenger.setMockMethodCallHandler(paths, (_) async => directory.path);
+    addTearDown(() => messenger.setMockMethodCallHandler(paths, null));
+    if (registered) {
+      await File('${directory.path}/steps-$account.json')
+          .writeAsString(jsonEncode({'generation': 1, 'revision': 0}));
+    }
+    late final EntryRig rig;
+    final today = record().copyWith(date: todayKey, steps: 4000);
+    final log = EndpointLog(
+      (method) => switch (method) {
+        'getHomeSnapshot' => HomeSnapshot(
+          date: todayKey,
+          profile: rig.profile,
+          day: today,
+          wallet: WalletView(
+            balance: 359,
+            streamGeneration: 1,
+            policyVersion: 'steps-v1-20261019',
+          ),
+          themes: themeStore(),
+          outfits: outfitStore(),
+          recentDays: [
+            for (var i = 1; i <= 3; i++) record().copyWith(date: dayKey(i)),
+          ],
+        ),
+        'registerStepStream' => 1,
+        'submitSteps' => today.copyWith(steps: 9000),
+        'getToday' => QuizToday(
+          date: todayKey,
+          status: 'ready',
+          free: question(1),
+          extraStatus: 'freeRequired',
+          premiumStatus: 'notChecked',
+        ),
+        'getProfile' => rig.profile,
+        'renameDog' => rig.profile = view(
+          name: '몽글',
+          goal: 8000,
+          revision: rig.profile!.revision + 1,
+        ),
+        _ => throw StateError('Unexpected endpoint $method'),
+      },
+    );
+    final client = RecordingClient(log, 'http://localhost/')
+      ..authSessionManager = FlutterAuthSessionManager(
+        storage: BillingMemoryAuth(),
+      );
+    await client.auth.updateSignedInUser(
+      AuthSuccess(
+        authStrategy: 'session',
+        token: 'token-a',
+        authUserId: UuidValue.fromString(account),
+        scopeNames: {},
+      ),
+    );
+    final steps = DailyStepsController(
+      readSteps: () async => DailyStepsResult(DailyStepsStatus.available, {
+        'count': 9000,
+        'date': todayKey,
+        'observedAt': DateTime.now().toUtc().toIso8601String(),
+      }),
+    );
+    final container = ProviderContainer(
+      overrides: [
+        authenticatedAccountProvider.overrideWithValue(account),
+        clientProvider.overrideWithValue(client),
+        watchSyncServiceProvider.overrideWithValue(null),
+        dailyStepsControllerProvider.overrideWithValue(steps),
+        billingRepositoryProvider.overrideWithValue(
+          ServerpodBillingRepository(client, account, BillingRequestQueue()),
+        ),
+        accountClientPoolProvider.overrideWith((ref) {
+          final pool = ScopedClientPool(
+            host: client.host,
+            factory: (host, _) {
+              rig.pooledClients++;
+              return RecordingClient(log, host);
+            },
+          );
+          ref.onDispose(pool.close);
+          return pool;
+        }),
+      ],
+    );
+    rig = EntryRig._(log, container, steps, directory)..profile = profile;
+    addTearDown(() {
+      container.dispose();
+      steps.dispose();
+      client.close();
+    });
+    return rig;
+  }
+
+  /// The home route as the router builds it: the product and quiz arrive once
+  /// the restored profile is complete.
+  Widget app() => MaterialApp(
+    theme: meetingTheme(),
+    home: ListenableBuilder(
+      listenable: meeting,
+      builder: (context, _) => FirstMeetingScreen(
+        key: ObjectKey(meeting),
+        controller: meeting,
+        dailySteps: steps,
+        product: meeting.state.isComplete
+            ? container.read(authenticatedProductControllerProvider)
+            : null,
+        quiz: meeting.state.isComplete
+            ? container.read(authenticatedQuizControllerProvider)
+            : null,
+      ),
+    ),
+  );
 }
 
 void main() {
@@ -397,19 +638,208 @@ void main() {
         for (var i = 0; i < 6; i++) record().copyWith(date: dayKey(i)),
       ];
     await pumpHome(tester, product: productFor(server));
-    expect(server.calls.where((c) => c == 'days'), hasLength(1));
+    // The home snapshot carries the days; no separate read.
+    expect(server.calls.where((c) => c == 'days'), isEmpty);
     expect(text(tester, 'home_streak'), startsWith('6일'));
     expect(key('home_tile_records_status'), findsOneWidget);
-    server.recentDays = null;
+    server.failThemes = true;
     await tester.fling(
       find.byType(RefreshIndicator),
       const Offset(0, 400),
       1000,
     );
     await tester.pumpAndSettle();
-    expect(server.calls.where((c) => c == 'days'), hasLength(2));
+    expect(server.calls.where((c) => c == 'days'), isEmpty);
     expect(key('home_streak'), findsNothing);
     expect(key('home_tile_records_status'), findsNothing);
+  });
+
+  for (final (name, days, expected) in [
+    ('ten days in a row', [for (var i = 0; i < 10; i++) i], '10일 연속 기록'),
+    ('the whole window', [for (var i = 0; i < 31; i++) i], '31일 이상 연속 기록'),
+    ('five days up to yesterday', [for (var i = 1; i <= 5; i++) i], '5일 연속 기록'),
+  ]) {
+    testWidgets('the snapshot streak reads as the days read did: $name', (
+      tester,
+    ) async {
+      final server = HomeServer()
+        ..recentDays = [
+          for (final ago in days) record().copyWith(date: dayKey(ago)),
+        ];
+      final product = productFor(server);
+      await pumpHome(tester, product: product);
+      final snapshot = text(tester, 'home_streak');
+      expect(snapshot, expected);
+      // The former entry path: one read of the same 31 days.
+      await product.loadStreak();
+      await tester.pump();
+      expect(server.calls.where((c) => c == 'days'), hasLength(1));
+      expect(text(tester, 'home_streak'), snapshot);
+    });
+  }
+
+  group('first entry', () {
+    Finder wallet() => find.byKey(const ValueKey('reward_wallet'));
+
+    test('the started snapshot belongs to one account and goes with it', () {
+      final client = Client('http://localhost/');
+      addTearDown(client.close);
+      final container = ProviderContainer(
+        overrides: [
+          authenticatedAccountProvider.overrideWithValue('A'),
+          clientProvider.overrideWithValue(client),
+        ],
+      );
+      addTearDown(container.dispose);
+      final a = container.read(homeBootstrapProvider)!;
+      expect(a.peek('A'), isNotNull);
+      container.updateOverrides([
+        authenticatedAccountProvider.overrideWithValue('B'),
+        clientProvider.overrideWithValue(client),
+      ]);
+      final b = container.read(homeBootstrapProvider)!;
+      expect(b, isNot(same(a)));
+      // Another account never sees the earlier account's snapshot.
+      expect(a.peek('A'), isNull);
+      expect(b.peek('A'), isNull);
+      expect(b.peek('B'), isNotNull);
+      // Sign-out and account deletion leave no account: nothing is kept.
+      container.updateOverrides([
+        authenticatedAccountProvider.overrideWithValue(null),
+        clientProvider.overrideWithValue(client),
+      ]);
+      expect(container.read(homeBootstrapProvider), isNull);
+      expect(b.peek('B'), isNull);
+    });
+
+    testWidgets(
+      'a registered profile: one snapshot, one upload, the quiz alongside',
+      (tester) async {
+        await tester.runAsync(() async {
+          final rig = await EntryRig.start(tester, profile: view(goal: 8000));
+          final log = rig.log..hold('getHomeSnapshot');
+          await tester.pumpWidget(rig.app());
+          await log.started('getHomeSnapshot');
+          // The restore waits for the snapshot instead of asking itself.
+          expect(log.calls, ['getHomeSnapshot']);
+          expect(wallet(), findsNothing);
+          log
+            ..hold('submitSteps')
+            ..release('getHomeSnapshot');
+          await until(rig.meeting, () => rig.meeting.state.isComplete);
+          await tester.pump();
+          await log.started('submitSteps');
+          await log.started('getToday');
+          await tester.pump();
+          // Drawn from the first round trip while the upload is still out.
+          expect(log.finished, contains('getHomeSnapshot'));
+          expect(log.finished, isNot(contains('submitSteps')));
+          expect(tester.widget<Text>(wallet()).data, '359P');
+          expect(log.calls, contains('getToday'));
+          final product = rig.container.read(
+            authenticatedProductControllerProvider,
+          )!;
+          final quiz = rig.container.read(authenticatedQuizControllerProvider)!;
+          log.release('submitSteps');
+          await until(
+            Listenable.merge([product, quiz]),
+            () =>
+                !product.busy &&
+                !quiz.busy &&
+                quiz.today != null &&
+                log.finished.contains('submitSteps'),
+          );
+          await tester.pump();
+          debugPrint(
+            'first entry calls=${log.calls} product=${rig.productCalls} '
+            'roundTrips=${log.roundTrips} pooledClients=${rig.pooledClients}',
+          );
+          expect(rig.productCalls, ['getHomeSnapshot', 'submitSteps']);
+          expect(log.calls, isNot(contains('getProfile')));
+          expect(log.calls.toSet(), {
+            'getHomeSnapshot',
+            'submitSteps',
+            'getToday',
+          });
+          expect(log.roundTrips, 2);
+          expect(rig.pooledClients, 1);
+          expect(product.today!.steps, 9000);
+          expect(text(tester, 'home_streak'), startsWith('4일'));
+          // The snapshot was the first read only; a rename reads the server.
+          final before = log.calls.length;
+          await rig.meeting.renameDog('몽글');
+          debugPrint('after rename calls=${log.calls.skip(before).toList()}');
+          expect(log.calls.skip(before), ['renameDog', 'getProfile']);
+          expect(rig.meeting.state.name, '몽글');
+          await tester.pumpWidget(const SizedBox.shrink());
+        });
+      },
+    );
+
+    testWidgets('a first registration adds only the stream registration', (
+      tester,
+    ) async {
+      await tester.runAsync(() async {
+        final rig = await EntryRig.start(
+          tester,
+          profile: view(goal: 8000),
+          registered: false,
+        );
+        // The upload waits until the quiz read is out, as it is in the app.
+        rig.log.hold('submitSteps');
+        await tester.pumpWidget(rig.app());
+        await until(rig.meeting, () => rig.meeting.state.isComplete);
+        await tester.pump();
+        await rig.log.started('submitSteps');
+        await rig.log.started('getToday');
+        rig.log.release('submitSteps');
+        final product = rig.container.read(
+          authenticatedProductControllerProvider,
+        )!;
+        final quiz = rig.container.read(authenticatedQuizControllerProvider)!;
+        await until(
+          Listenable.merge([product, quiz]),
+          () =>
+              !product.busy &&
+              !quiz.busy &&
+              quiz.today != null &&
+              rig.log.finished.contains('submitSteps'),
+        );
+        debugPrint(
+          'first registration product=${rig.productCalls} '
+          'roundTrips=${rig.log.roundTrips} '
+          'pooledClients=${rig.pooledClients}',
+        );
+        expect(rig.productCalls, [
+          'getHomeSnapshot',
+          'registerStepStream',
+          'submitSteps',
+        ]);
+        expect(rig.log.calls, isNot(contains('getProfile')));
+        expect(rig.log.roundTrips, 3);
+        expect(rig.pooledClients, 1);
+        await tester.pumpWidget(const SizedBox.shrink());
+      });
+    });
+
+    testWidgets('an account without a profile goes on to the onboarding', (
+      tester,
+    ) async {
+      await tester.runAsync(() async {
+        final rig = await EntryRig.start(tester, profile: null);
+        await tester.pumpWidget(rig.app());
+        await until(rig.meeting, () => rig.meeting.isRestored);
+        await tester.pump();
+        await tester.pump();
+        debugPrint('no profile calls=${rig.log.calls}');
+        expect(rig.meeting.state.isComplete, isFalse);
+        expect(rig.meeting.state.step, isNot(FirstMeetingStep.home));
+        expect(find.byType(MeetingHomeLayout), findsNothing);
+        expect(find.byType(FirstMeetingScreen), findsOneWidget);
+        expect(rig.log.calls, ['getHomeSnapshot']);
+        await tester.pumpWidget(const SizedBox.shrink());
+      });
+    });
   });
 
   /// The [PixelIcon] inside [scope].

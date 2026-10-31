@@ -28,6 +28,11 @@ class HomeBootstrap {
     return snapshot;
   }
 
+  /// The started snapshot for [account] without taking it, so the profile
+  /// restore reads the same snapshot the first home refresh then takes.
+  Future<api.HomeSnapshot>? peek(String account) =>
+      _account == account ? _snapshot : null;
+
   /// Drops the snapshot on sign-out, account change or account deletion.
   void discard() {
     _account = null;

@@ -20,6 +20,9 @@ import '../features/auth/sign_in_starter.dart';
 import '../features/auth/social_auth_adapters.dart';
 import '../features/auth/social_auth_service.dart';
 import '../features/bootstrap/greeting_check.dart';
+import '../features/daily_activity/home_bootstrap.dart';
+import '../features/daily_activity/product_repository.dart';
+import '../features/daily_activity/scoped_client.dart';
 import '../features/watch_sync/watch_bridge.dart';
 import '../features/watch_sync/watch_sync_server.dart';
 import '../features/watch_sync/watch_sync_service.dart';
@@ -59,6 +62,37 @@ final clientProvider = Provider<Client>((ref) {
   client.authSessionManager = FlutterAuthSessionManager();
   ref.onDispose(client.close);
   return client;
+});
+
+/// One pooled client per signed-in account, shared by the home snapshot, the
+/// step upload and the quiz so the home entry opens a single connection.
+final accountClientPoolProvider = Provider<ScopedClientPool?>((ref) {
+  final account = ref.watch(authenticatedAccountProvider);
+  if (account == null) return null;
+  final client = ref.watch(clientProvider);
+  final pool = ScopedClientPool(
+    host: client.host,
+    connectionTimeout: client.connectionTimeout,
+  );
+  ref.onDispose(pool.close);
+  return pool;
+});
+
+/// Starts the account's home snapshot the moment the account is known; the
+/// profile restore and the first home refresh both use it. Another account,
+/// sign-out and deletion rebuild this and drop the old snapshot.
+final homeBootstrapProvider = Provider<HomeBootstrap?>((ref) {
+  final account = ref.watch(authenticatedAccountProvider);
+  final pool = ref.watch(accountClientPoolProvider);
+  if (account == null || pool == null) return null;
+  final repository = ProductRepository(
+    ref.watch(clientProvider),
+    accountId: account,
+    pool: pool,
+  );
+  final bootstrap = HomeBootstrap()..start(account, repository.home);
+  ref.onDispose(bootstrap.discard);
+  return bootstrap;
 });
 
 final watchSyncServiceProvider = Provider<WatchSyncService?>((ref) {
