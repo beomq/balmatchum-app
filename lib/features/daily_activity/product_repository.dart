@@ -68,6 +68,11 @@ class ProductRepository {
   static DateTime get today =>
       DateTime.now().toUtc().add(const Duration(hours: 9));
 
+  /// Profile, today, wallet, themes, outfits and the last 31 KST days from
+  /// one server snapshot.
+  Future<HomeSnapshot> home() =>
+      _records((client) => client.product.getHomeSnapshot());
+
   Future<DailyRecord> day(DateTime date) =>
       _records((client) => client.product.getDay(dateKey(date)));
 

@@ -123,7 +123,7 @@ void main() {
     await tester.pumpWidget(home(account(), product));
     await tester.pumpAndSettle();
     expect(reads, 1);
-    expect(calls(repository, 'day'), 1);
+    expect(calls(repository, 'home'), 1);
     expect(product.today, isNotNull);
     expect(find.byType(TextButton), findsNothing);
     expect(find.byKey(const ValueKey('home_sync_retry')), findsNothing);
@@ -144,7 +144,7 @@ void main() {
     );
     await tester.pumpAndSettle();
     expect(reads, 2);
-    expect(calls(repository, 'day'), 2);
+    expect(calls(repository, 'home'), 2);
     returnToApp(tester);
     await tester.pumpAndSettle();
     expect(reads, 3);
@@ -159,7 +159,7 @@ void main() {
     gate!.complete(_empty);
     await tester.pumpAndSettle();
     expect(reads, 4);
-    expect(calls(repository, 'day'), 4);
+    expect(calls(repository, 'home'), 4);
     await tester.pumpWidget(const SizedBox.shrink());
   });
 
@@ -263,7 +263,7 @@ void main() {
     expect(repository.calls, isEmpty);
     await tester.pumpWidget(home(c, productFor(repository)));
     await tester.pumpAndSettle();
-    expect(calls(repository, 'day'), 1);
+    expect(calls(repository, 'home'), 1);
     expect(reads, 2);
     expect(find.byKey(const ValueKey('reward_wallet')), findsOneWidget);
     await tester.pumpWidget(const SizedBox.shrink());
