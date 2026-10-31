@@ -10,8 +10,10 @@ final authenticatedQuizControllerProvider = Provider<QuizController?>((ref) {
   if (account == null) return null;
   final client = ref.watch(clientProvider);
   final billing = ref.watch(billingRepositoryProvider);
+  final repository = QuizRepository(client, account, billing: billing);
+  ref.onDispose(repository.close);
   final controller = QuizController(
-    QuizRepository(client, account, billing: billing),
+    repository,
     isCurrentAccount: () => billing?.isCurrent ?? false,
   );
   ref.onDispose(controller.dispose);
