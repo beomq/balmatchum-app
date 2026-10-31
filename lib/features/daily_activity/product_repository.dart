@@ -3,6 +3,7 @@ import 'package:serverpod_auth_core_flutter/serverpod_auth_core_flutter.dart';
 
 import 'dev_test_session.dart';
 import '../billing/billing_repository.dart';
+import 'scoped_client.dart';
 
 /// The generated client is the only transport contract.
 class ProductRepository {
@@ -21,7 +22,10 @@ class ProductRepository {
     (c) => c.product.claimDayWithPremium(date, requestId, revision),
   );
 
-  _ScopedClient? _scoped;
+  late final ScopedClientPool pool = ScopedClientPool(
+    host: client.host,
+    connectionTimeout: client.connectionTimeout,
+  );
 
   Future<T> _records<T>(Future<T> Function(Client) request) async {
     if (accountId == null) return request(client);
@@ -33,33 +37,18 @@ class ProductRepository {
     if (!identical(authentication, client.auth.authInfo) || header == null) {
       throw StateError('Record authentication changed');
     }
-    // One client per auth header keeps its HTTP connection open across
-    // reads; a new header retires the old client once its requests finish.
-    var scoped = _scoped;
-    if (scoped == null || scoped.header != header) {
-      scoped?.retire();
-      scoped = _scoped = _ScopedClient(
-        Client(client.host, connectionTimeout: client.connectionTimeout)
-          ..authKeyProvider = _RecordAuthHeader(header),
-        header,
-      );
-    }
-    scoped.active++;
-    try {
-      final result = await request(scoped.client);
+    // One pooled client per auth header; see [ScopedClientPool].
+    return pool.run(header, _RecordAuthHeader.new, (scoped) async {
+      final result = await request(scoped);
       if (!identical(authentication, client.auth.authInfo)) {
         throw StateError('Record authentication changed');
       }
       return result;
-    } finally {
-      scoped.active--;
-      if (scoped.retired) scoped.retire();
-    }
+    });
   }
 
   void close() {
-    _scoped?.retire();
-    _scoped = null;
+    pool.close();
   }
 
   Future<void> connectDevelopmentUser() async {
@@ -138,22 +127,6 @@ class ProductRepository {
 
   Future<OutfitStore> unequipOutfit(String requestId) =>
       _records((client) => client.product.unequipOutfit(requestId));
-}
-
-class _ScopedClient {
-  _ScopedClient(this.client, this.header);
-  final Client client;
-  final String header;
-  int active = 0;
-  bool retired = false;
-  bool _closed = false;
-
-  void retire() {
-    retired = true;
-    if (active > 0 || _closed) return;
-    _closed = true;
-    client.close();
-  }
 }
 
 class _RecordAuthHeader implements ClientAuthKeyProvider {
