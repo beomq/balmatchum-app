@@ -580,11 +580,19 @@ class _ThemeSurface extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => switch (theme.backgroundAsset) {
-    final asset? => Image.asset(
-      asset,
-      key: ValueKey('${keyPrefix}_bg_${theme.id}'),
-      fit: BoxFit.cover,
-      filterQuality: FilterQuality.none,
+    final asset? => LayoutBuilder(
+      builder: (context, constraints) {
+        return Image.asset(
+          asset,
+          key: ValueKey('${keyPrefix}_bg_${theme.id}'),
+          fit: BoxFit.cover,
+          filterQuality: FilterQuality.none,
+          cacheWidth: decodeWidth(
+            constraints.maxWidth,
+            MediaQuery.devicePixelRatioOf(context),
+          ),
+        );
+      },
     ),
     null => ColoredBox(
       key: ValueKey('${keyPrefix}_color_${theme.id}'),

@@ -312,6 +312,10 @@ class _FirstMeetingScreenState extends State<FirstMeetingScreen> {
                         'assets/brand/balmatchum_splash.png',
                         key: const ValueKey('first_meeting_loading'),
                         width: 160,
+                        cacheWidth: decodeWidth(
+                          160,
+                          MediaQuery.devicePixelRatioOf(context),
+                        ),
                         filterQuality: FilterQuality.medium,
                         semanticLabel: '발맞춤',
                       ),
@@ -816,7 +820,14 @@ class _FirstMeetingScreenState extends State<FirstMeetingScreen> {
                             product?.store?.equippedTheme ?? 'sunny',
                           )
                           case final asset?)
-                        Image.asset(asset, fit: BoxFit.cover)
+                        Image.asset(
+                          asset,
+                          fit: BoxFit.cover,
+                          cacheWidth: decodeWidth(
+                            bounds.maxWidth,
+                            MediaQuery.devicePixelRatioOf(context),
+                          ),
+                        )
                       else
                         ColoredBox(
                           color: Color(

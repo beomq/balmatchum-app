@@ -894,11 +894,20 @@ void main() {
       final previewImage = tester.widget<Image>(
         find.byKey(const ValueKey('wardrobe_preview_bg_sunny')),
       );
-      expect(
-        tileImage.image,
-        const AssetImage('assets/first_meeting/sunny.png'),
-      );
-      expect(previewImage.image, tileImage.image);
+      // Each is decoded at the width it is drawn (test dpr 3), never the sprite.
+      const sunny = AssetImage('assets/first_meeting/sunny.png');
+      for (final (image, key) in [
+        (tileImage, 'wardrobe_tile_bg_sunny'),
+        (previewImage, 'wardrobe_preview_bg_sunny'),
+      ]) {
+        final decoded = image.image as ResizeImage;
+        expect(decoded.imageProvider, sunny, reason: key);
+        expect(
+          decoded.width,
+          (tester.getSize(find.byKey(ValueKey(key))).width * 3).round(),
+          reason: key,
+        );
+      }
       // Without an approved picture both use the server colour.
       expect(
         find.byKey(const ValueKey('wardrobe_tile_bg_plain')),
