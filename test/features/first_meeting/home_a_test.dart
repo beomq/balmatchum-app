@@ -22,7 +22,7 @@ import 'package:flutter_test/flutter_test.dart';
 import '../../support/duo_viewports.dart';
 import '../billing/billing_http_harness.dart' show presentBilling;
 import '../daily_activity/product_controller_test.dart'
-    show AccountRepository, outfitStore, record;
+    show AccountRepository, outfitStore, record, themeStore;
 import '../quiz/authenticated_quiz_test.dart' show Quizzes, question;
 import 'domain/authenticated_profile_test.dart' show Profiles, view;
 import 'domain/first_meeting_test.dart' show MemoryStorage;
@@ -443,6 +443,18 @@ void main() {
       endsWith('/decorate-shortcut.png'),
     );
     expect(find.byType(Icon), findsNothing);
+  });
+
+  testWidgets('the home stage draws the equipped weather picture', (
+    tester,
+  ) async {
+    final server = HomeServer()
+      ..store = themeStore(cloudyOwned: true).copyWith(equippedTheme: 'cloudy');
+    await pumpHome(tester, product: productFor(server));
+    expect(
+      find.image(const AssetImage('assets/first_meeting/cloudy.png')),
+      findsOneWidget,
+    );
   });
 
   testWidgets('the Duo home rail uses the pixel icons Pen shows', (

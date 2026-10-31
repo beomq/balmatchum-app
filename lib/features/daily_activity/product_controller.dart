@@ -17,6 +17,12 @@ import 'step_upload.dart';
 /// (design home-v1 backgrounds).
 const _weatherBackgrounds = {'sunny', 'cloudy', 'rainy', 'snowy'};
 
+/// The bundled picture for a theme, or null where its colour is drawn.
+String? themeBackgroundAsset(String themeId) =>
+    _weatherBackgrounds.contains(themeId)
+    ? 'assets/first_meeting/$themeId.png'
+    : null;
+
 class ProductController extends ChangeNotifier {
   ProductController(
     this.repository,
@@ -87,6 +93,7 @@ class ProductController extends ChangeNotifier {
   void dispose() {
     _disposed = true;
     disconnect();
+    repository.close();
     _requests.clear();
     super.dispose();
   }
@@ -409,9 +416,7 @@ class ProductController extends ChangeNotifier {
           owned: item.owned,
           colorValue: item.colorValue,
           price: item.price,
-          backgroundAsset: _weatherBackgrounds.contains(item.themeId)
-              ? 'assets/first_meeting/${item.themeId}.png'
-              : null,
+          backgroundAsset: themeBackgroundAsset(item.themeId),
         ),
     ],
   );
