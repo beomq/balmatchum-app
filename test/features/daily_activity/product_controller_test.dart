@@ -715,38 +715,70 @@ void main() {
     },
   );
 
-  test(
-    'a failed snapshot during sync keeps the last home and sets an error',
-    () async {
-      final repository = AccountRepository()
-        ..wardrobeOutfits = outfitStore(owned: true, equipped: 'vest-low-v');
-      final controller = accountController(repository);
-      await controller.sync();
-      final store = controller.store;
-      final outfits = controller.outfits;
-      final today = controller.today;
-      final wallet = controller.wallet;
-      final streak = controller.streak;
-      expect(store, isNotNull);
-      expect(controller.error, isNull);
-      repository.failThemes = true;
-      await controller.sync();
-      debugPrint('failed sync calls: ${repository.calls}');
-      expect(repository.calls, ['home', 'home']);
-      expect(controller.error, isNotNull);
-      expect(controller.connected, isTrue);
-      expect(controller.busy, isFalse);
-      expect(controller.store, same(store));
-      expect(controller.outfits, same(outfits));
-      expect(controller.today, same(today));
-      expect(controller.wallet, same(wallet));
-      expect(controller.streak, same(streak));
-      expect(
-        controller.wornLayer('shih-tzu'),
-        'assets/wardrobe/vest/shih-tzu.png',
-      );
-    },
-  );
+  for (final failing in ['theme', 'outfit']) {
+    test('a failed $failing read during sync keeps the last home, sets an '
+        'error and uploads no steps', () async {
+      await _uploadRig((rig) async {
+        final repository = rig.repository
+          ..wardrobeOutfits = outfitStore(owned: true, equipped: 'vest-low-v');
+        final controller = rig.controller;
+        await controller.sync();
+        final store = controller.store;
+        final outfits = controller.outfits;
+        final today = controller.today;
+        final wallet = controller.wallet;
+        final streak = controller.streak;
+        expect(store, isNotNull);
+        expect(controller.error, isNull);
+        expect(repository.calls, ['home', 'submitSteps']);
+        if (failing == 'theme') {
+          repository.failThemes = true;
+        } else {
+          repository.failOutfits = true;
+        }
+        await controller.sync();
+        debugPrint('failed $failing sync calls: ${repository.calls}');
+        debugPrint(
+          'survived: theme=${controller.store?.equippedTheme} '
+          'outfit=${controller.outfits?.equippedOutfit} '
+          'steps=${controller.today?.steps} '
+          'balance=${controller.wallet?.balance} '
+          'streak=${controller.streak?.days}',
+        );
+        // The failed snapshot is the only call: no step upload follows.
+        expect(repository.calls, ['home', 'submitSteps', 'home']);
+        expect(controller.error, isNotNull);
+        expect(controller.connected, isTrue);
+        expect(controller.busy, isFalse);
+        expect(controller.store, same(store));
+        expect(controller.outfits, same(outfits));
+        expect(controller.today, same(today));
+        expect(controller.wallet, same(wallet));
+        expect(controller.streak, same(streak));
+        expect(
+          controller.wornLayer('shih-tzu'),
+          'assets/wardrobe/vest/shih-tzu.png',
+        );
+        repository
+          ..failThemes = false
+          ..failOutfits = false;
+        await controller.sync();
+        debugPrint('recovered $failing sync calls: ${repository.calls}');
+        expect(repository.calls, [
+          'home',
+          'submitSteps',
+          'home',
+          'home',
+          'submitSteps',
+        ]);
+        expect(controller.error, isNull);
+        expect(controller.busy, isFalse);
+        expect(controller.connected, isTrue);
+        expect(controller.store, isNotNull);
+        expect(controller.today!.steps, 9000);
+      });
+    });
+  }
 
   test('a failed first snapshot during sync has nothing to keep', () async {
     final repository = AccountRepository()..failRead = true;
