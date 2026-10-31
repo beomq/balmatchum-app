@@ -197,7 +197,12 @@ class ProductController extends ChangeNotifier {
         await StepUpload(
           repository.client,
           repository.client.auth.authInfo!.authUserId.toString(),
-        ).submit(observation);
+          pool: repository.pool,
+        ).submit(
+          observation,
+          knownDay: today,
+          knownStreamGeneration: wallet?.streamGeneration,
+        );
       }
       _checkAccount();
       await watch?.resumeAndSync();
