@@ -44,10 +44,14 @@ final billingControllerProvider = Provider<BillingController?>((ref) {
   if (repository == null) return null;
   final store = ref.watch(billingStoreProvider);
   if (store == null) return null;
+  // A deleted account keeps its auth until the sign-out after the deletion
+  // runs; like the other controllers, billing sends nothing for it meanwhile.
+  final deleted = ref.watch(deletedAccountsProvider);
   final controller = BillingController(
     repository: repository,
     store: store,
-    isCurrent: () => repository.isCurrent,
+    isCurrent: () =>
+        repository.isCurrent && !deleted.contains(repository.account),
   );
   ref.onDispose(controller.dispose);
   return controller;
