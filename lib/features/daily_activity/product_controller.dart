@@ -7,6 +7,7 @@ import 'package:serverpod_auth_core_flutter/serverpod_auth_core_flutter.dart';
 
 import '../quiz/quiz_screen.dart';
 import '../records/records_models.dart';
+import '../wardrobe/wardrobe_art.dart';
 import '../wardrobe/wardrobe_models.dart';
 import '../watch_sync/watch_sync_service.dart';
 import '../watch_sync/watch_bridge.dart';
@@ -17,15 +18,8 @@ import 'record_mapping.dart';
 import 'step_streak.dart';
 import 'step_upload.dart';
 
-/// Server theme ids with a bundled scene at `assets/first_meeting/<id>.png`
-/// (design home-v1 backgrounds).
-const _weatherBackgrounds = {'sunny', 'cloudy', 'rainy', 'snowy'};
-
 /// The bundled picture for a theme, or null where its colour is drawn.
-String? themeBackgroundAsset(String themeId) =>
-    _weatherBackgrounds.contains(themeId)
-    ? 'assets/first_meeting/$themeId.png'
-    : null;
+String? themeBackgroundAsset(String themeId) => backgroundArt[themeId];
 
 class ProductController extends ChangeNotifier {
   ProductController(
@@ -122,6 +116,7 @@ class ProductController extends ChangeNotifier {
     wallet = null;
     store = null;
     outfits = null;
+    wardrobeStore = null;
     quiz = null;
     streak = null;
     _recentDays = const [];
@@ -167,6 +162,7 @@ class ProductController extends ChangeNotifier {
     }
     store = snapshot.themes;
     outfits = snapshot.outfits;
+    wardrobeStore = snapshot.wardrobe;
     today = snapshot.day;
     wallet = snapshot.wallet;
     _recentDays = snapshot.recentDays;
@@ -452,167 +448,49 @@ class ProductController extends ChangeNotifier {
     return quizView(quiz!);
   });
 
-  /// [balance] overrides the theme store's when [outfitStore] was read later.
-  WardrobeSnapshot wardrobe(
-    api.ThemeStore value, {
-    api.OutfitStore? outfitStore,
-    int? balance,
-  }) => WardrobeSnapshot(
-    equippedThemeId: value.equippedTheme,
-    balance: balance ?? value.balance,
-    fixtureLabel: value.fixtureLabel,
-    outfits: outfitStore == null ? null : outfitView(outfitStore),
-    themes: [
-      for (final item in value.items)
-        WardrobeTheme(
-          id: item.themeId,
-          name: item.name,
-          owned: item.owned,
-          colorValue: item.colorValue,
-          price: item.price,
-          backgroundAsset: themeBackgroundAsset(item.themeId),
-        ),
-    ],
-  );
+  /// The last confirmed wardrobe (home snapshot, wardrobe read or action).
+  api.WardrobeStore? wardrobeStore;
 
-  WardrobeOutfits outfitView(api.OutfitStore value) => WardrobeOutfits(
-    equippedId: value.equippedOutfit,
-    items: [
-      for (final item in value.items)
-        WardrobeOutfit(
-          id: item.outfitId,
-          name: item.name,
-          price: item.price,
-          owned: item.owned,
-          // Without a server profile there is no breed to fit.
-          compatible: item.compatible && value.breedId != null,
-        ),
-    ],
-  );
+  /// What [breedId] wears by the last confirmed wardrobe, or null.
+  DogLook? wornLook(String breedId) => wardrobeStore?.look(breedId);
 
-  /// The layer to draw over the [breedId] sprite from the last confirmed
-  /// server outfit state, or null.
-  String? wornLayer(String breedId) {
-    final value = outfits;
-    return value == null ? null : outfitView(value).wornLayer(breedId);
-  }
+  /// The equipped background by the last confirmed state.
+  String? get equippedBackground =>
+      wardrobeStore?.equippedBackground ?? store?.equippedTheme;
 
-  /// The wardrobe as the last refresh saw it, shown at once while
-  /// [loadWardrobe] confirms it with the server.
-  WardrobeSnapshot? get cachedWardrobe {
-    final value = store;
-    final worn = outfits;
-    return value == null
-        ? null
-        : wardrobe(value, outfitStore: worn, balance: worn?.balance);
-  }
-
-  Future<WardrobeSnapshot> loadWardrobe() async {
+  Future<api.WardrobeStore> loadWardrobe() async {
     _checkAccount();
-    final themesRead = repository.themes();
-    // The outfit shelf shows its own reload; themes stay usable.
-    final wornRead = repository.outfits().then<api.OutfitStore?>(
-      (value) => value,
-      onError: (Object _) => null,
-    );
-    final value = await themesRead;
-    final worn = await wornRead;
+    final value = await repository.wardrobe();
     _checkAccount();
-    store = value;
-    if (worn != null) outfits = worn;
+    wardrobeStore = value;
     notifyListeners();
-    return wardrobe(value, outfitStore: worn, balance: worn?.balance);
+    return value;
   }
 
-  Future<WardrobeSnapshot> themeAction(
-    WardrobeTheme theme, {
-    required bool equip,
-  }) => _mutate(() async {
-    final key = '${equip ? 'equip' : 'buy'}:${theme.id}';
-    // A replayed answer can be stale; only a retry re-reads the server.
-    final retry = _requests.containsKey(key);
-    try {
-      final confirmed = equip
-          ? await repository.equip(theme.id, request(key))
-          : await repository.purchase(theme.id, request(key));
-      _requests.remove(key);
-      if (!retry) {
-        store = confirmed;
-        notifyListeners();
-        return wardrobe(confirmed, outfitStore: outfits);
-      }
+  Future<api.WardrobeStore> wardrobeAction(WardrobeAction action) => _mutate(
+    () async {
+      final key = action.key;
+      // A replayed answer can be stale; only a retry re-reads the server.
+      final retry = _requests.containsKey(key);
+      api.WardrobeStore answer;
       try {
-        store = await repository.themes();
-      } on Exception {
-        store = null;
-        error = '작업은 완료됐지만 현재 적용 상태를 확인하지 못했어요. 다시 조회해 주세요.';
-        notifyListeners();
-        return WardrobeSnapshot(
-          themes: wardrobe(confirmed).themes,
-          equippedThemeId: null,
-          fixtureLabel: confirmed.fixtureLabel,
-        );
+        answer = await repository.wardrobeAction(action, request(key));
+      } on api.ProductException catch (e) {
+        _requests.remove(key);
+        throw WardrobeActionException(switch (e.code) {
+          'insufficientPoints' => WardrobeFailureReason.insufficientPoints,
+          'outfitIncompatible' => WardrobeFailureReason.incompatible,
+          'subscriptionRequired' => WardrobeFailureReason.subscriptionRequired,
+          _ => WardrobeFailureReason.unavailable,
+        });
       }
+      _requests.remove(key);
+      _checkAccount();
+      if (retry) answer = await repository.wardrobe();
+      _checkAccount();
+      wardrobeStore = answer;
       notifyListeners();
-      return wardrobe(store!, outfitStore: outfits);
-    } on api.ProductException catch (e) {
-      _requests.remove(key);
-      throw WardrobeActionException(
-        e.code == 'insufficientPoints'
-            ? WardrobeFailureReason.insufficientPoints
-            : WardrobeFailureReason.unavailable,
-      );
-    }
-  });
-
-  Future<WardrobeSnapshot> outfitAction(
-    WardrobeOutfit outfit,
-    OutfitChange change,
-  ) => _mutate(() async {
-    final key = 'outfit:${change.name}:${outfit.id}';
-    final retry = _requests.containsKey(key);
-    api.OutfitStore? answer;
-    try {
-      final requestId = request(key);
-      answer = await switch (change) {
-        OutfitChange.purchase => repository.purchaseOutfit(
-          outfit.id,
-          requestId,
-        ),
-        OutfitChange.wear => repository.equipOutfit(outfit.id, requestId),
-        OutfitChange.remove => repository.unequipOutfit(requestId),
-      };
-    } on api.ProductException catch (e) {
-      _requests.remove(key);
-      throw WardrobeActionException(switch (e.code) {
-        'insufficientPoints' => WardrobeFailureReason.insufficientPoints,
-        'outfitIncompatible' => WardrobeFailureReason.incompatible,
-        _ => WardrobeFailureReason.unavailable,
-      });
-    }
-    _requests.remove(key);
-    _checkAccount();
-    api.OutfitStore? worn;
-    if (retry) {
-      try {
-        // A replayed answer can be stale; show what the server holds now.
-        worn = await repository.outfits();
-      } catch (_) {
-        error = '작업은 완료됐지만 현재 적용 상태를 확인하지 못했어요. 다시 조회해 주세요.';
-      }
-    } else {
-      worn = answer;
-    }
-    _checkAccount();
-    outfits = worn;
-    final themes = store;
-    return themes == null
-        // The theme state is unknown as well; the screen asks for a reload.
-        ? WardrobeSnapshot(
-            themes: const [],
-            equippedThemeId: null,
-            balance: worn?.balance,
-          )
-        : wardrobe(themes, outfitStore: worn, balance: worn?.balance);
-  });
+      return answer;
+    },
+  );
 }

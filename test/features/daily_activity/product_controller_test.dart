@@ -62,6 +62,46 @@ ThemeStore themeStore({bool cloudyOwned = false, int balance = 42}) =>
       balance: balance,
     );
 
+/// Wardrobe with one item (padding) in two colours, worn on a maltese.
+WardrobeStore wardrobeStore({
+  List<String> owned = const [],
+  List<WardrobeEquipView> equipped = const [],
+  int balance = 42,
+}) => WardrobeStore(
+  colours: [
+    WardrobeColourView(colourId: 'tomato', name: '토마토 레드', swatch: 0xFFE0453A),
+    WardrobeColourView(colourId: 'pine', name: '소나무 초록', swatch: 0xFF2E9A5E),
+  ],
+  items: [
+    WardrobeItemView(
+      itemId: 'padding',
+      slot: 'torso',
+      name: '패딩',
+      price: 150,
+      colours: ['tomato', 'pine'],
+      ownedColours: owned,
+      wearableColours: ['tomato', 'pine'],
+      sellable: true,
+      setIds: [],
+    ),
+  ],
+  backgrounds: [
+    WardrobeBackgroundView(
+      backgroundId: 'sunny',
+      name: '맑음',
+      price: 0,
+      owned: true,
+      sellable: true,
+    ),
+  ],
+  sets: [],
+  equipped: equipped,
+  equippedBackground: 'sunny',
+  breedId: 'maltese',
+  balance: balance,
+  subscriber: false,
+);
+
 /// Production outfit shape for a profile whose breed may wear the vest.
 OutfitStore outfitStore({
   bool owned = false,
@@ -139,6 +179,10 @@ class AccountRepository extends ProductRepository {
         wallet: await wallet(),
         themes: await themes(),
         outfits: await outfits(),
+        // One server column: the theme store and the wardrobe agree.
+        wardrobe: wardrobeState.copyWith(
+          equippedBackground: (await themes()).equippedTheme,
+        ),
         recentDays: recentDays ?? const [],
       );
     });
@@ -219,6 +263,47 @@ class AccountRepository extends ProductRepository {
     themeFailure = null;
     if (failure != null) throw failure;
     return store = themeStore(cloudyOwned: true, balance: 39);
+  }
+
+  WardrobeStore wardrobeState = wardrobeStore();
+  Exception? wardrobeFailure;
+  final wardrobeRequests = <String>[];
+
+  @override
+  Future<WardrobeStore> wardrobe() async {
+    calls.add('wardrobe');
+    return wardrobeState;
+  }
+
+  @override
+  Future<WardrobeStore> wardrobeAction(
+    WardrobeAction action,
+    String requestId,
+  ) async {
+    calls.add(action.key);
+    wardrobeRequests.add(requestId);
+    final failure = wardrobeFailure;
+    wardrobeFailure = null;
+    if (failure != null) throw failure;
+    final colour = action.colourId ?? '';
+    return wardrobeState = switch (action.kind) {
+      WardrobeActionKind.buyItem => wardrobeStore(
+        owned: [colour],
+        balance: 150,
+      ),
+      WardrobeActionKind.wearItem => wardrobeStore(
+        owned: [colour],
+        balance: wardrobeState.balance,
+        equipped: [
+          WardrobeEquipView(slot: 'torso', itemId: action.id, colourId: colour),
+        ],
+      ),
+      WardrobeActionKind.takeOffSlot => wardrobeStore(
+        owned: wardrobeState.items.single.ownedColours,
+        balance: wardrobeState.balance,
+      ),
+      _ => wardrobeState,
+    };
   }
 
   @override
@@ -473,8 +558,7 @@ void main() {
         'day',
         'claim',
         'home',
-        'themes',
-        'outfits',
+        'wardrobe',
         'delete',
         'home',
       ]);
@@ -483,79 +567,52 @@ void main() {
     },
   );
 
-  test('real account buys a theme from the server store', () async {
-    final repository = AccountRepository();
-    final steps = DailyStepsController(
-      readSteps: () async =>
-          const DailyStepsResult(DailyStepsStatus.empty, null),
-    );
-    final controller = ProductController(repository, steps, null, account: 'A');
-    addTearDown(() {
-      controller.dispose();
-      steps.dispose();
-      repository.client.close();
-    });
-    final cloudy = (await controller.loadWardrobe()).themes.singleWhere(
-      (theme) => theme.id == 'cloudy',
-    );
-    expect(cloudy.backgroundAsset, 'assets/first_meeting/cloudy.png');
-    final bought = await controller.themeAction(cloudy, equip: false);
-    expect(
-      bought.themes.singleWhere((theme) => theme.id == 'cloudy').owned,
-      isTrue,
-    );
-    expect(bought.balance, 39);
-    // The first attempt applies the server's answer without a re-read.
-    expect(repository.calls, ['themes', 'outfits', 'purchase:cloudy']);
-  });
-
-  test('real account buys, wears and removes the vest on the server', () async {
+  test('wardrobe buys, wears and takes off an item on the server', () async {
     final repository = AccountRepository();
     final controller = accountController(repository);
-    final offered = (await controller.loadWardrobe()).outfits!.items.single;
-    final bought = await controller.outfitAction(
-      offered,
-      OutfitChange.purchase,
+    await controller.loadWardrobe();
+    const buy = WardrobeAction(WardrobeActionKind.buyItem, 'padding', 'tomato');
+    final bought = await controller.wardrobeAction(buy);
+    expect(bought.items.single.ownedColours, ['tomato']);
+    expect(bought.balance, 150);
+    expect(controller.wornLook('maltese')!.layers, isEmpty);
+
+    await controller.wardrobeAction(
+      const WardrobeAction(WardrobeActionKind.wearItem, 'padding', 'tomato'),
     );
-    final vest = bought.outfits!.items.single;
-    expect(vest.owned, isTrue);
-    expect(bought.balance, 39);
-    expect(controller.wornLayer('shih-tzu'), isNull);
-    await controller.outfitAction(vest, OutfitChange.wear);
     expect(
-      controller.wornLayer('shih-tzu'),
-      'assets/wardrobe/vest/shih-tzu.png',
+      controller.wornLook('maltese')!.layers,
+      contains('assets/wardrobe/items/padding/tomato/maltese.png'),
     );
-    final removed = await controller.outfitAction(vest, OutfitChange.remove);
-    expect(removed.outfits!.equippedId, isNull);
-    expect(controller.wornLayer('shih-tzu'), isNull);
+    await controller.wardrobeAction(
+      const WardrobeAction(WardrobeActionKind.takeOffSlot, 'torso'),
+    );
+    expect(controller.wornLook('maltese')!.layers, isEmpty);
     expect(repository.calls, [
-      'themes',
-      'outfits',
-      'purchaseOutfit:vest-low-v',
-      'equipOutfit:vest-low-v',
-      'unequipOutfit',
+      'wardrobe',
+      'wardrobe:buyItem:padding:tomato',
+      'wardrobe:wearItem:padding:tomato',
+      'wardrobe:takeOffSlot:torso:',
     ]);
     // Each confirmed change is a new intent with its own idempotency key.
-    expect(repository.outfitRequests.toSet(), hasLength(3));
+    expect(repository.wardrobeRequests.toSet(), hasLength(3));
   });
 
-  test('outfit server codes become wardrobe failure reasons', () async {
+  test('wardrobe server codes become failure reasons', () async {
     final repository = AccountRepository();
     final controller = accountController(repository);
-    final vest = (await controller.loadWardrobe()).outfits!.items.single;
+    const buy = WardrobeAction(WardrobeActionKind.buySet, 'winter', 'tomato');
     const cases = {
       'insufficientPoints': WardrobeFailureReason.insufficientPoints,
       'outfitIncompatible': WardrobeFailureReason.incompatible,
-      'outfitNotOwned': WardrobeFailureReason.unavailable,
-      'unknownOutfit': WardrobeFailureReason.unavailable,
+      'subscriptionRequired': WardrobeFailureReason.subscriptionRequired,
+      'setNotPurchasable': WardrobeFailureReason.unavailable,
       'idempotencyConflict': WardrobeFailureReason.unavailable,
-      'invalidRequestId': WardrobeFailureReason.unavailable,
     };
     for (final MapEntry(key: code, value: reason) in cases.entries) {
-      repository.outfitFailure = ProductException(code: code);
+      repository.wardrobeFailure = ProductException(code: code);
       await expectLater(
-        controller.outfitAction(vest, OutfitChange.purchase),
+        controller.wardrobeAction(buy),
         throwsA(
           isA<WardrobeActionException>().having(
             (e) => e.reason,
@@ -566,124 +623,58 @@ void main() {
         reason: code,
       );
     }
-    expect(repository.wardrobeOutfits.items.single.owned, isFalse);
   });
 
-  test('vest retry uses a new request id after server rejection', () async {
-    // Given: a purchase explicitly rejected by the server.
+  test('wardrobe retry uses a new request id after server rejection', () async {
     final repository = AccountRepository();
     final controller = accountController(repository);
-    final vest = (await controller.loadWardrobe()).outfits!.items.single;
-    repository.outfitFailure = ProductException(code: 'insufficientPoints');
+    const buy = WardrobeAction(WardrobeActionKind.buyItem, 'padding', 'pine');
+    repository.wardrobeFailure = ProductException(code: 'insufficientPoints');
     await expectLater(
-      controller.outfitAction(vest, OutfitChange.purchase),
+      controller.wardrobeAction(buy),
       throwsA(isA<WardrobeActionException>()),
     );
 
-    // When: the user makes a fresh purchase attempt.
-    await controller.outfitAction(vest, OutfitChange.purchase);
+    await controller.wardrobeAction(buy);
 
-    // Then: the confirmed rejection's request id is not reused.
-    expect(repository.outfitRequests, hasLength(2));
-    expect(repository.outfitRequests.toSet(), hasLength(2));
+    expect(repository.wardrobeRequests, hasLength(2));
+    expect(repository.wardrobeRequests.toSet(), hasLength(2));
   });
 
-  test('theme retry uses a new request id after server rejection', () async {
-    // Given: a purchase explicitly rejected by the server.
-    final repository = AccountRepository();
-    final controller = accountController(repository);
-    final cloudy = (await controller.loadWardrobe()).themes.singleWhere(
-      (theme) => theme.id == 'cloudy',
-    );
-    repository.themeFailure = ProductException(code: 'insufficientPoints');
-    await expectLater(
-      controller.themeAction(cloudy, equip: false),
-      throwsA(isA<WardrobeActionException>()),
-    );
-
-    // When: the user makes a fresh purchase attempt.
-    await controller.themeAction(cloudy, equip: false);
-
-    // Then: the confirmed rejection's request id is not reused.
-    expect(repository.themeRequests, hasLength(2));
-    expect(repository.themeRequests.toSet(), hasLength(2));
-  });
-
-  test('theme retry uses the same request id after response loss', () async {
-    // Given: a purchase whose response was lost.
-    final repository = AccountRepository();
-    final controller = accountController(repository);
-    final cloudy = (await controller.loadWardrobe()).themes.singleWhere(
-      (theme) => theme.id == 'cloudy',
-    );
-    repository.themeFailure = Exception('response lost');
-    await expectLater(
-      controller.themeAction(cloudy, equip: false),
-      throwsException,
-    );
-
-    // When: the user retries the ambiguous purchase.
-    await controller.themeAction(cloudy, equip: false);
-
-    // Then: the retry retains the original idempotency key and re-reads.
-    expect(repository.themeRequests, hasLength(2));
-    expect(repository.themeRequests.toSet(), hasLength(1));
-    expect(repository.calls, [
-      'themes',
-      'outfits',
-      'purchase:cloudy',
-      'purchase:cloudy',
-      'themes',
-    ]);
-  });
-
-  test('lost vest response retries with the same request id', () async {
-    final repository = AccountRepository();
-    final controller = accountController(repository);
-    final vest = (await controller.loadWardrobe()).outfits!.items.single;
-    repository.outfitFailure = Exception('response lost');
-    await expectLater(
-      controller.outfitAction(vest, OutfitChange.purchase),
-      throwsException,
-    );
-    final bought = await controller.outfitAction(vest, OutfitChange.purchase);
-    expect(bought.outfits!.items.single.owned, isTrue);
-    expect(repository.outfitRequests, hasLength(2));
-    expect(repository.outfitRequests.toSet(), hasLength(1));
-    expect(repository.calls, [
-      'themes',
-      'outfits',
-      'purchaseOutfit:vest-low-v',
-      'purchaseOutfit:vest-low-v',
-      'outfits',
-    ]);
-  });
-
-  test('wardrobe still opens with themes when outfits fail', () async {
-    final repository = AccountRepository()..failOutfits = true;
-    final controller = accountController(repository);
-    final snapshot = await controller.loadWardrobe();
-    expect(snapshot.equippedThemeId, 'sunny');
-    expect(snapshot.themes, hasLength(2));
-    expect(snapshot.outfits, isNull);
-  });
-
-  test('vest without a server breed is never wearable', () async {
-    final repository = AccountRepository()
-      ..wardrobeOutfits = outfitStore(
-        owned: true,
-        equipped: 'vest-low-v',
-        breed: null,
+  test(
+    'lost wardrobe response retries with the same id and re-reads',
+    () async {
+      final repository = AccountRepository();
+      final controller = accountController(repository);
+      const buy = WardrobeAction(
+        WardrobeActionKind.buyItem,
+        'padding',
+        'tomato',
       );
-    final controller = accountController(repository);
-    final snapshot = await controller.loadWardrobe();
-    expect(snapshot.outfits!.items.single.compatible, isFalse);
-    expect(controller.wornLayer('shih-tzu'), isNull);
-  });
+      repository.wardrobeFailure = Exception('response lost');
+      await expectLater(controller.wardrobeAction(buy), throwsException);
+
+      final bought = await controller.wardrobeAction(buy);
+
+      expect(bought.items.single.ownedColours, ['tomato']);
+      expect(repository.wardrobeRequests, hasLength(2));
+      expect(repository.wardrobeRequests.toSet(), hasLength(1));
+      expect(repository.calls, [
+        'wardrobe:buyItem:padding:tomato',
+        'wardrobe:buyItem:padding:tomato',
+        'wardrobe',
+      ]);
+    },
+  );
 
   test('refresh reads one home snapshot', () async {
     final repository = AccountRepository()
-      ..wardrobeOutfits = outfitStore(owned: true, equipped: 'vest-low-v');
+      ..wardrobeState = wardrobeStore(
+        owned: ['pine'],
+        equipped: [
+          WardrobeEquipView(slot: 'torso', itemId: 'padding', colourId: 'pine'),
+        ],
+      );
     final controller = accountController(repository);
     await controller.refresh();
     debugPrint('refresh calls: ${repository.calls}');
@@ -692,8 +683,8 @@ void main() {
     expect(controller.wallet!.balance, 42);
     expect(controller.store!.equippedTheme, 'sunny');
     expect(
-      controller.wornLayer('shih-tzu'),
-      'assets/wardrobe/vest/shih-tzu.png',
+      controller.wornLook('maltese')!.layers,
+      contains('assets/wardrobe/items/padding/pine/maltese.png'),
     );
     expect(controller.streak, isNotNull);
   });
@@ -724,6 +715,7 @@ void main() {
         final controller = rig.controller;
         await controller.sync();
         final store = controller.store;
+        final wardrobe = controller.wardrobeStore;
         final outfits = controller.outfits;
         final today = controller.today;
         final wallet = controller.wallet;
@@ -755,10 +747,7 @@ void main() {
         expect(controller.today, same(today));
         expect(controller.wallet, same(wallet));
         expect(controller.streak, same(streak));
-        expect(
-          controller.wornLayer('shih-tzu'),
-          'assets/wardrobe/vest/shih-tzu.png',
-        );
+        expect(controller.wardrobeStore, same(wardrobe));
         repository
           ..failThemes = false
           ..failOutfits = false;

@@ -118,14 +118,9 @@ final routerProvider = Provider<GoRouter>((ref) {
               path: 'wardrobe',
               builder: (context, state) => WardrobeScreen(
                 dog: controller.state.candidate!,
+                cachedStore: ref.read(productControllerProvider).wardrobeStore,
                 loadWardrobe: ref.read(productControllerProvider).loadWardrobe,
-                purchaseTheme: (theme) => ref
-                    .read(productControllerProvider)
-                    .themeAction(theme, equip: false),
-                equipTheme: (theme) => ref
-                    .read(productControllerProvider)
-                    .themeAction(theme, equip: true),
-                changeOutfit: ref.read(productControllerProvider).outfitAction,
+                runAction: ref.read(productControllerProvider).wardrobeAction,
                 onBack: () => context.pop(),
                 onHome: () => context.go('/'),
               ),
@@ -232,7 +227,7 @@ final routerProvider = Provider<GoRouter>((ref) {
                 dailySteps: ref.read(dailyStepsControllerProvider),
                 dogLayer: ref
                     .read(authenticatedProductControllerProvider)
-                    ?.wornLayer(dog.id),
+                    ?.wornLook(dog.id),
                 onBack: () => context.pop(),
                 onHome: () => context.go('/'),
                 onOpenSteps: () => context.push('/settings/steps'),
@@ -311,12 +306,10 @@ final routerProvider = Provider<GoRouter>((ref) {
               return WardrobeScreen(
                 key: ObjectKey(authenticated),
                 dog: authenticated!.state.candidate!,
-                cachedSnapshot: product.cachedWardrobe,
+                cachedStore: product.wardrobeStore,
                 loadWardrobe: product.loadWardrobe,
-                purchaseTheme: (theme) =>
-                    product.themeAction(theme, equip: false),
-                equipTheme: (theme) => product.themeAction(theme, equip: true),
-                changeOutfit: product.outfitAction,
+                runAction: product.wardrobeAction,
+                onSubscribe: () => context.push('/billing'),
                 onBack: () => context.pop(),
                 onHome: () => context.go('/'),
               );

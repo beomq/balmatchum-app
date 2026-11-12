@@ -2,7 +2,8 @@ import 'package:balmatchum_app/features/daily_activity/home_bootstrap.dart';
 import 'package:balmatchum_client/balmatchum_client.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-import 'product_controller_test.dart' show outfitStore, record, themeStore;
+import 'product_controller_test.dart'
+    show outfitStore, record, themeStore, wardrobeStore;
 
 HomeSnapshot snapshot(String date) => HomeSnapshot(
   date: date,
@@ -14,6 +15,7 @@ HomeSnapshot snapshot(String date) => HomeSnapshot(
   ),
   themes: themeStore(),
   outfits: outfitStore(),
+  wardrobe: wardrobeStore(),
   recentDays: const [],
 );
 

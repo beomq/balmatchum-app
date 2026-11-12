@@ -15,6 +15,7 @@ import '../records/product_page.dart'
     show PixelIcon, Space, fixtureLabelsVisible, formatCount;
 import '../records/status_widgets.dart';
 import '../wardrobe/dog_sprite.dart';
+import '../wardrobe/set_effect.dart';
 import 'breed_pager.dart';
 import 'domain/first_meeting.dart';
 import 'home_goal_card.dart';
@@ -253,7 +254,7 @@ class _FirstMeetingScreenState extends State<FirstMeetingScreen> {
       product: product,
       day: recordDay(product.today!),
       dogAsset: dog.spritePath,
-      dogLayer: product.wornLayer(dog.id),
+      dogLayer: product.wornLook(dog.id),
       canOpenWardrobe: widget.onOpenWardrobe != null,
     );
     // Navigates from the home once the sheet's route is gone.
@@ -823,7 +824,7 @@ class _FirstMeetingScreenState extends State<FirstMeetingScreen> {
                     fit: StackFit.expand,
                     children: [
                       if (themeBackgroundAsset(
-                            product?.store?.equippedTheme ?? 'sunny',
+                            product?.equippedBackground ?? 'sunny',
                           )
                           case final asset?)
                         Image.asset(
@@ -837,13 +838,44 @@ class _FirstMeetingScreenState extends State<FirstMeetingScreen> {
                       else
                         ColoredBox(
                           color: Color(
-                            product!.store!.items
-                                .firstWhere(
-                                  (item) =>
-                                      item.themeId ==
-                                      product.store!.equippedTheme,
-                                )
-                                .colorValue,
+                            product?.store?.items
+                                    .where(
+                                      (item) =>
+                                          item.themeId ==
+                                          product.equippedBackground,
+                                    )
+                                    .firstOrNull
+                                    ?.colorValue ??
+                                MeetingColors.soft.toARGB32(),
+                          ),
+                        ),
+                      // A complete set brings its effect and band (DESIGN 2).
+                      if (product?.wornLook(s.candidate!.id)?.effect
+                          case final effect?)
+                        SetEffect(preset: effect),
+                      if (product?.wornLook(s.candidate!.id)?.setName
+                          case final name?)
+                        Positioned(
+                          left: 14,
+                          bottom: 14,
+                          child: Container(
+                            key: const ValueKey('home_set_band'),
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 10,
+                              vertical: 5,
+                            ),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFFD9483B),
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: Text(
+                              name,
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontWeight: FontWeight.w800,
+                                fontSize: 13,
+                              ),
+                            ),
                           ),
                         ),
                       Padding(
@@ -872,7 +904,7 @@ class _FirstMeetingScreenState extends State<FirstMeetingScreen> {
                               child: Center(
                                 child: DogSprite(
                                   asset: s.candidate!.spritePath,
-                                  layer: product?.wornLayer(s.candidate!.id),
+                                  look: product?.wornLook(s.candidate!.id),
                                   layerKey: const ValueKey('home_dog_outfit'),
                                 ),
                               ),

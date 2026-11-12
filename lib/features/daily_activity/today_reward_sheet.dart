@@ -6,6 +6,7 @@ import '../records/product_page.dart' show PixelIcon, Space, formatCount;
 import '../records/records_models.dart';
 import '../records/status_widgets.dart';
 import '../wardrobe/dog_sprite.dart';
+import '../wardrobe/wardrobe_art.dart';
 import 'product_controller.dart';
 import 'product_repository.dart';
 import 'record_mapping.dart';
@@ -19,7 +20,7 @@ Future<bool> showTodayRewardSheet(
   required ProductController product,
   required RecordDay day,
   required String dogAsset,
-  String? dogLayer,
+  DogLook? dogLayer,
   bool canOpenWardrobe = true,
   Future<AdsController?> Function()? createAds,
 }) async =>
@@ -56,7 +57,7 @@ class TodayRewardSheet extends StatefulWidget {
 
   /// The home's companion: the chosen breed and its confirmed worn layer.
   final String dogAsset;
-  final String? dogLayer;
+  final DogLook? dogLayer;
   final bool canOpenWardrobe;
   final Future<AdsController?> Function()? createAds;
 
@@ -188,7 +189,7 @@ class _Granted extends StatelessWidget {
   final String date;
   final ProductController product;
   final String dogAsset;
-  final String? dogLayer;
+  final DogLook? dogLayer;
   final bool canOpenWardrobe;
 
   @override
@@ -214,7 +215,7 @@ class _Granted extends StatelessWidget {
               dimension: 96,
               child: DogSprite(
                 asset: dogAsset,
-                layer: dogLayer,
+                look: dogLayer,
                 spriteKey: const ValueKey('reward_granted_dog'),
               ),
             ),
