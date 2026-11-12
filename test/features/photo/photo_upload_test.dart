@@ -40,8 +40,15 @@ class FakePhotoTransport implements PhotoTransport {
   Completer<void>? putGate;
   Completer<void>? putStarted;
 
+  /// What each ticket was reserved as, for confirm and assertions.
+  final reserved = <UuidValue, (UploadKind, UuidValue?)>{};
+
   @override
-  Future<PhotoUploadTicket> createUpload(int byteSize) async {
+  Future<PhotoUploadTicket> createUpload(
+    int byteSize, {
+    UploadKind kind = UploadKind.original,
+    UuidValue? originalId,
+  }) async {
     final ticket = PhotoUploadTicket(
       photoId: const Uuid().v7obj(),
       uploadUrl: 'https://bucket.test/put/${tickets.length}',
@@ -50,6 +57,7 @@ class FakePhotoTransport implements PhotoTransport {
       expiresAt: now().toUtc().add(const Duration(minutes: 5)),
     );
     tickets.add(ticket);
+    reserved[ticket.photoId] = (kind, originalId);
     return ticket;
   }
 
@@ -78,6 +86,8 @@ class FakePhotoTransport implements PhotoTransport {
   PhotoView view(UuidValue id, {int? width, int? height, DateTime? expires}) =>
       PhotoView(
         photoId: id,
+        kind: (reserved[id]?.$1 ?? UploadKind.original).name,
+        originalId: reserved[id]?.$2,
         contentType: 'image/jpeg',
         byteSize: bucket[id.uuid]?.length ?? 1,
         width: width,
@@ -305,6 +315,129 @@ void main() {
     expect(await cache.read(id), isNull);
     expect(File('${dir.path}/${id.uuid}.jpg').existsSync(), isFalse);
     expect(transport.bucket, isEmpty);
+  });
+
+  group('composite', () {
+    PhotoView photo(String id, String kind, [String? original]) => PhotoView(
+      photoId: UuidValue.fromString(id),
+      kind: kind,
+      originalId: original == null ? null : UuidValue.fromString(original),
+      contentType: 'image/jpeg',
+      byteSize: 1,
+      createdAt: DateTime.utc(2026),
+      url: 'https://bucket.test/get/$id/0',
+      urlExpiresAt: DateTime.utc(2100),
+    );
+    const o1 = '00000000-0000-7000-8000-000000000001';
+    const c1 = '00000000-0000-7000-8000-000000000002';
+    const o2 = '00000000-0000-7000-8000-000000000003';
+    const c3 = '00000000-0000-7000-8000-000000000004';
+    const gone = '00000000-0000-7000-8000-000000000009';
+
+    test(
+      'the strip pairs a composite with its original and shows it first',
+      () {
+        final groups = groupPhotos([
+          photo(c3, 'composite', gone),
+          photo(o2, 'original'),
+          photo(c1, 'composite', o1),
+          photo(o1, 'original'),
+        ]);
+        expect(groups.map((g) => (g.main.photoId.uuid, g.members.length)), [
+          (c3, 1),
+          (o2, 1),
+          (c1, 2),
+        ]);
+        expect(groups.last.original!.photoId.uuid, o1);
+        // A composite whose original is not listed stands alone.
+        expect(groups.first.original, isNull);
+      },
+    );
+
+    test('a saved picture uploads linked to its finished original', () async {
+      final transport = FakePhotoTransport();
+      final uploader = PhotoUploader(transport: transport, cache: PhotoCache());
+      await uploader.upload(await pngOf(40, 30));
+      final original = uploader.photos!.single.photoId;
+      await uploader.uploadComposite(await pngOf(40, 30));
+      expect(uploader.kind, UploadKind.composite);
+      expect(uploader.phase, UploadPhase.done);
+      final (kind, link) = transport.reserved[transport.tickets.last.photoId]!;
+      expect((kind, link), (UploadKind.composite, original));
+      expect(uploader.groups.single.main.kind, 'composite');
+      expect(uploader.groups.single.members, hasLength(2));
+    });
+
+    test('a saved picture waits for an original still uploading', () async {
+      final gate = Completer<void>();
+      final started = Completer<void>();
+      final transport = FakePhotoTransport()
+        ..putGate = gate
+        ..putStarted = started;
+      final uploader = PhotoUploader(transport: transport, cache: PhotoCache());
+      final original = uploader.upload(await pngOf(40, 30));
+      await started.future.timeout(const Duration(seconds: 10));
+      final composite = uploader.uploadComposite(await pngOf(40, 30));
+      gate.complete();
+      await original;
+      await composite;
+      final link = transport.reserved[transport.tickets.last.photoId]!.$2;
+      expect(link, transport.tickets.first.photoId);
+    });
+
+    test('a failed original leaves the saved picture unlinked', () async {
+      final transport = FakePhotoTransport()
+        ..putFailure = const SocketException('offline');
+      final uploader = PhotoUploader(transport: transport, cache: PhotoCache());
+      await uploader.upload(await pngOf(40, 30));
+      await uploader.uploadComposite(await pngOf(40, 30));
+      expect(uploader.phase, UploadPhase.done);
+      expect(transport.reserved[transport.tickets.last.photoId]!.$2, isNull);
+    });
+
+    test('a reopened uploaded photo links without uploading again', () async {
+      final transport = FakePhotoTransport();
+      final uploader = PhotoUploader(transport: transport, cache: PhotoCache());
+      final id = UuidValue.fromString(o1);
+      uploader.adoptOriginal(id);
+      await uploader.uploadComposite(await pngOf(40, 30));
+      expect(transport.tickets, hasLength(1));
+      expect(transport.reserved[transport.tickets.single.photoId], (
+        UploadKind.composite,
+        id,
+      ));
+    });
+
+    test('a failed saved picture retries on its own ticket', () async {
+      final transport = FakePhotoTransport();
+      final uploader = PhotoUploader(transport: transport, cache: PhotoCache());
+      await uploader.upload(await pngOf(40, 30));
+      transport.putFailure = const SocketException('offline');
+      await uploader.uploadComposite(await pngOf(40, 30));
+      expect(
+        (uploader.kind, uploader.phase),
+        (UploadKind.composite, UploadPhase.failed),
+      );
+      await uploader.retry();
+      expect(uploader.phase, UploadPhase.done);
+      expect(transport.tickets, hasLength(2), reason: 'one per photo');
+    });
+
+    test(
+      'deleting an entry removes the saved picture and its original',
+      () async {
+        final transport = FakePhotoTransport();
+        final uploader = PhotoUploader(
+          transport: transport,
+          cache: PhotoCache(),
+        );
+        await uploader.upload(await pngOf(40, 30));
+        await uploader.uploadComposite(await pngOf(40, 30));
+        await uploader.deleteGroup(uploader.groups.single);
+        expect(uploader.photos, isEmpty);
+        expect(transport.bucket, isEmpty);
+      },
+    );
   });
 
   test('disposing closes the transport', () {
