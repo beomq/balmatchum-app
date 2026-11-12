@@ -185,15 +185,26 @@ class PhotoEditor extends ChangeNotifier {
     }
     photo?.dispose();
     photo = loaded;
+    pickedBytes = null;
     sticker = const DogSticker();
     savedPng = null;
     reediting = false;
   }
 
+  /// The bytes of the last picked photo, for its upload copy. Null when the
+  /// photo came from somewhere else (a recovered pick or an uploaded photo).
+  Uint8List? pickedBytes;
+
   Future<void> pick(PhotoSource source) => _run(() async {
     final bytes = await adapter.pick(source);
-    if (bytes != null) await _replace(bytes);
+    if (bytes != null) {
+      await _replace(bytes);
+      pickedBytes = bytes;
+    }
   });
+
+  /// Opens a photo already uploaded, to arrange it again.
+  Future<void> open(Uint8List bytes) => _run(() => _replace(bytes));
 
   /// The saved view holds still, so a share matches the saved picture.
   void edit(DogSticker value) {
