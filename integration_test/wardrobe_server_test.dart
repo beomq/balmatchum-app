@@ -3,7 +3,8 @@ import 'package:balmatchum_app/features/daily_activity/daily_steps_controller.da
 import 'package:balmatchum_app/features/daily_activity/dev_test_session.dart';
 import 'package:balmatchum_app/features/daily_activity/product_controller.dart';
 import 'package:balmatchum_app/features/daily_activity/product_repository.dart';
-import 'package:balmatchum_app/features/first_meeting/domain/dog_catalog.dart';
+import 'package:balmatchum_app/features/first_meeting/domain/first_meeting.dart';
+import 'package:balmatchum_app/features/first_meeting/first_meeting_screen.dart';
 import 'package:balmatchum_app/features/first_meeting/meeting_theme.dart';
 import 'package:balmatchum_app/features/wardrobe/wardrobe_screen.dart';
 import 'package:balmatchum_app/features/watch_sync/watch_bridge.dart';
@@ -18,6 +19,16 @@ import 'package:serverpod_auth_core_flutter/serverpod_auth_core_flutter.dart';
 /// receives this month's gift as a member; phase \`kept\` runs after the
 /// subscription ended and wears the gift again.
 const phase = String.fromEnvironment('WARDROBE_PHASE', defaultValue: 'buy');
+
+class _MemoryStore implements FirstMeetingStorage {
+  String? value;
+  @override
+  Future<String?> read() async => value;
+  @override
+  Future<void> write(String payload) async => value = payload;
+  @override
+  Future<void> delete() async => value = null;
+}
 
 void main() {
   final binding = IntegrationTestWidgetsFlutterBinding.ensureInitialized();
@@ -87,6 +98,75 @@ void main() {
       steps.dispose();
     });
 
+    if (phase == 'home') {
+      // A wardrobe purchase must show on the home wallet without a refresh.
+      final meeting = FirstMeetingController(storage: _MemoryStore());
+      addTearDown(meeting.dispose);
+      await meeting.initialize();
+      await meeting.enter();
+      await meeting.chooseMethod(FirstMeetingMethod.catalog);
+      await meeting.selectBreed('maltese');
+      await meeting.confirmCandidate();
+      await meeting.updateName('보리');
+      await meeting.updateSex(DogSex.female);
+      await meeting.submitName();
+      await meeting.complete();
+      final navigator = GlobalKey<NavigatorState>();
+      await tester.pumpWidget(
+        MaterialApp(
+          navigatorKey: navigator,
+          theme: meetingTheme(),
+          home: FirstMeetingScreen(
+            controller: meeting,
+            product: product,
+            onOpenWardrobe: () => navigator.currentState!.push(
+              MaterialPageRoute<void>(
+                builder: (_) => WardrobeScreen(
+                  dog: FirstMeetingCatalog.byId('maltese'),
+                  cachedStore: product.wardrobeStore,
+                  loadWardrobe: product.loadWardrobe,
+                  runAction: product.wardrobeAction,
+                  onBack: () => navigator.currentState!.pop(),
+                  onHome: () => navigator.currentState!.pop(),
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+      final wallet = find.byKey(const ValueKey('reward_wallet'));
+      await until(tester, () => wallet.evaluate().isNotEmpty);
+      await frames(tester);
+      String home() => tester.widget<Text>(wallet).data!;
+      expect(home(), '1,000P');
+      await binding.takeScreenshot('wardrobe-08-home-before');
+
+      navigator.currentState!.push(
+        MaterialPageRoute<void>(
+          builder: (_) => WardrobeScreen(
+            dog: FirstMeetingCatalog.byId('maltese'),
+            loadWardrobe: product.loadWardrobe,
+            runAction: product.wardrobeAction,
+            onBack: () => navigator.currentState!.pop(),
+            onHome: () => navigator.currentState!.pop(),
+          ),
+        ),
+      );
+      await until(tester, () => product.wardrobeStore != null);
+      await frames(tester);
+      await tapKey(tester, 'wardrobe_tab_items');
+      await tapKey(tester, 'wardrobe_item_action_padding');
+      await tester.tap(find.byKey(const ValueKey('wardrobe_purchase_confirm')));
+      await until(tester, () => product.wardrobeStore!.balance == 850);
+      navigator.currentState!.pop();
+      await frames(tester);
+      await frames(tester);
+
+      expect(home(), '850P');
+      await binding.takeScreenshot('wardrobe-09-home-after-buy');
+      return;
+    }
+
     await tester.pumpWidget(
       MaterialApp(
         theme: meetingTheme(),
@@ -94,7 +174,7 @@ void main() {
           dog: FirstMeetingCatalog.byId('maltese'),
           loadWardrobe: product.loadWardrobe,
           runAction: product.wardrobeAction,
-          onSubscribe: () {},
+          onSubscribe: () async {},
           onBack: () {},
           onHome: () {},
         ),
