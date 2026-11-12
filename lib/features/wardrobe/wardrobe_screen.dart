@@ -49,8 +49,9 @@ class WardrobeScreen extends StatefulWidget {
   /// Also used by the insufficient-points path to reach today's reward.
   final VoidCallback onHome;
 
-  /// Opens the subscription page for a season set; null hides the button.
-  final VoidCallback? onSubscribe;
+  /// Opens the subscription page and completes when it closes; the wardrobe
+  /// is read again then. Null hides the button.
+  final Future<void> Function()? onSubscribe;
 
   /// The last known wardrobe, shown while [loadWardrobe] runs.
   final api.WardrobeStore? cachedStore;
@@ -176,6 +177,13 @@ class _WardrobeScreenState extends State<WardrobeScreen> {
   }
 
   String get breed => widget.dog.id;
+
+  /// Subscribing happens on another page; on return the membership and any
+  /// gift are read again from the server.
+  Future<void> subscribe() async {
+    await widget.onSubscribe!();
+    if (mounted) await load(cached: store);
+  }
 
   Map<String, Worn> wornNow(api.WardrobeStore s) => {
     for (final e in s.equipped) e.slot: Worn(e.itemId, e.colourId),
@@ -629,7 +637,7 @@ class _WardrobeScreenState extends State<WardrobeScreen> {
     final (String label, VoidCallback? action) = !c.wearable
         ? ('곧 입을 수 있어요', null)
         : gift && !s.subscriber && !set.sellable
-        ? ('구독하고 받기', widget.onSubscribe)
+        ? ('구독하고 받기', widget.onSubscribe == null ? null : subscribe)
         : gift && s.subscriber
         ? (
             '선물 받기',
@@ -861,7 +869,7 @@ class _WardrobeScreenState extends State<WardrobeScreen> {
             ),
           )
         : giftOpen && !item.sellable
-        ? ('구독하고 받기', widget.onSubscribe)
+        ? ('구독하고 받기', widget.onSubscribe == null ? null : subscribe)
         : isWorn
         ? (
             '벗기기',

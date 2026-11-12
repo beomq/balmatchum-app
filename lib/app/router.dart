@@ -309,7 +309,7 @@ final routerProvider = Provider<GoRouter>((ref) {
                 cachedStore: product.wardrobeStore,
                 loadWardrobe: product.loadWardrobe,
                 runAction: product.wardrobeAction,
-                onSubscribe: () => context.push('/billing'),
+                onSubscribe: () => context.push<void>('/billing'),
                 onBack: () => context.pop(),
                 onHome: () => context.go('/'),
               );

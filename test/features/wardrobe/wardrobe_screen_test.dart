@@ -163,6 +163,7 @@ Widget screen({
   RunWardrobeAction? run,
   WardrobeStore? after,
   Key? key,
+  Future<void> Function()? subscribe,
 }) => MaterialApp(
   home: WardrobeScreen(
     key: key,
@@ -174,7 +175,7 @@ Widget screen({
           actions.add(action);
           return after ?? snap();
         },
-    onSubscribe: () => subscribed++,
+    onSubscribe: subscribe ?? () async => subscribed++,
     onBack: () {},
     onHome: () {},
   ),
@@ -427,6 +428,39 @@ void main() {
 
     expect(subscribed, 1);
     expect(actions, isEmpty);
+  });
+
+  testWidgets('coming back from subscribing reloads and offers the gift', (
+    tester,
+  ) async {
+    var loads = 0;
+    var member = false;
+    await tester.pumpWidget(
+      screen(
+        load: () async {
+          loads++;
+          return snap(season: holiday, subscriber: member);
+        },
+        subscribe: () async => member = true,
+      ),
+    );
+    await settle(tester);
+    await tapVisible(
+      tester,
+      find.byKey(const ValueKey('wardrobe_set_action_holiday')),
+    );
+    await settle(tester);
+
+    expect(loads, 2);
+    await tester.scrollUntilVisible(
+      find.text('선물 받기'),
+      200,
+      scrollable: find.descendant(
+        of: find.byKey(const ValueKey('wardrobe_scroll')),
+        matching: find.byType(Scrollable),
+      ),
+    );
+    expect(find.text('선물 받기'), findsOneWidget);
   });
 
   testWidgets('a subscriber not yet gifted receives the set for free', (
