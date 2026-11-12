@@ -113,6 +113,63 @@ void main() {
     },
   );
 
+  testWidgets('the worn sprite releases every image handle it receives', (
+    tester,
+  ) async {
+    final base = dogAsset('maltese');
+    final tomato = lookFor('maltese', const [Worn('padding', 'tomato')]);
+    final pine = lookFor('maltese', const [Worn('padding', 'pine')]);
+
+    /// Image handles still open after [body] and a full teardown.
+    Future<int> leftOver(Future<void> Function() body) async {
+      // Start from an empty cache so earlier tests cannot shift the count.
+      PaintingBinding.instance.imageCache
+        ..clear()
+        ..clearLiveImages();
+      final open = <ui.Image>{};
+      ui.Image.onCreate = open.add;
+      ui.Image.onDispose = open.remove;
+      try {
+        await body();
+        await tester.pumpWidget(const SizedBox.shrink());
+        PaintingBinding.instance.imageCache
+          ..clear()
+          ..clearLiveImages();
+        await tester.pump();
+        return open.length;
+      } finally {
+        ui.Image.onCreate = null;
+        ui.Image.onDispose = null;
+      }
+    }
+
+    Future<void> wear(DogLook look) => render(
+      tester,
+      DogSprite(asset: base, look: look),
+      [look.base, ...look.cuts, ...look.layers],
+    );
+
+    // Baseline: the plain sprite with the same pictures decoded into the
+    // cache, so only handles the worn sprite keeps can differ.
+    final pictures = {
+      for (final look in [tomato, pine]) ...[
+        look.base,
+        ...look.cuts,
+        ...look.layers,
+      ],
+    }.toList();
+    final plain = await leftOver(
+      () => render(tester, DogSprite(asset: base), pictures),
+    );
+    final worn = await leftOver(() async {
+      await wear(tomato);
+      // Changing the look replaces the decoded stack.
+      await wear(pine);
+    });
+
+    expect(worn, plain);
+  });
+
   testWidgets('padding is drawn over the booties where they overlap', (
     tester,
   ) async {

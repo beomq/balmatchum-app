@@ -77,6 +77,9 @@ class _LayeredSpriteState extends State<_LayeredSprite> {
     if (old.look.key != widget.look.key) unawaited(_resolve());
   }
 
+  /// Each listener receives its own handle of the decoded picture (the
+  /// stream clones it per listener), so this state owns it and must dispose
+  /// it; the cache keeps its own handle.
   Future<ui.Image> _decode(String asset) {
     final done = Completer<ui.Image>();
     final stream = AssetImage(asset)
@@ -85,7 +88,11 @@ class _LayeredSpriteState extends State<_LayeredSprite> {
     listener = ImageStreamListener(
       (info, _) {
         stream.removeListener(listener);
-        if (!done.isCompleted) done.complete(info.image);
+        if (done.isCompleted) {
+          info.dispose();
+        } else {
+          done.complete(info.image);
+        }
       },
       onError: (error, trace) {
         stream.removeListener(listener);
@@ -99,26 +106,51 @@ class _LayeredSpriteState extends State<_LayeredSprite> {
   Future<void> _resolve() async {
     final generation = ++_generation;
     final look = widget.look;
+    final assets = [look.base, ...look.cuts, ...look.layers];
+    final images = List<ui.Image?>.filled(assets.length, null);
+    void release() {
+      for (final image in images) {
+        image?.dispose();
+      }
+    }
+
     try {
-      final images = await Future.wait([
-        _decode(look.base),
-        for (final cut in look.cuts) _decode(cut),
-        for (final layer in look.layers) _decode(layer),
+      await Future.wait([
+        for (var i = 0; i < assets.length; i++)
+          _decode(assets[i]).then((image) => images[i] = image),
       ]);
-      if (!mounted || generation != _generation) return;
-      setState(
-        () => stack = _Stack(
-          look.key,
-          images.first,
-          images.sublist(1, 1 + look.cuts.length),
-          images.sublist(1 + look.cuts.length),
-        ),
-      );
     } on Object {
       // A missing picture leaves the plain sprite; nothing is borrowed.
-      if (!mounted || generation != _generation) return;
-      setState(() => stack = null);
+      release();
+      if (mounted && generation == _generation) _replace(null);
+      return;
     }
+    if (!mounted || generation != _generation) {
+      release();
+      return;
+    }
+    final owned = images.cast<ui.Image>();
+    _replace(
+      _Stack(
+        look.key,
+        owned.first,
+        owned.sublist(1, 1 + look.cuts.length),
+        owned.sublist(1 + look.cuts.length),
+      ),
+    );
+  }
+
+  void _replace(_Stack? next) {
+    final previous = stack;
+    setState(() => stack = next);
+    previous?.dispose();
+  }
+
+  @override
+  void dispose() {
+    stack?.dispose();
+    stack = null;
+    super.dispose();
   }
 
   @override
@@ -143,11 +175,18 @@ class _LayeredSpriteState extends State<_LayeredSprite> {
 }
 
 class _Stack {
-  const _Stack(this.key, this.base, this.cuts, this.layers);
+  _Stack(this.key, this.base, this.cuts, this.layers);
   final String key;
   final ui.Image base;
   final List<ui.Image> cuts;
   final List<ui.Image> layers;
+
+  void dispose() {
+    base.dispose();
+    for (final image in [...cuts, ...layers]) {
+      image.dispose();
+    }
+  }
 }
 
 class _StackPainter extends CustomPainter {
@@ -182,5 +221,5 @@ class _StackPainter extends CustomPainter {
   }
 
   @override
-  bool shouldRepaint(_StackPainter old) => old.stack.key != stack.key;
+  bool shouldRepaint(_StackPainter old) => !identical(old.stack, stack);
 }
