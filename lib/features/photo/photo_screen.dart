@@ -2,7 +2,6 @@ import 'dart:math' as math;
 import 'dart:typed_data';
 import 'dart:ui' as ui;
 
-import 'package:balmatchum_client/balmatchum_client.dart' show PhotoView;
 import 'package:flutter/material.dart';
 import 'package:flutter/semantics.dart';
 
@@ -146,11 +145,23 @@ class PhotoScreenState extends State<PhotoScreen> {
     uploader?.upload(bytes);
   }
 
-  Future<void> _openUploaded(PhotoView photo) async {
+  /// Saves to the gallery, then backs the saved picture up as a composite
+  /// of the photo being edited.
+  Future<void> _save() async {
+    await editor.save();
+    final png = editor.savedPng;
+    if (!mounted || png == null) return;
+    uploader?.uploadComposite(png);
+  }
+
+  /// Opens an uploaded entry to arrange again: its original when there is
+  /// one, so a new save links to it; nothing is uploaded again.
+  Future<void> _openUploaded(PhotoGroup group) async {
     final source = uploader;
     if (source == null || editor.busy) return;
     try {
-      await editor.open(await source.bytesOf(photo));
+      await editor.open(await source.bytesOf(group.original ?? group.main));
+      source.adoptOriginal(group.original?.photoId);
     } catch (_) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -159,14 +170,19 @@ class PhotoScreenState extends State<PhotoScreen> {
     }
   }
 
-  Future<void> _deleteUploaded(PhotoView photo) async {
+  Future<void> _deleteUploaded(PhotoGroup group) async {
     final source = uploader;
     if (source == null) return;
+    final pair = group.members.length > 1;
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
         title: const Text('올린 사진을 지울까요?'),
-        content: const Text('서버에 보관한 사진이 지워져요. 기기 앨범의 사진은 그대로예요.'),
+        content: Text(
+          pair
+              ? '고른 사진과 꾸민 사진이 함께 지워져요. 기기 앨범의 사진은 그대로예요.'
+              : '서버에 보관한 사진이 지워져요. 기기 앨범의 사진은 그대로예요.',
+        ),
         actionsOverflowButtonSpacing: 8,
         actions: [
           OutlinedButton(
@@ -183,7 +199,7 @@ class PhotoScreenState extends State<PhotoScreen> {
     );
     if (confirmed != true || !mounted) return;
     try {
-      await source.delete(photo.photoId);
+      await source.deleteGroup(group);
     } catch (_) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -196,6 +212,7 @@ class PhotoScreenState extends State<PhotoScreen> {
   /// a retry, or a row of thumbnails (tap to arrange, long-press to delete).
   Widget _uploads(PhotoUploader source) {
     final photos = source.photos;
+    final groups = source.groups;
     final Widget content;
     if (photos == null && source.photosError != null) {
       content = Row(
@@ -239,15 +256,16 @@ class PhotoScreenState extends State<PhotoScreen> {
         child: ListView.separated(
           key: const ValueKey('photo_uploads_list'),
           scrollDirection: Axis.horizontal,
-          itemCount: photos.length,
+          itemCount: groups.length,
           separatorBuilder: (_, _) => const SizedBox(width: Space.s2),
           itemBuilder: (context, index) {
-            final photo = photos[index];
+            // The saved picture is the entry's face when there is one.
+            final group = groups[index];
             return _Thumb(
-              key: ValueKey('photo_upload_${photo.photoId.uuid}'),
-              load: () => source.bytesOf(photo),
-              onTap: editor.busy ? null : () => _openUploaded(photo),
-              onLongPress: () => _deleteUploaded(photo),
+              key: ValueKey('photo_upload_${group.main.photoId.uuid}'),
+              load: () => source.bytesOf(group.main),
+              onTap: editor.busy ? null : () => _openUploaded(group),
+              onLongPress: () => _deleteUploaded(group),
             );
           },
         ),
@@ -259,7 +277,7 @@ class PhotoScreenState extends State<PhotoScreen> {
       spacing: Space.s2,
       children: [
         Text(
-          photos == null || photos.isEmpty ? '올린 사진' : '올린 사진 ${photos.length}',
+          groups.isEmpty ? '올린 사진' : '올린 사진 ${groups.length}',
           style: meetingType(15, 20, FontWeight.w800),
         ),
         content,
@@ -267,18 +285,26 @@ class PhotoScreenState extends State<PhotoScreen> {
     );
   }
 
-  /// Under the canvas: the picked photo's upload. Editing never waits on
-  /// it; a failure keeps the photo and offers the same upload again.
+  /// Under the canvas: the picked photo's upload, then the saved picture's.
+  /// Editing never waits on either; a failure keeps the photo and offers
+  /// the same upload again.
   Widget? _uploadStatus(PhotoUploader source) {
+    final what = source.kind == UploadKind.composite ? '꾸민 사진' : '사진';
     final (String label, Color color) = switch (source.phase) {
       UploadPhase.idle => ('', MeetingColors.muted),
-      UploadPhase.preparing => ('사진을 보관할 준비 중이에요', MeetingColors.muted),
+      UploadPhase.preparing => (
+        '${withEul(what)} 보관할 준비 중이에요',
+        MeetingColors.muted,
+      ),
       UploadPhase.uploading => (
-        '사진 보관 중 ${(source.progress * 100).round()}%',
+        '$what 보관 중 ${(source.progress * 100).round()}%',
         MeetingColors.muted,
       ),
       UploadPhase.confirming => ('거의 다 됐어요', MeetingColors.muted),
-      UploadPhase.done => ('사진을 안전하게 보관했어요', MeetingColors.primaryStrong),
+      UploadPhase.done => (
+        source.kind == UploadKind.composite ? '꾸민 사진도 보관했어요' : '사진을 안전하게 보관했어요',
+        MeetingColors.primaryStrong,
+      ),
       UploadPhase.failed => (source.error ?? '', MeetingColors.error),
     };
     if (source.phase == UploadPhase.idle) return null;
@@ -560,7 +586,7 @@ class PhotoScreenState extends State<PhotoScreen> {
                       key: const ValueKey('photo_save'),
                       style: editor.saved ? _savedPill : _pill,
                       onPressed: editor.canExport && !editor.saved
-                          ? editor.save
+                          ? _save
                           : null,
                       child: Text(editor.saved ? '저장됨' : '저장'),
                     ),

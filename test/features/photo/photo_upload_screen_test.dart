@@ -214,6 +214,45 @@ void main() {
     });
   }
 
+  testWidgets('saving uploads the composite, which leads its strip entry', (
+    tester,
+  ) async {
+    final boundary = GlobalKey();
+    final transport = FakePhotoTransport();
+    final adapter = FakePhotoAdapter();
+    final state = await openScreen(
+      tester,
+      adapter: adapter,
+      transport: transport,
+      boundary: boundary,
+    );
+    await drain(tester, state);
+    adapter.next = await tester.runAsync(photoFixture);
+    await tester.runAsync(() => state.pick(PhotoSource.gallery));
+    await uploadSettled(tester, state);
+    expect(find.text('사진을 안전하게 보관했어요'), findsOneWidget);
+    final original = transport.tickets.single.photoId;
+
+    await tester.ensureVisible(find.byKey(const ValueKey('photo_save')));
+    await tester.runAsync(
+      () => tester.tap(find.byKey(const ValueKey('photo_save'))),
+    );
+    await tester.runAsync(() => idle(state));
+    await uploadSettled(tester, state);
+    expect(adapter.saved, isNotNull);
+    expect(find.text('꾸민 사진도 보관했어요'), findsOneWidget);
+    final composite = transport.tickets.last.photoId;
+    expect(transport.reserved[composite], (UploadKind.composite, original));
+    await capture(tester, boundary, 'composite-saved-390');
+
+    // One entry for the pair, led by the saved picture.
+    final groups = state.uploader!.groups;
+    expect(groups, hasLength(1));
+    expect(groups.single.main.photoId, composite);
+    expect(groups.single.original!.photoId, original);
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
+
   testWidgets('long-press deletes after a confirm; tap opens in the editor', (
     tester,
   ) async {

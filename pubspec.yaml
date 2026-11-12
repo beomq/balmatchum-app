@@ -10,7 +10,7 @@ dependencies:
   balmatchum_client:
     git:
       url: https://github.com/beomq/balmatchum-server.git
-      ref: 05f3e2eed77b039f31ba09fab35d16f49cada807
+      ref: 8fe9765662896e04e608a7004a0b48e82dbc6fe8
       path: client/
   flutter:
     sdk: flutter

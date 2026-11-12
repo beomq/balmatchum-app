@@ -128,32 +128,56 @@ void main() {
           .firstWhere((p) => !before.contains(p.photoId))
           .photoId;
 
+      // Save: the picture with the companion uploads as its composite.
+      await tester.tap(find.byKey(const ValueKey('photo_save')));
+      await until(tester, () => first.kind == UploadKind.composite);
+      await until(
+        tester,
+        () =>
+            first.phase == UploadPhase.done ||
+            first.phase == UploadPhase.failed,
+      );
+      expect(first.phase, UploadPhase.done, reason: first.error);
+      await tester.pump();
+      expect(find.text('꾸민 사진도 보관했어요'), findsOneWidget);
+      await binding.takeScreenshot('photo-upload-3-composite-done');
+      final saved = first.photos!.firstWhere((p) => p.kind == 'composite');
+      expect(saved.originalId, uploaded);
+
       // Leave the editor: a fresh start screen lists it from the server.
       await tester.tap(find.byKey(const ValueKey('photo_back')));
       await tester.pumpAndSettle();
       await tester.tap(find.text('나가기'));
       await until(tester, () => uploaders.length == 2);
-      final item = find.byKey(ValueKey('photo_upload_${uploaded.uuid}'));
+      // One entry for the pair, led by the saved picture.
+      final item = find.byKey(ValueKey('photo_upload_${saved.photoId.uuid}'));
       final thumbnail = find.descendant(of: item, matching: find.byType(Image));
       await until(tester, () => thumbnail.evaluate().isNotEmpty);
       await tester.ensureVisible(item);
       await tester.pumpAndSettle();
-      await binding.takeScreenshot('photo-upload-3-uploaded-strip');
+      expect(find.text('올린 사진 1'), findsOneWidget);
+      await binding.takeScreenshot('photo-upload-4-uploaded-strip');
 
-      // Long-press deletes after a confirm.
+      // Long-press deletes the pair after a confirm.
       await tester.longPress(item);
       await tester.pumpAndSettle();
       expect(find.text('올린 사진을 지울까요?'), findsOneWidget);
-      await binding.takeScreenshot('photo-upload-4-delete-confirm');
+      expect(find.textContaining('꾸민 사진이 함께 지워져요'), findsOneWidget);
+      await binding.takeScreenshot('photo-upload-5-delete-confirm');
       await tester.tap(
         find.byKey(const ValueKey('photo_upload_delete_confirm')),
       );
-      await until(tester, () => item.evaluate().isEmpty);
+      // Both photos, not just the entry's face, before the evidence.
+      await until(tester, () => uploaders.last.photos?.isEmpty ?? false);
       await tester.pumpAndSettle();
-      await binding.takeScreenshot('photo-upload-5-deleted');
+      expect(find.byKey(const ValueKey('photo_uploads_empty')), findsOneWidget);
+      await binding.takeScreenshot('photo-upload-6-deleted');
 
       final after = await client.photo.listMine();
-      expect(after.any((p) => p.photoId == uploaded), isFalse);
+      expect(
+        after.any((p) => p.photoId == uploaded || p.photoId == saved.photoId),
+        isFalse,
+      );
       await tester.pumpWidget(const SizedBox.shrink());
     },
   );

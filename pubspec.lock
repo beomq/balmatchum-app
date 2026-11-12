@@ -45,8 +45,8 @@ packages:
     dependency: "direct main"
     description:
       path: client
-      ref: "05f3e2eed77b039f31ba09fab35d16f49cada807"
-      resolved-ref: "05f3e2eed77b039f31ba09fab35d16f49cada807"
+      ref: "8fe9765662896e04e608a7004a0b48e82dbc6fe8"
+      resolved-ref: "8fe9765662896e04e608a7004a0b48e82dbc6fe8"
       url: "https://github.com/beomq/balmatchum-server.git"
     source: git
     version: "0.0.0"
