@@ -598,6 +598,68 @@ void main() {
     expect(repository.wardrobeRequests.toSet(), hasLength(3));
   });
 
+  test(
+    'a wardrobe purchase shows its new balance on the home wallet',
+    () async {
+      final repository = AccountRepository();
+      final controller = accountController(repository);
+      await controller.refresh();
+      expect(controller.wallet!.balance, 42);
+
+      final bought = await controller.wardrobeAction(
+        const WardrobeAction(WardrobeActionKind.buyItem, 'padding', 'tomato'),
+      );
+
+      expect(bought.balance, 150);
+      expect(controller.wallet!.balance, 150);
+    },
+  );
+
+  test(
+    'a lost answer confirmed by a wardrobe read is not retried later',
+    () async {
+      final repository = AccountRepository();
+      final controller = accountController(repository);
+      const dusk = WardrobeAction(
+        WardrobeActionKind.wearBackground,
+        'winter-dusk',
+      );
+      repository.wardrobeFailure = Exception('response lost');
+      await expectLater(controller.wardrobeAction(dusk), throwsException);
+      // The screen re-reads; the server had applied the lost wear.
+      repository.wardrobeState = wardrobeStore().copyWith(
+        equippedBackground: 'winter-dusk',
+      );
+      await controller.loadWardrobe();
+
+      await controller.wardrobeAction(
+        const WardrobeAction(WardrobeActionKind.wearBackground, 'sunny'),
+      );
+      await controller.wardrobeAction(dusk);
+
+      expect(repository.wardrobeRequests, hasLength(3));
+      expect(repository.wardrobeRequests.toSet(), hasLength(3));
+      // A fresh intent, not a retry: no extra read after it.
+      expect(repository.calls.last, 'wardrobe:wearBackground:winter-dusk:');
+    },
+  );
+
+  test(
+    'a lost answer the read does not confirm keeps its request id',
+    () async {
+      final repository = AccountRepository();
+      final controller = accountController(repository);
+      const buy = WardrobeAction(WardrobeActionKind.buyItem, 'padding', 'pine');
+      repository.wardrobeFailure = Exception('response lost');
+      await expectLater(controller.wardrobeAction(buy), throwsException);
+      await controller.loadWardrobe();
+
+      await controller.wardrobeAction(buy);
+
+      expect(repository.wardrobeRequests.toSet(), hasLength(1));
+    },
+  );
+
   test('wardrobe server codes become failure reasons', () async {
     final repository = AccountRepository();
     final controller = accountController(repository);

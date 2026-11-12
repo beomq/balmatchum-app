@@ -458,11 +458,33 @@ class ProductController extends ChangeNotifier {
   String? get equippedBackground =>
       wardrobeStore?.equippedBackground ?? store?.equippedTheme;
 
+  /// Wardrobe writes whose answer was lost, by request key. A later read
+  /// that shows the write applied settles it, so the next intent with the
+  /// same key gets a fresh request id instead of replaying the old answer.
+  final _unsettledWardrobe = <String, WardrobeAction>{};
+
+  /// Applies a confirmed wardrobe state, and its balance to the home wallet
+  /// (development fixture balances are kept apart from the step wallet).
+  void _confirmWardrobe(api.WardrobeStore value) {
+    wardrobeStore = value;
+    final current = wallet;
+    if (current != null && value.fixtureLabel == null) {
+      wallet = current.copyWith(balance: value.balance);
+    }
+    for (final MapEntry(:key, value: action)
+        in _unsettledWardrobe.entries.toList()) {
+      if (value.confirms(action)) {
+        _unsettledWardrobe.remove(key);
+        _requests.remove(key);
+      }
+    }
+  }
+
   Future<api.WardrobeStore> loadWardrobe() async {
     _checkAccount();
     final value = await repository.wardrobe();
     _checkAccount();
-    wardrobeStore = value;
+    _confirmWardrobe(value);
     notifyListeners();
     return value;
   }
@@ -477,18 +499,25 @@ class ProductController extends ChangeNotifier {
         answer = await repository.wardrobeAction(action, request(key));
       } on api.ProductException catch (e) {
         _requests.remove(key);
+        _unsettledWardrobe.remove(key);
         throw WardrobeActionException(switch (e.code) {
           'insufficientPoints' => WardrobeFailureReason.insufficientPoints,
           'outfitIncompatible' => WardrobeFailureReason.incompatible,
           'subscriptionRequired' => WardrobeFailureReason.subscriptionRequired,
           _ => WardrobeFailureReason.unavailable,
         });
+      } catch (_) {
+        // The server may have applied it: keep the key for a retry until a
+        // read settles it.
+        _unsettledWardrobe[key] = action;
+        rethrow;
       }
       _requests.remove(key);
+      _unsettledWardrobe.remove(key);
       _checkAccount();
       if (retry) answer = await repository.wardrobe();
       _checkAccount();
-      wardrobeStore = answer;
+      _confirmWardrobe(answer);
       notifyListeners();
       return answer;
     },

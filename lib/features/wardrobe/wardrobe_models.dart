@@ -101,6 +101,33 @@ extension WardrobeRead on api.WardrobeStore {
 
   List<Worn> get worn => [for (final e in equipped) Worn(e.itemId, e.colourId)];
 
+  /// Whether this state shows [action] applied (used to settle a write
+  /// whose answer was lost).
+  bool confirms(WardrobeAction action) {
+    final id = action.id;
+    final colour = action.colourId;
+    return switch (action.kind) {
+      WardrobeActionKind.buyItem =>
+        item(id)?.ownedColours.contains(colour) ?? false,
+      WardrobeActionKind.buyBackground => background(id)?.owned ?? false,
+      WardrobeActionKind.buySet =>
+        (set(id)?.season?.granted ?? false) ||
+            (set(id)?.colours
+                    .any((c) => c.colourId == colour && c.missingParts == 0) ??
+                false),
+      WardrobeActionKind.wearItem => equipped.any(
+        (e) => e.itemId == id && e.colourId == colour,
+      ),
+      WardrobeActionKind.takeOffSlot => wornIn(id) == null,
+      WardrobeActionKind.wearBackground => equippedBackground == id,
+      WardrobeActionKind.wearSet =>
+        completeSetId == id && completeColour == colour,
+      WardrobeActionKind.takeOffSet => !equipped.any(
+        (e) => set(id)?.itemIds.contains(e.itemId) ?? false,
+      ),
+    };
+  }
+
   /// What [breed] wears now, with the set band and effect when complete.
   DogLook look(String breed) {
     final complete = completeSetId == null ? null : set(completeSetId!);
