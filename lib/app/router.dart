@@ -9,6 +9,7 @@ import '../features/billing/billing_providers.dart';
 import '../features/billing/billing_screen.dart';
 import '../features/daily_activity/daily_activity_providers.dart';
 import '../features/photo/photo_screen.dart';
+import '../features/photo/photo_upload.dart';
 import '../features/photo/platform_photo_adapter.dart';
 import '../features/records/records_screen.dart';
 import '../features/settings/account_deletion_screen.dart';
@@ -328,6 +329,13 @@ final routerProvider = Provider<GoRouter>((ref) {
               dogAssetPath: authenticated!.state.candidate!.spritePath,
               dogName: authenticated.state.name,
               adapter: PlatformPhotoAdapter(),
+              createUploader: switch (ref.read(authenticatedAccountProvider)) {
+                final account? => () => accountPhotoUploader(
+                  ref.read(clientProvider),
+                  account,
+                ),
+                null => null,
+              },
               onBack: () => context.pop(),
               onHome: () => context.go('/'),
             ),

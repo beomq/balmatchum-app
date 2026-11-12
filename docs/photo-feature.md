@@ -51,7 +51,8 @@ Android legacy storage 설정을 요구하지 않는다. 카메라만 사용하�
 슬라이더와 반전/초기화 버튼을 제공한다. 원본 비율 그대로 표시하고 crop하지 않는다.
 `paintPhoto`가 미리보기와 PNG 출력을 함께 그리므로 조작 UI는 출력에 포함되지 않는다.
 긴 변 4096px로 디코딩/출력을 제한해 메모리 사용을 줄이며 원본 파일은 쓰지 않는다.
-저장과 OS 공유에는 합성된 PNG만 전달한다. 네트워크 호출이나 업로드 코드는 없다.
+저장과 OS 공유에는 합성된 PNG만 전달한다. 로그인한 화면에서는 고른 사진의 축소 사본을
+S3에 보관한다(아래 "S3 보관"). 로그인 전 화면은 네트워크를 쓰지 않는다.
 
 취소·잘못된 이미지·권한 거부 시 이전 사진과 편집을 유지한다. 새 이미지 디코딩이
 완료된 경우에만 편집을 초기화한다. 저장 완료는 Gal 호출이 성공한 뒤에만 표시한다.
@@ -59,6 +60,34 @@ Android legacy storage 설정을 요구하지 않는다. 카메라만 사용하�
 Android activity 종료의 lost picker 결과는 화면 초기화 시 복구한다. 앱 프로세스 종료
 직전의 기존 편집 상태를 디스크에 저장하는 기능은 없으므로 OS 강제 종료 후 편집 복구는
 보장하지 않는다. 리드는 startup의 lost-data 호출과 화면 재진입 연결을 확인해야 한다.
+
+## S3 보관 (로그인 화면)
+
+서버 계약은 서버 저장소 `docs/PHOTO_API.md`를 따른다. 라우터의 로그인 `/photo`만
+`createUploader: () => accountPhotoUploader(client, accountId)`를 넘기며, 로그인 전
+`/photo`는 넘기지 않아 업로드 UI와 네트워크 호출이 없다.
+
+- 흐름(`lib/features/photo/photo_upload.dart`): 새로 고른 사진만 업로드한다. 긴 변 1600px
+  이하로 엔진에서 디코딩하고 `image` 패키지(4.12.0)로 JPEG 80 품질을 백그라운드 isolate에서
+  인코딩한다. 원본 파일과 EXIF는 보내지 않는다. `createUpload` → 서명된 `Content-Type`·
+  `Content-Length`로 64KB씩 PUT하며 진행률 표시 → `confirmUpload(width, height)`.
+- 편집은 업로드를 기다리지 않는다. 새 사진을 고르면 이전 업로드 결과는 무시된다.
+- 실패: PUT 실패·`notUploaded`·`storageUnavailable` 등은 "다시 올리기"를 보여준다.
+  재시도는 만료 1분 전까지 같은 ticket을 쓰고, 그 뒤에는 새 ticket을 받는다.
+- 표시: 시작 화면의 "올린 사진" 줄. `listMine`의 10분짜리 GET URL로 받되 캐시는 URL이
+  아니라 `photoId`로 메모리와 `Application Support/photo-cache/<계정>/`에 둔다.
+  URL이 만료됐으면 목록을 다시 받는다. 탭하면 다시 꾸미기(재업로드 없음), 길게 누르면
+  확인 후 서버에서 지우고 캐시도 지운다. 로딩·빈 상태·불러오기 실패와 다시 불러오기가 있다.
+
+```sh
+fvm flutter test --no-pub test/features/photo
+# 상태 캡처(390/1024): 진행 중, 실패+다시 올리기, 올린 사진 줄
+fvm flutter test --no-pub test/features/photo/photo_upload_screen_test.dart \
+  --dart-define=PHOTO_UPLOAD_RENDER_DIR=<빈 디렉터리>
+# 실서버(dev 버킷): 서버 PHOTO_API.md의 로컬 실행 + DEV_TEST_USER.md 세션을 앱 컨테이너에 복사한 뒤
+fvm flutter test integration_test/photo_upload_server_test.dart --flavor dev \
+  -d <simulator-id> --no-uninstall --dart-define=SERVER_URL=http://localhost:18080/
+```
 
 ## 디자인 근거와 직접 확인
 
