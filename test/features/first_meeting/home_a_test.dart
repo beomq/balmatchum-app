@@ -36,7 +36,7 @@ import '../../support/duo_viewports.dart';
 import '../billing/billing_http_harness.dart'
     show BillingMemoryAuth, presentBilling;
 import '../daily_activity/product_controller_test.dart'
-    show AccountRepository, outfitStore, record, themeStore;
+    show AccountRepository, outfitStore, record, themeStore, wardrobeStore;
 import '../quiz/authenticated_quiz_test.dart' show Quizzes, question;
 import 'domain/authenticated_profile_test.dart' show Profiles, view;
 import 'domain/first_meeting_test.dart' show MemoryStorage;
@@ -290,6 +290,7 @@ class EntryRig {
           ),
           themes: themeStore(),
           outfits: outfitStore(),
+          wardrobe: wardrobeStore(),
           recentDays: [
             for (var i = 1; i <= 3; i++) record().copyWith(date: dayKey(i)),
           ],

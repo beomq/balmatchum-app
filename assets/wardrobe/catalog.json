@@ -1,0 +1,178 @@
+{
+ "version": 1,
+ "drawOrder": [
+  "feet",
+  "head:fur",
+  "torso",
+  "head"
+ ],
+ "items": {
+  "padding": {
+   "slot": "torso",
+   "colours": [
+    "tomato",
+    "pine",
+    "plum",
+    "navy"
+   ],
+   "layered": [
+    "maltese",
+    "dachshund",
+    "golden-retriever"
+   ],
+   "fur": false,
+   "over": true,
+   "full": {
+    "tomato": [
+     "alaskan-malamute",
+     "beagle",
+     "bichon-frise",
+     "border-collie",
+     "boston-terrier",
+     "bulldog",
+     "chihuahua",
+     "cocker-spaniel",
+     "dalmatian",
+     "french-bulldog",
+     "german-shepherd",
+     "jindo",
+     "labrador-retriever",
+     "miniature-pinscher",
+     "miniature-schnauzer",
+     "norwich-terrier",
+     "pekingese",
+     "pembroke-welsh-corgi",
+     "pomeranian",
+     "pug",
+     "samoyed",
+     "shiba-inu",
+     "shih-tzu",
+     "siberian-husky",
+     "toy-poodle",
+     "west-highland-white-terrier",
+     "yorkshire-terrier"
+    ]
+   }
+  },
+  "beanie": {
+   "slot": "head",
+   "colours": [
+    "tomato",
+    "pine",
+    "plum",
+    "navy"
+   ],
+   "layered": [
+    "maltese",
+    "dachshund",
+    "golden-retriever"
+   ],
+   "fur": true,
+   "over": true
+  },
+  "booties": {
+   "slot": "feet",
+   "colours": [
+    "tomato",
+    "pine",
+    "plum",
+    "navy"
+   ],
+   "layered": [
+    "maltese",
+    "dachshund",
+    "golden-retriever"
+   ],
+   "fur": false,
+   "over": true
+  },
+  "rudolph-band": {
+   "slot": "head",
+   "colours": [
+    "tomato",
+    "pine",
+    "navy"
+   ],
+   "layered": [
+    "maltese",
+    "dachshund",
+    "golden-retriever"
+   ],
+   "fur": true,
+   "over": true
+  },
+  "santa-cape": {
+   "slot": "torso",
+   "colours": [
+    "tomato",
+    "pine",
+    "navy"
+   ],
+   "layered": [
+    "maltese",
+    "dachshund",
+    "golden-retriever"
+   ],
+   "fur": false,
+   "over": true
+  },
+  "saekdong-jeogori": {
+   "slot": "torso",
+   "colours": [
+    "dahong",
+    "jjok",
+    "yeondu",
+    "bunhong"
+   ],
+   "layered": [
+    "maltese",
+    "dachshund",
+    "golden-retriever"
+   ],
+   "fur": false,
+   "over": true
+  },
+  "gulle": {
+   "slot": "head",
+   "colours": [
+    "dahong",
+    "jjok",
+    "yeondu",
+    "bunhong"
+   ],
+   "layered": [
+    "maltese",
+    "dachshund",
+    "golden-retriever"
+   ],
+   "fur": true,
+   "over": true
+  },
+  "vest": {
+   "slot": "torso",
+   "colours": [
+    "classic"
+   ],
+   "layered": [
+    "dachshund",
+    "shih-tzu"
+   ],
+   "fur": false,
+   "over": false
+  }
+ },
+ "backgrounds": {
+  "sunny": "assets/first_meeting/sunny.png",
+  "cloudy": "assets/first_meeting/cloudy.png",
+  "rainy": "assets/first_meeting/rainy.png",
+  "snowy": "assets/first_meeting/snowy.png",
+  "winter-dusk": "assets/wardrobe/backgrounds/winter-dusk.png",
+  "holiday-night": "assets/wardrobe/backgrounds/holiday-night.png",
+  "seollal-morning": "assets/wardrobe/backgrounds/seollal-morning.png"
+ },
+ "setEffects": {
+  "winter": "snow",
+  "holiday": "holiday",
+  "seollal": "seollal"
+ }
+}

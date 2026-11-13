@@ -10,7 +10,7 @@ dependencies:
   balmatchum_client:
     git:
       url: https://github.com/beomq/balmatchum-server.git
-      ref: 8fe9765662896e04e608a7004a0b48e82dbc6fe8
+      ref: 877d0ca84caa688bdd688675d015b3cb1055bdf8
       path: client/
   flutter:
     sdk: flutter
@@ -54,7 +54,54 @@ flutter:
     - assets/first_meeting/
     - assets/first_meeting/dogs/
     - assets/first_meeting/icons/
-    - assets/wardrobe/vest/
+    - assets/wardrobe/
+    - assets/wardrobe/backgrounds/
+    - assets/wardrobe/effects/
+    - assets/wardrobe/items/beanie/cut/
+    - assets/wardrobe/items/beanie/fur/
+    - assets/wardrobe/items/beanie/navy/
+    - assets/wardrobe/items/beanie/over/
+    - assets/wardrobe/items/beanie/pine/
+    - assets/wardrobe/items/beanie/plum/
+    - assets/wardrobe/items/beanie/tomato/
+    - assets/wardrobe/items/booties/cut/
+    - assets/wardrobe/items/booties/navy/
+    - assets/wardrobe/items/booties/over/
+    - assets/wardrobe/items/booties/pine/
+    - assets/wardrobe/items/booties/plum/
+    - assets/wardrobe/items/booties/tomato/
+    - assets/wardrobe/items/gulle/bunhong/
+    - assets/wardrobe/items/gulle/cut/
+    - assets/wardrobe/items/gulle/dahong/
+    - assets/wardrobe/items/gulle/fur/
+    - assets/wardrobe/items/gulle/jjok/
+    - assets/wardrobe/items/gulle/over/
+    - assets/wardrobe/items/gulle/yeondu/
+    - assets/wardrobe/items/padding/cut/
+    - assets/wardrobe/items/padding/navy/
+    - assets/wardrobe/items/padding/over/
+    - assets/wardrobe/items/padding/pine/
+    - assets/wardrobe/items/padding/plum/
+    - assets/wardrobe/items/padding/tomato/
+    - assets/wardrobe/items/padding/tomato/full/
+    - assets/wardrobe/items/rudolph-band/cut/
+    - assets/wardrobe/items/rudolph-band/fur/
+    - assets/wardrobe/items/rudolph-band/navy/
+    - assets/wardrobe/items/rudolph-band/over/
+    - assets/wardrobe/items/rudolph-band/pine/
+    - assets/wardrobe/items/rudolph-band/tomato/
+    - assets/wardrobe/items/saekdong-jeogori/bunhong/
+    - assets/wardrobe/items/saekdong-jeogori/cut/
+    - assets/wardrobe/items/saekdong-jeogori/dahong/
+    - assets/wardrobe/items/saekdong-jeogori/jjok/
+    - assets/wardrobe/items/saekdong-jeogori/over/
+    - assets/wardrobe/items/saekdong-jeogori/yeondu/
+    - assets/wardrobe/items/santa-cape/cut/
+    - assets/wardrobe/items/santa-cape/navy/
+    - assets/wardrobe/items/santa-cape/over/
+    - assets/wardrobe/items/santa-cape/pine/
+    - assets/wardrobe/items/santa-cape/tomato/
+    - assets/wardrobe/items/vest/classic/
     - assets/social/google.png
     - assets/social/apple.png
     - assets/social/kakao.png
