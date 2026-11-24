@@ -13,9 +13,10 @@
 - 입어 보기는 누구나 할 수 있고 서버를 부르지 않는다. 입어 보면 미리보기가 보이도록 맨 위로 스크롤한다. 사는 것은 확인 창을 거친다.
 
 ## 그림 (`assets/wardrobe/`)
-- `~/dori/balmatchum-art/wardrobe-export/export.py <앱 루트>`가 아트 폴더에서 복사하고 `catalog.json`을 쓴다(그림을 새로 그리지 않음). `wardrobe_art.dart`의 표와 `catalog.json`이 같은지는 `test/features/wardrobe/wardrobe_art_test.dart`가 확인한다.
-- `items/<아이템>/<색>/<견종>.png`, `items/<아이템>/{cut,fur,over}/<견종>.png`, 27견종의 토마토 패딩은 `items/padding/tomato/full/<견종>.png`(강아지 전체 그림, 혼자만 입음), 배경 `backgrounds/<id>.png`, 효과 설정 `effects/presets.json`.
-- 겹쳐 입는 그림은 말티즈·닥스훈트·골든 리트리버만 있다. 다른 견종의 그림을 빌려 쓰지 않는다.
+- `python -I ~/dori/balmatchum-art/monthly-gifts/export/export_monthly.py <앱 루트>`가 아트 폴더에서 복사하고 `catalog.json`을 쓴다(그림을 새로 그리지 않음, Pillow·numpy·scipy 필요). `wardrobe_art.dart`의 표와 `catalog.json`이 같은지, 그림 폴더가 모두 `pubspec.yaml` assets에 있는지는 `test/features/wardrobe/wardrobe_art_test.dart`가 확인한다. 새 아이템·색 폴더는 `pubspec.yaml`에 함께 더한다.
+- `items/<아이템>/<색>/<견종>.png`, `items/<아이템>/{cut,fur,over}/<견종>.png`, 배경 `backgrounds/<id>.png`, 효과 설정 `effects/presets.json`.
+- 30견종 모두 모든 아이템을 겹쳐 입는다(조끼만 닥스훈트·시추). 강아지 전체에 구운 패딩 그림은 더 쓰지 않는다. 다른 견종의 그림을 빌려 쓰지 않는다.
+- 매달 선물 세트(2026-11 단풍, 2027-03~10 봄 벚꽃·봄 소풍·어린이날·장마·여름 바다·수박·추석·핼러윈) 그림은 앱에 미리 실리고, 보여줄지는 서버가 그 달 1일 0시(KST)에 정한다.
 
 ## 그리기 (`dog_sprite.dart`, `wardrobe_art.dart`)
 원본 강아지 → 입은 아이템의 `cut`을 모두 지움(`BlendMode.dstOut`) → 발 → 머리 털 고리 → 몸 → 머리 → 모든 `over` 털. `FilterQuality.none`, 원본과 같은 contain 맞춤. 그림이 다 풀리기 전에는 원본 강아지만 보인다.
