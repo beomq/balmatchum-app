@@ -8,7 +8,10 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:balmatchum_app/features/watch_sync/watch_bridge.dart';
 
 import '../daily_activity/product_controller_test.dart'
-    show AccountRepository, outfitStore;
+    show AccountRepository, wardrobeStore;
+
+import 'package:balmatchum_client/balmatchum_client.dart'
+    show WardrobeEquipView;
 
 class MemoryStore implements FirstMeetingStorage {
   String? value;
@@ -316,7 +319,11 @@ void main() {
     await c.submitName();
     await c.complete();
     final repository = AccountRepository()
-      ..wardrobeOutfits = outfitStore(owned: true, equipped: 'vest-low-v');
+      ..wardrobeState = wardrobeStore(
+        equipped: [
+          WardrobeEquipView(slot: 'torso', itemId: 'vest', colourId: 'classic'),
+        ],
+      );
     final steps = DailyStepsController(
       readSteps: () async =>
           const DailyStepsResult(DailyStepsStatus.empty, null),
@@ -331,13 +338,26 @@ void main() {
     await tester.pumpAndSettle();
     const base = AssetImage('assets/first_meeting/dogs/shih-tzu.png');
     final layer = find.byKey(const ValueKey('home_dog_outfit'));
+    expect(product.wornLook('shih-tzu')!.layers, [
+      'assets/wardrobe/items/vest/classic/shih-tzu.png',
+    ]);
+    // The layered picture is painted once its images decode.
+    await tester.runAsync(() async {
+      final context = tester.element(find.image(base));
+      for (final asset in [
+        'assets/first_meeting/dogs/shih-tzu.png',
+        'assets/wardrobe/items/vest/classic/shih-tzu.png',
+      ]) {
+        await precacheImage(AssetImage(asset), context);
+      }
+    });
+    for (var i = 0; i < 3; i++) {
+      await tester.runAsync(() => Future<void>.delayed(Duration.zero));
+      await tester.pump();
+    }
     expect(find.image(base), findsOneWidget);
-    expect(
-      tester.widget<Image>(layer).image,
-      const AssetImage('assets/wardrobe/vest/shih-tzu.png'),
-    );
     expect(tester.getRect(layer), tester.getRect(find.image(base)));
-    repository.wardrobeOutfits = outfitStore(owned: true);
+    repository.wardrobeState = wardrobeStore();
     await product.refresh();
     await tester.pump();
     expect(layer, findsNothing);

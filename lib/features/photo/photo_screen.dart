@@ -1,4 +1,5 @@
 import 'dart:math' as math;
+import 'dart:typed_data';
 import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
@@ -11,6 +12,7 @@ import '../first_meeting/particles.dart';
 import '../records/product_page.dart';
 import '../wardrobe/dog_sprite.dart';
 import 'photo_editor.dart';
+import 'photo_upload.dart';
 
 export 'photo_editor.dart'
     show PhotoAdapter, PhotoFailure, PhotoSource, PhotoShareResult;
@@ -22,6 +24,7 @@ class PhotoScreen extends StatefulWidget {
     required this.adapter,
     required this.onBack,
     required this.onHome,
+    this.createUploader,
     super.key,
   });
   final String dogAssetPath;
@@ -29,6 +32,10 @@ class PhotoScreen extends StatefulWidget {
   final PhotoAdapter adapter;
   final VoidCallback onBack;
   final VoidCallback onHome;
+
+  /// Signed-in screens back picked photos up to S3; the screen owns the
+  /// uploader it makes. Without it nothing leaves the device.
+  final PhotoUploader Function()? createUploader;
 
   @override
   State<PhotoScreen> createState() => PhotoScreenState();
@@ -61,6 +68,7 @@ Rect photoRect(Size photo, Rect area) => Alignment.center.inscribe(
 
 class PhotoScreenState extends State<PhotoScreen> {
   late final PhotoEditor editor;
+  late final PhotoUploader? uploader;
   DogSticker? _gestureStart;
   Offset? _focalStart;
   bool leaving = false;
@@ -77,6 +85,8 @@ class PhotoScreenState extends State<PhotoScreen> {
     );
     editor.addListener(_invalidateBusyGesture);
     editor.initialize();
+    uploader = widget.createUploader?.call();
+    uploader?.loadPhotos();
   }
 
   void _clearGesture() {
@@ -92,6 +102,7 @@ class PhotoScreenState extends State<PhotoScreen> {
   void dispose() {
     editor.removeListener(_invalidateBusyGesture);
     editor.dispose();
+    uploader?.dispose();
     super.dispose();
   }
 
@@ -124,9 +135,220 @@ class PhotoScreenState extends State<PhotoScreen> {
     });
   }
 
-  void pick(PhotoSource value) {
+  /// A newly picked photo also starts its upload; editing never waits.
+  Future<void> pick(PhotoSource value) async {
     source = value;
-    editor.pick(value);
+    final before = editor.photo;
+    await editor.pick(value);
+    final bytes = editor.pickedBytes;
+    if (!mounted || bytes == null || identical(editor.photo, before)) return;
+    uploader?.upload(bytes);
+  }
+
+  /// Saves to the gallery, then backs the saved picture up as a composite
+  /// of the photo being edited.
+  Future<void> _save() async {
+    await editor.save();
+    final png = editor.savedPng;
+    if (!mounted || png == null) return;
+    uploader?.uploadComposite(png);
+  }
+
+  /// Opens an uploaded entry to arrange again: its original when there is
+  /// one, so a new save links to it; nothing is uploaded again.
+  Future<void> _openUploaded(PhotoGroup group) async {
+    final source = uploader;
+    if (source == null || editor.busy) return;
+    try {
+      await editor.open(await source.bytesOf(group.original ?? group.main));
+      source.adoptOriginal(group.original?.photoId);
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('사진을 불러오지 못했어요. 다시 시도해 주세요.')),
+      );
+    }
+  }
+
+  Future<void> _deleteUploaded(PhotoGroup group) async {
+    final source = uploader;
+    if (source == null) return;
+    final pair = group.members.length > 1;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('올린 사진을 지울까요?'),
+        content: Text(
+          pair
+              ? '고른 사진과 꾸민 사진이 함께 지워져요. 기기 앨범의 사진은 그대로예요.'
+              : '서버에 보관한 사진이 지워져요. 기기 앨범의 사진은 그대로예요.',
+        ),
+        actionsOverflowButtonSpacing: 8,
+        actions: [
+          OutlinedButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('취소'),
+          ),
+          FilledButton(
+            key: const ValueKey('photo_upload_delete_confirm'),
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('지우기'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+    try {
+      await source.deleteGroup(group);
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('사진을 지우지 못했어요. 다시 시도해 주세요.')),
+      );
+    }
+  }
+
+  /// The uploaded photos on the start screen: loading, empty, failure with
+  /// a retry, or a row of thumbnails (tap to arrange, long-press to delete).
+  Widget _uploads(PhotoUploader source) {
+    final photos = source.photos;
+    final groups = source.groups;
+    final Widget content;
+    if (photos == null && source.photosError != null) {
+      content = Row(
+        children: [
+          Expanded(
+            child: Text(
+              source.photosError!,
+              key: const ValueKey('photo_uploads_error'),
+              style: meetingType(13, 18, FontWeight.w600, MeetingColors.error),
+            ),
+          ),
+          TextButton(
+            key: const ValueKey('photo_uploads_retry'),
+            onPressed: source.loadingPhotos ? null : source.loadPhotos,
+            child: const Text('다시 불러오기'),
+          ),
+        ],
+      );
+    } else if (photos == null) {
+      content = const SizedBox(
+        height: _Thumb.size,
+        child: Center(
+          child: SizedBox.square(
+            dimension: 20,
+            child: CircularProgressIndicator(
+              key: ValueKey('photo_uploads_loading'),
+              strokeWidth: 2,
+            ),
+          ),
+        ),
+      );
+    } else if (photos.isEmpty) {
+      content = Text(
+        '사진을 고르면 여기에 보관돼요.',
+        key: const ValueKey('photo_uploads_empty'),
+        style: meetingType(13, 18, FontWeight.w500, MeetingColors.muted),
+      );
+    } else {
+      content = SizedBox(
+        height: _Thumb.size,
+        child: ListView.separated(
+          key: const ValueKey('photo_uploads_list'),
+          scrollDirection: Axis.horizontal,
+          itemCount: groups.length,
+          separatorBuilder: (_, _) => const SizedBox(width: Space.s2),
+          itemBuilder: (context, index) {
+            // The saved picture is the entry's face when there is one.
+            final group = groups[index];
+            return _Thumb(
+              key: ValueKey('photo_upload_${group.main.photoId.uuid}'),
+              load: () => source.bytesOf(group.main),
+              onTap: editor.busy ? null : () => _openUploaded(group),
+              onLongPress: () => _deleteUploaded(group),
+            );
+          },
+        ),
+      );
+    }
+    return Column(
+      key: const ValueKey('photo_uploads'),
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      spacing: Space.s2,
+      children: [
+        Text(
+          groups.isEmpty ? '올린 사진' : '올린 사진 ${groups.length}',
+          style: meetingType(15, 20, FontWeight.w800),
+        ),
+        content,
+      ],
+    );
+  }
+
+  /// Under the canvas: the picked photo's upload, then the saved picture's.
+  /// Editing never waits on either; a failure keeps the photo and offers
+  /// the same upload again.
+  Widget? _uploadStatus(PhotoUploader source) {
+    final what = source.kind == UploadKind.composite ? '꾸민 사진' : '사진';
+    final (String label, Color color) = switch (source.phase) {
+      UploadPhase.idle => ('', MeetingColors.muted),
+      UploadPhase.preparing => (
+        '${withEul(what)} 보관할 준비 중이에요',
+        MeetingColors.muted,
+      ),
+      UploadPhase.uploading => (
+        '$what 보관 중 ${(source.progress * 100).round()}%',
+        MeetingColors.muted,
+      ),
+      UploadPhase.confirming => ('거의 다 됐어요', MeetingColors.muted),
+      UploadPhase.done => (
+        source.kind == UploadKind.composite ? '꾸민 사진도 보관했어요' : '사진을 안전하게 보관했어요',
+        MeetingColors.primaryStrong,
+      ),
+      UploadPhase.failed => (source.error ?? '', MeetingColors.error),
+    };
+    if (source.phase == UploadPhase.idle) return null;
+    return Semantics(
+      liveRegion:
+          source.phase == UploadPhase.done ||
+          source.phase == UploadPhase.failed,
+      child: Column(
+        key: const ValueKey('photo_upload_status'),
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        spacing: Space.s2,
+        children: [
+          Row(
+            spacing: Space.s2,
+            children: [
+              Expanded(
+                child: Text(
+                  label,
+                  key: const ValueKey('photo_upload_label'),
+                  style: meetingType(13, 18, FontWeight.w700, color),
+                ),
+              ),
+              if (source.phase == UploadPhase.failed)
+                TextButton(
+                  key: const ValueKey('photo_upload_retry'),
+                  onPressed: source.retry,
+                  child: const Text('다시 올리기'),
+                ),
+            ],
+          ),
+          if (source.busy)
+            ClipRRect(
+              borderRadius: BorderRadius.circular(999),
+              child: LinearProgressIndicator(
+                key: const ValueKey('photo_upload_progress'),
+                minHeight: 4,
+                value: source.phase == UploadPhase.uploading
+                    ? source.progress
+                    : null,
+              ),
+            ),
+        ],
+      ),
+    );
   }
 
   /// One accessibility step; the new place is read back at once.
@@ -267,6 +489,10 @@ class PhotoScreenState extends State<PhotoScreen> {
                       const SizedBox(height: Space.s3),
                       _retryDog(),
                     ],
+                    if (uploader case final source?) ...[
+                      const SizedBox(height: Space.s5),
+                      _uploads(source),
+                    ],
                   ],
                 ),
                 Padding(
@@ -360,7 +586,7 @@ class PhotoScreenState extends State<PhotoScreen> {
                       key: const ValueKey('photo_save'),
                       style: editor.saved ? _savedPill : _pill,
                       onPressed: editor.canExport && !editor.saved
-                          ? editor.save
+                          ? _save
                           : null,
                       child: Text(editor.saved ? '저장됨' : '저장'),
                     ),
@@ -399,6 +625,7 @@ class PhotoScreenState extends State<PhotoScreen> {
                       ),
                     ),
                   if (editor.dog == null && !editor.busy) _retryDog(),
+                  if (uploader case final source?) ?_uploadStatus(source),
                   if (savedView)
                     Row(
                       spacing: 10,
@@ -607,7 +834,7 @@ class PhotoScreenState extends State<PhotoScreen> {
 
   @override
   Widget build(BuildContext context) => AnimatedBuilder(
-    animation: editor,
+    animation: Listenable.merge([editor, ?uploader]),
     builder: (context, _) {
       // Same guards as the top bar, so leaving still asks while editing.
       final spec = DuoRailSpec(
@@ -637,6 +864,66 @@ class PhotoScreenState extends State<PhotoScreen> {
         ),
       );
     },
+  );
+}
+
+/// One uploaded photo, square-cropped. The bytes load once per thumbnail;
+/// the uploader serves them from its cache by photo id.
+class _Thumb extends StatefulWidget {
+  const _Thumb({
+    required this.load,
+    required this.onTap,
+    required this.onLongPress,
+    super.key,
+  });
+  final Future<Uint8List> Function() load;
+  final VoidCallback? onTap;
+  final VoidCallback onLongPress;
+
+  static const size = 72.0;
+
+  @override
+  State<_Thumb> createState() => _ThumbState();
+}
+
+class _ThumbState extends State<_Thumb> {
+  late Future<Uint8List> bytes = widget.load();
+
+  @override
+  Widget build(BuildContext context) => Semantics(
+    button: true,
+    label: '올린 사진',
+    hint: '누르면 다시 꾸미고, 길게 누르면 지워요',
+    child: GestureDetector(
+      onTap: widget.onTap,
+      onLongPress: widget.onLongPress,
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(14),
+        child: SizedBox.square(
+          dimension: _Thumb.size,
+          child: ColoredBox(
+            color: MeetingColors.pressed,
+            child: FutureBuilder<Uint8List>(
+              future: bytes,
+              builder: (context, snapshot) => switch (snapshot) {
+                AsyncSnapshot(hasData: true, :final data?) => Image.memory(
+                  data,
+                  fit: BoxFit.cover,
+                  cacheWidth: (_Thumb.size * 3).round(),
+                  gaplessPlayback: true,
+                ),
+                AsyncSnapshot(hasError: true) => IconButton(
+                  tooltip: '다시 불러오기',
+                  onPressed: () => setState(() => bytes = widget.load()),
+                  icon: const Icon(Icons.refresh, color: MeetingColors.muted),
+                ),
+                _ => const SizedBox.shrink(),
+              },
+            ),
+          ),
+        ),
+      ),
+    ),
   );
 }
 

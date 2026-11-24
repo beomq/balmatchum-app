@@ -27,4 +27,16 @@ void main() {
       expect(result.dailySteps, isNull);
     });
   }
+
+  test('sends the install instant for the native window', () async {
+    Object? arguments;
+    messenger.setMockMethodCallHandler(channel, (call) async {
+      arguments = call.arguments;
+      return {'status': 'empty', 'dailySteps': null};
+    });
+    await WatchBridge().requestDailySteps(
+      since: DateTime.utc(2026, 11, 1, 3, 30),
+    );
+    expect(arguments, {'since': '2026-11-01T03:30:00.000Z'});
+  });
 }

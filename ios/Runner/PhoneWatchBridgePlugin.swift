@@ -39,12 +39,15 @@ final class PhoneWatchBridgePlugin: NSObject, FlutterStreamHandler, WCSessionDel
         methods?.setMethodCallHandler { [weak self] call, result in
             guard let self else { result(FlutterError(code: "nativeUnavailable", message: nil, details: nil)); return }
             if call.method == "requestDailySteps" {
+                let iso = ISO8601DateFormatter()
+                iso.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+                let since = ((call.arguments as? [String: Any])?["since"] as? String).flatMap(iso.date(from:))
                 self.queue.async {
                     // Permission UI/query can outlive logout or account switching.
                     // Compare the serialized boundary again before releasing its result.
                     let boundary = try? self.store?.contextEnvelope()["boundaryRevision"] as? Int
                     DispatchQueue.main.async {
-                        self.steps.request { value in
+                        self.steps.request(since: since) { value in
                             self.queue.async {
                                 let current = try? self.store?.contextEnvelope()["boundaryRevision"] as? Int
                                 let response: [String: Any] = boundary != nil && boundary == current

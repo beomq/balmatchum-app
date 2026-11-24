@@ -6,9 +6,16 @@ import java.time.format.DateTimeFormatter
 import java.time.temporal.ChronoUnit
 
 /** The server and iPhone contract define a day in Seoul, not the device's zone. */
-internal class DailyStepsObservation(val end: Instant) {
+internal class DailyStepsObservation(val end: Instant, since: Instant? = null) {
     private val day = end.atZone(ZoneId.of("Asia/Seoul")).toLocalDate()
-    val start: Instant = day.atStartOfDay(ZoneId.of("Asia/Seoul")).toInstant()
+    private val midnight = day.atStartOfDay(ZoneId.of("Asia/Seoul")).toInstant()
+
+    /** Seoul midnight, or the install instant on the install day (never after [end]). */
+    val start: Instant = when {
+        since == null || !since.isAfter(midnight) -> midnight
+        since.isAfter(end) -> end
+        else -> since
+    }
 
     fun result(count: Long?): Map<String, Any?> = when {
         count == null -> status("empty")

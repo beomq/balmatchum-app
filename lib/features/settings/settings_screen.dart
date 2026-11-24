@@ -7,6 +7,7 @@ import '../first_meeting/meeting_theme.dart';
 import '../first_meeting/meeting_widgets.dart';
 import '../records/product_page.dart';
 import '../wardrobe/dog_sprite.dart';
+import '../wardrobe/wardrobe_art.dart';
 import '../watch_sync/watch_bridge.dart';
 import 'settings_widgets.dart';
 
@@ -41,7 +42,7 @@ class SettingsScreen extends StatelessWidget {
   final DailyStepsController? dailySteps;
 
   /// The worn outfit over the profile sprite, as the home stage draws it.
-  final String? dogLayer;
+  final DogLook? dogLayer;
   final VoidCallback? onOpenSteps;
   final VoidCallback? onOpenPhoto;
   final VoidCallback? onOpenLogout;
@@ -242,7 +243,7 @@ class _ProfileCard extends StatelessWidget {
     required this.onRename,
   });
   final FirstMeetingState state;
-  final String? dogLayer;
+  final DogLook? dogLayer;
   final VoidCallback onRename;
 
   @override
@@ -275,7 +276,7 @@ class _ProfileCard extends StatelessWidget {
                   clipBehavior: Clip.antiAlias,
                   child: DogSprite(
                     asset: dog.spritePath,
-                    layer: dogLayer,
+                    look: dogLayer,
                     spriteKey: const ValueKey('settings_profile_dog'),
                   ),
                 ),

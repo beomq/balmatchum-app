@@ -9,6 +9,7 @@ import '../features/billing/billing_providers.dart';
 import '../features/billing/billing_screen.dart';
 import '../features/daily_activity/daily_activity_providers.dart';
 import '../features/photo/photo_screen.dart';
+import '../features/photo/photo_upload.dart';
 import '../features/photo/platform_photo_adapter.dart';
 import '../features/records/records_screen.dart';
 import '../features/settings/account_deletion_screen.dart';
@@ -117,14 +118,9 @@ final routerProvider = Provider<GoRouter>((ref) {
               path: 'wardrobe',
               builder: (context, state) => WardrobeScreen(
                 dog: controller.state.candidate!,
+                cachedStore: ref.read(productControllerProvider).wardrobeStore,
                 loadWardrobe: ref.read(productControllerProvider).loadWardrobe,
-                purchaseTheme: (theme) => ref
-                    .read(productControllerProvider)
-                    .themeAction(theme, equip: false),
-                equipTheme: (theme) => ref
-                    .read(productControllerProvider)
-                    .themeAction(theme, equip: true),
-                changeOutfit: ref.read(productControllerProvider).outfitAction,
+                runAction: ref.read(productControllerProvider).wardrobeAction,
                 onBack: () => context.pop(),
                 onHome: () => context.go('/'),
               ),
@@ -231,7 +227,7 @@ final routerProvider = Provider<GoRouter>((ref) {
                 dailySteps: ref.read(dailyStepsControllerProvider),
                 dogLayer: ref
                     .read(authenticatedProductControllerProvider)
-                    ?.wornLayer(dog.id),
+                    ?.wornLook(dog.id),
                 onBack: () => context.pop(),
                 onHome: () => context.go('/'),
                 onOpenSteps: () => context.push('/settings/steps'),
@@ -310,12 +306,10 @@ final routerProvider = Provider<GoRouter>((ref) {
               return WardrobeScreen(
                 key: ObjectKey(authenticated),
                 dog: authenticated!.state.candidate!,
-                cachedSnapshot: product.cachedWardrobe,
+                cachedStore: product.wardrobeStore,
                 loadWardrobe: product.loadWardrobe,
-                purchaseTheme: (theme) =>
-                    product.themeAction(theme, equip: false),
-                equipTheme: (theme) => product.themeAction(theme, equip: true),
-                changeOutfit: product.outfitAction,
+                runAction: product.wardrobeAction,
+                onSubscribe: () => context.push<void>('/billing'),
                 onBack: () => context.pop(),
                 onHome: () => context.go('/'),
               );
@@ -328,6 +322,13 @@ final routerProvider = Provider<GoRouter>((ref) {
               dogAssetPath: authenticated!.state.candidate!.spritePath,
               dogName: authenticated.state.name,
               adapter: PlatformPhotoAdapter(),
+              createUploader: switch (ref.read(authenticatedAccountProvider)) {
+                final account? => () => accountPhotoUploader(
+                  ref.read(clientProvider),
+                  account,
+                ),
+                null => null,
+              },
               onBack: () => context.pop(),
               onHome: () => context.go('/'),
             ),

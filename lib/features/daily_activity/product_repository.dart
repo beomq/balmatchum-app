@@ -2,6 +2,8 @@ import 'package:balmatchum_client/balmatchum_client.dart';
 import 'package:serverpod_auth_core_flutter/serverpod_auth_core_flutter.dart';
 
 import 'dev_test_session.dart';
+import '../wardrobe/wardrobe_models.dart'
+    show WardrobeAction, WardrobeActionKind;
 import '../billing/billing_repository.dart';
 import 'scoped_client.dart';
 
@@ -141,6 +143,28 @@ class ProductRepository {
 
   Future<OutfitStore> unequipOutfit(String requestId) =>
       _records((client) => client.product.unequipOutfit(requestId));
+
+  Future<WardrobeStore> wardrobe() =>
+      _records((client) => client.wardrobe.getWardrobe());
+
+  Future<WardrobeStore> wardrobeAction(
+    WardrobeAction action,
+    String requestId,
+  ) => _records((client) {
+    final w = client.wardrobe;
+    final id = action.id;
+    final colour = action.colourId ?? '';
+    return switch (action.kind) {
+      WardrobeActionKind.buyItem => w.purchaseItem(id, colour, requestId),
+      WardrobeActionKind.buySet => w.purchaseSet(id, colour, requestId),
+      WardrobeActionKind.buyBackground => w.purchaseBackground(id, requestId),
+      WardrobeActionKind.wearItem => w.equipItem(id, colour, requestId),
+      WardrobeActionKind.takeOffSlot => w.unequipSlot(id, requestId),
+      WardrobeActionKind.wearBackground => w.equipBackground(id, requestId),
+      WardrobeActionKind.wearSet => w.equipSet(id, colour, requestId),
+      WardrobeActionKind.takeOffSet => w.unequipSet(id, requestId),
+    };
+  });
 }
 
 class _RecordAuthHeader implements ClientAuthKeyProvider {

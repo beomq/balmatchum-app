@@ -77,21 +77,26 @@ void main() {
       expect(tester.takeException(), isNull);
     });
 
-    testWidgets('wardrobe theme purchase fits Duo ${viewport.key}', (
+    testWidgets('wardrobe set purchase fits Duo ${viewport.key}', (
       tester,
     ) async {
-      // Given the existing owned and offered wardrobe fixtures.
+      // Given the winter set offered at its set price.
       useDuoViewport(tester, viewport.key);
       await tester.pumpWidget(duoHost(screen(load: () async => snap())));
       await tester.pumpAndSettle();
       expect(tester.takeException(), isNull);
-      // When an offered theme's purchase dialog opens.
-      final theme = find.byKey(const ValueKey('wardrobe_theme_night'));
-      await tester.ensureVisible(theme);
-      await tester.tap(theme);
+      // When the set's purchase dialog opens.
+      final action = find.byKey(const ValueKey('wardrobe_set_action_winter'));
+      // The list builds lazily; a short landscape pane has not built it yet.
+      await tester.scrollUntilVisible(
+        action,
+        200,
+        scrollable: find.descendant(
+          of: find.byKey(const ValueKey('wardrobe_scroll')),
+          matching: find.byType(Scrollable),
+        ),
+      );
       await tester.pumpAndSettle();
-      final action = find.byKey(const ValueKey('wardrobe_action'));
-      await tester.ensureVisible(action);
       await tester.tap(action);
       await tester.pumpAndSettle();
       // Then the confirmation is on screen without overflow or exceptions.
@@ -138,9 +143,7 @@ void main() {
         (back, home) => WardrobeScreen(
           dog: FirstMeetingCatalog.byId('shih-tzu'),
           loadWardrobe: () async => snap(),
-          purchaseTheme: (_) async => throw StateError('no purchase'),
-          equipTheme: (_) async => throw StateError('no equip'),
-          changeOutfit: (_, _) async => throw StateError('no change'),
+          runAction: (_) async => throw StateError('no action'),
           onBack: back,
           onHome: home,
         ),

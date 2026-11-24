@@ -84,4 +84,27 @@ class DailyStepsObservationTest {
         // Then it never becomes an available observation.
         assertEquals(mapOf("status" to "error", "dailySteps" to null), result)
     }
+
+    @Test
+    fun installDayCountsOnlyAfterInstall() {
+        val install = Instant.parse("2026-10-31T18:30:00Z")
+        val observation = DailyStepsObservation(Instant.parse("2026-11-01T01:00:00Z"), install)
+        assertEquals(install, observation.start)
+    }
+
+    @Test
+    fun laterDaysCountFromSeoulMidnight() {
+        val observation = DailyStepsObservation(
+            Instant.parse("2026-11-02T01:00:00Z"),
+            Instant.parse("2026-10-31T18:30:00Z"),
+        )
+        assertEquals(Instant.parse("2026-11-01T15:00:00Z"), observation.start)
+    }
+
+    @Test
+    fun installAfterNowNeverOpensAnInvertedWindow() {
+        val now = Instant.parse("2026-11-01T01:00:00Z")
+        val observation = DailyStepsObservation(now, now.plusSeconds(60))
+        assertEquals(now, observation.start)
+    }
 }
