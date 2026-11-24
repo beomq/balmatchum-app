@@ -6,6 +6,7 @@ import io.flutter.embedding.android.FlutterFragmentActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
 import android.content.pm.PackageManager
+import java.time.Instant
 
 class MainActivity : FlutterFragmentActivity() {
     private val dailySteps = HealthConnectStepsReader(this)
@@ -15,7 +16,12 @@ class MainActivity : FlutterFragmentActivity() {
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "com.beomq.balmatchum/watch")
             .setMethodCallHandler { call, result ->
                 when (call.method) {
-                    "requestDailySteps" -> dailySteps.request(result)
+                    "requestDailySteps" -> dailySteps.request(
+                        result,
+                        call.argument<String>("since")?.let {
+                            runCatching { Instant.parse(it) }.getOrNull()
+                        },
+                    )
                     else -> result.notImplemented()
                 }
             }

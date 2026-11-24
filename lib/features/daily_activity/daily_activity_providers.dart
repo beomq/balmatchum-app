@@ -6,10 +6,13 @@ import 'product_controller.dart';
 import 'product_repository.dart';
 import '../watch_sync/watch_bridge.dart';
 import 'daily_steps_controller.dart';
+import 'step_counting_start.dart';
 
 final dailyStepsControllerProvider = Provider<DailyStepsController>((ref) {
+  final start = StepCountingStart.device();
+  final bridge = WatchBridge();
   final controller = DailyStepsController(
-    readSteps: WatchBridge().requestDailySteps,
+    readSteps: () async => bridge.requestDailySteps(since: await start.read()),
   );
   ref.onDispose(controller.dispose);
   return controller;
