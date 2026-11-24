@@ -15,7 +15,6 @@ class ItemArt {
     required this.layered,
     this.fur = false,
     this.over = false,
-    this.full = const {},
   });
 
   final String slot;
@@ -25,17 +24,10 @@ class ItemArt {
   final List<String> layered;
   final bool fur;
   final bool over;
-
-  /// Colour -> breeds whose only art is this item baked onto the whole dog.
-  final Map<String, List<String>> full;
 }
 
-const layeredBreeds = ['maltese', 'dachshund', 'golden-retriever'];
-const _winter = ['tomato', 'pine', 'plum', 'navy'];
-const _holiday = ['tomato', 'pine', 'navy'];
-const _seollal = ['dahong', 'jjok', 'yeondu', 'bunhong'];
-
-const bakedPaddingBreeds = [
+/// Every breed has layered art for every item (the vest aside).
+const layeredBreeds = [
   'alaskan-malamute',
   'beagle',
   'bichon-frise',
@@ -44,11 +36,14 @@ const bakedPaddingBreeds = [
   'bulldog',
   'chihuahua',
   'cocker-spaniel',
+  'dachshund',
   'dalmatian',
   'french-bulldog',
   'german-shepherd',
+  'golden-retriever',
   'jindo',
   'labrador-retriever',
+  'maltese',
   'miniature-pinscher',
   'miniature-schnauzer',
   'norwich-terrier',
@@ -64,14 +59,26 @@ const bakedPaddingBreeds = [
   'west-highland-white-terrier',
   'yorkshire-terrier',
 ];
+const _winter = ['tomato', 'pine', 'plum', 'navy'];
+const _holiday = ['tomato', 'pine', 'navy'];
+const _seollal = ['dahong', 'jjok', 'yeondu', 'bunhong'];
+const _spring = ['sakura', 'forsythia', 'lilac', 'mint'];
+const _picnic = ['cherry', 'sky', 'yeondu', 'butter'];
+const _kidsDay = ['chick', 'sky', 'pink', 'yeondu'];
+const _monsoon = ['chick', 'sky', 'frog', 'tomato'];
+const _sea = ['ocean', 'watermelon', 'lemon', 'mint'];
+const _watermelon = ['watermelon', 'yellow-watermelon', 'peach', 'melon'];
+const _chuseok = ['teal', 'jaju', 'ginkgo', 'jjok'];
+const _halloween = ['purple', 'black', 'slime', 'burgundy'];
+const _autumn = ['maple', 'mustard', 'wine', 'olive'];
+const _basic = ['cream', 'navy', 'grey', 'tomato'];
 
-const itemArt = <String, ItemArt>{
+final itemArt = <String, ItemArt>{
   'padding': ItemArt(
     slot: 'torso',
     colours: _winter,
     layered: layeredBreeds,
     over: true,
-    full: {'tomato': bakedPaddingBreeds},
   ),
   'beanie': ItemArt(
     slot: 'head',
@@ -117,7 +124,48 @@ const itemArt = <String, ItemArt>{
     colours: ['classic'],
     layered: ['dachshund', 'shih-tzu'],
   ),
+  'knit': _torsoItem(_spring),
+  'blossom': _headItem(_spring),
+  'overall': _torsoItem(_picnic),
+  'flower-crown': _headItem(_picnic),
+  'smock': _torsoItem(_kidsDay),
+  'kinder-hat': _headItem(_kidsDay),
+  'raincoat': _torsoItem(_monsoon),
+  'rain-hat': _headItem(_monsoon),
+  'rashguard': _torsoItem(_sea),
+  'straw-hat': _headItem(_sea),
+  'melon-vest': _torsoItem(_watermelon),
+  'melon-clip': _headItem(_watermelon),
+  'baeja': _torsoItem(_chuseok),
+  'rabbit-band': _headItem(_chuseok),
+  'witch-cape': _torsoItem(_halloween),
+  'witch-hat': _headItem(_halloween),
+  'muffler': _torsoItem(_autumn),
+  'beret': _headItem(_autumn),
+  'stripe-tee': _torsoItem(_basic),
+  'hoodie': _torsoItem(_basic),
+  'knit-vest': _torsoItem(_basic),
+  'puffer-vest': _torsoItem(_basic),
+  'rib-beanie': _headItem(_basic),
+  'bandana': _torsoItem(_basic),
 };
+
+/// A layered torso item with an over-fur layer.
+ItemArt _torsoItem(List<String> colours) => ItemArt(
+  slot: 'torso',
+  colours: colours,
+  layered: layeredBreeds,
+  over: true,
+);
+
+/// A layered head item with a fur ring and an over-fur layer.
+ItemArt _headItem(List<String> colours) => ItemArt(
+  slot: 'head',
+  colours: colours,
+  layered: layeredBreeds,
+  fur: true,
+  over: true,
+);
 
 /// Every background picture by server id.
 const backgroundArt = <String, String>{
@@ -128,6 +176,15 @@ const backgroundArt = <String, String>{
   'winter-dusk': 'assets/wardrobe/backgrounds/winter-dusk.png',
   'holiday-night': 'assets/wardrobe/backgrounds/holiday-night.png',
   'seollal-morning': 'assets/wardrobe/backgrounds/seollal-morning.png',
+  'spring-blossom': 'assets/wardrobe/backgrounds/spring-blossom.png',
+  'picnic-meadow': 'assets/wardrobe/backgrounds/picnic-meadow.png',
+  'kids-day-park': 'assets/wardrobe/backgrounds/kids-day-park.png',
+  'monsoon-rain': 'assets/wardrobe/backgrounds/monsoon-rain.png',
+  'summer-beach': 'assets/wardrobe/backgrounds/summer-beach.png',
+  'summer-night': 'assets/wardrobe/backgrounds/summer-night.png',
+  'chuseok-moon': 'assets/wardrobe/backgrounds/chuseok-moon.png',
+  'halloween-dusk': 'assets/wardrobe/backgrounds/halloween-dusk.png',
+  'autumn-maple': 'assets/wardrobe/backgrounds/autumn-maple.png',
 };
 
 /// Slots in drawing order, back to front. A head item's fur ring goes in
@@ -149,8 +206,8 @@ class Worn {
   int get hashCode => Object.hash(itemId, colourId);
 }
 
-/// The pictures for one dog wearing a combination: the base (or a baked
-/// full-dog picture), the masks erased from it, then layers back to front.
+/// The pictures for one dog wearing a combination: the base, the masks
+/// erased from it, then layers back to front.
 @immutable
 class DogLook {
   const DogLook({
@@ -201,28 +258,18 @@ String dogAsset(String breed) => 'assets/first_meeting/dogs/$breed.png';
 bool hasArt(String breed, String itemId, String colourId) {
   final art = itemArt[itemId];
   if (art == null || !art.colours.contains(colourId)) return false;
-  return art.layered.contains(breed) ||
-      (art.full[colourId]?.contains(breed) ?? false);
+  return art.layered.contains(breed);
 }
 
 /// Stacks [worn] on [breed] (DESIGN.md 4): erase every cut, then feet, head
-/// fur, torso, head, then every over-fur layer. A baked full-dog item replaces
-/// the base and is worn alone. Items without art for this breed are skipped,
-/// never borrowed from another breed.
+/// fur, torso, head, then every over-fur layer. Items without art for this
+/// breed are skipped, never borrowed from another breed.
 DogLook lookFor(String breed, Iterable<Worn> worn) {
   final bySlot = <String, Worn>{};
   for (final w in worn) {
     final art = itemArt[w.itemId];
     if (art != null && hasArt(breed, w.itemId, w.colourId)) {
       bySlot[art.slot] = w;
-    }
-  }
-  for (final w in bySlot.values) {
-    final art = itemArt[w.itemId]!;
-    if (art.full[w.colourId]?.contains(breed) ?? false) {
-      return DogLook(
-        base: 'assets/wardrobe/items/${w.itemId}/${w.colourId}/full/$breed.png',
-      );
     }
   }
   final cuts = <String>[];

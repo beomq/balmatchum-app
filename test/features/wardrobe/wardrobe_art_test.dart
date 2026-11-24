@@ -18,7 +18,7 @@ void main() {
       expect(spec['layered'], art.layered, reason: id);
       expect(spec['fur'], art.fur, reason: id);
       expect(spec['over'], art.over, reason: id);
-      expect(spec['full'] ?? const {}, art.full, reason: id);
+      expect(spec.containsKey('full'), isFalse, reason: id);
     }
     expect(json['backgrounds'], backgroundArt);
   });
@@ -26,8 +26,7 @@ void main() {
   test('every picture a wearable combination names is bundled', () {
     final missing = <String>[];
     for (final MapEntry(key: id, value: art) in itemArt.entries) {
-      final breeds = {...art.layered, for (final b in art.full.values) ...b};
-      for (final breed in breeds) {
+      for (final breed in art.layered) {
         for (final colour in art.colours) {
           if (!hasArt(breed, id, colour)) continue;
           final look = lookFor(breed, [Worn(id, colour)]);
@@ -41,6 +40,19 @@ void main() {
       if (!File(path).existsSync()) missing.add(path);
     }
     expect(missing, isEmpty);
+  });
+
+  test('pubspec declares every wardrobe picture folder so it is bundled', () {
+    final declared = {
+      for (final line in File('pubspec.yaml').readAsLinesSync())
+        if (line.trim() case final entry when entry.startsWith('- assets/'))
+          entry.substring(2),
+    };
+    final folders = {
+      for (final file in Directory('assets/wardrobe').listSync(recursive: true))
+        if (file is File && file.path.endsWith('.png')) '${file.parent.path}/',
+    };
+    expect(folders.difference(declared), isEmpty);
   });
 
   test('a layered breed stacks feet, head fur, torso, head, then over fur', () {
@@ -68,18 +80,27 @@ void main() {
     ]);
   });
 
-  test('a breed with only baked padding wears it alone and nothing else', () {
-    final padded = lookFor('beagle', const [
-      Worn('padding', 'tomato'),
-      Worn('beanie', 'tomato'),
+  test('a formerly baked-padding breed now layers items like any other', () {
+    final look = lookFor('beagle', const [
+      Worn('padding', 'navy'),
+      Worn('rib-beanie', 'cream'),
+      Worn('vest', 'classic'),
     ]);
-    final hatOnly = lookFor('beagle', const [Worn('beanie', 'tomato')]);
 
-    expect(padded.base, 'assets/wardrobe/items/padding/tomato/full/beagle.png');
-    expect(padded.cuts, isEmpty);
-    expect(padded.layers, isEmpty);
-    expect(hatOnly.plain, isTrue);
-    expect(hatOnly.base, 'assets/first_meeting/dogs/beagle.png');
-    expect(hasArt('beagle', 'padding', 'navy'), isFalse);
+    const dir = 'assets/wardrobe/items';
+    expect(look.base, 'assets/first_meeting/dogs/beagle.png');
+    expect(look.cuts, [
+      '$dir/rib-beanie/cut/beagle.png',
+      '$dir/padding/cut/beagle.png',
+    ]);
+    expect(look.layers, [
+      '$dir/rib-beanie/fur/beagle.png',
+      '$dir/padding/navy/beagle.png',
+      '$dir/rib-beanie/cream/beagle.png',
+      '$dir/rib-beanie/over/beagle.png',
+      '$dir/padding/over/beagle.png',
+    ]);
+    // The vest art still exists only for dachshund and shih-tzu.
+    expect(hasArt('beagle', 'vest', 'classic'), isFalse);
   });
 }
