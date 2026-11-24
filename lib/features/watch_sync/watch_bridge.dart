@@ -101,9 +101,12 @@ class WatchBridge {
     'schemaVersion': receipt.schemaVersion,
   });
 
-  Future<DailyStepsResult> requestDailySteps() async {
+  /// [since] narrows today's window to steps after it; the native readers
+  /// clamp it to today's Seoul midnight, so earlier days are whole days.
+  Future<DailyStepsResult> requestDailySteps({DateTime? since}) async {
     final result = await _methods.invokeMapMethod<String, Object?>(
       'requestDailySteps',
+      since == null ? null : {'since': since.toUtc().toIso8601String()},
     );
     final status = DailyStepsStatus.values
         .where((value) => value.name == result?['status'])

@@ -7,7 +7,8 @@ final class DailyStepsReader {
 
     /// Called only by the user-initiated MethodChannel request. Authorization's
     /// success is permission-dialog completion, never evidence of read access.
-    func request(_ completion: @escaping ([String: Any]) -> Void) {
+    /// [since] is the install instant: on the install day only later steps count.
+    func request(since: Date? = nil, _ completion: @escaping ([String: Any]) -> Void) {
         func finish(_ status: String, _ steps: [String: Any]? = nil) {
             completion(["status": status, "dailySteps": steps as Any? ?? NSNull()])
         }
@@ -30,7 +31,8 @@ final class DailyStepsReader {
             let now = Date()
             var calendar = Calendar(identifier: .gregorian)
             calendar.timeZone = TimeZone(identifier: "Asia/Seoul")!
-            let start = calendar.startOfDay(for: now)
+            let midnight = calendar.startOfDay(for: now)
+            let start = since.map { min(max($0, midnight), now) } ?? midnight
             let predicate = HKQuery.predicateForSamples(withStart: start, end: now, options: .strictStartDate)
             let query = HKStatisticsQuery(quantityType: type, quantitySamplePredicate: predicate,
                                           options: .cumulativeSum) { _, statistics, error in

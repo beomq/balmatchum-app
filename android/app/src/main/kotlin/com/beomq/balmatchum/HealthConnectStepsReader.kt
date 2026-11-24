@@ -21,6 +21,7 @@ internal class HealthConnectStepsReader(private val activity: FlutterFragmentAct
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private val permissions = setOf(HealthPermission.getReadPermission(StepsRecord::class))
     private var pending: MethodChannel.Result? = null
+    private var since: Instant? = null
     private val permissionRequest = activity.registerForActivityResult(
         PermissionController.createRequestPermissionResultContract(),
     ) { granted ->
@@ -33,12 +34,13 @@ internal class HealthConnectStepsReader(private val activity: FlutterFragmentAct
         }
     }
 
-    fun request(result: MethodChannel.Result) {
+    fun request(result: MethodChannel.Result, since: Instant? = null) {
         if (pending != null) {
             result.success(DailyStepsObservation.status("error"))
             return
         }
         pending = result
+        this.since = since
         scope.launch {
             atBoundary {
                 when (HealthConnectClient.getSdkStatus(activity)) {
@@ -68,7 +70,7 @@ internal class HealthConnectStepsReader(private val activity: FlutterFragmentAct
     }
 
     private suspend fun aggregate(client: HealthConnectClient) {
-        val observation = DailyStepsObservation(Instant.now())
+        val observation = DailyStepsObservation(Instant.now(), since)
         val aggregate = client.aggregate(
             AggregateRequest(
                 metrics = setOf(StepsRecord.COUNT_TOTAL),
